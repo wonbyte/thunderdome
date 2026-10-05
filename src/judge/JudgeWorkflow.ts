@@ -11,7 +11,7 @@ import { gitRepoPath } from "../sandbox/policy";
 import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
 import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { clipDiff } from "./diffs";
-import { judgeLook, readyPreviews, type LookResult, type Viewport } from "./look";
+import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
   decide,
@@ -131,10 +131,20 @@ async function commitHashes(artifacts: Artifacts, name: string): Promise<string[
 // Waits for each fork's final preview, then judges the look. Never throws: a failure means the
 // race is judged without look, and the error is kept in the result.
 async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> {
-  let browser: Browser | undefined;
+  // A promise, so forks shot at once share one browser.
+  let browser: Promise<Browser> | undefined;
   try {
-    const room = env.TASK_ROOM.getByName(input.taskId);
     const budget = Date.now() + LOOK_BUDGET_MS;
+    // The browser starts on the first screenshot, so a race that is not visual never opens one.
+    const shoot = async (url: string, viewport: Viewport): Promise<string> => {
+      browser ??= puppeteer.launch(env.BROWSER);
+      return screenshot(await browser, url, viewport);
+    };
+    const deps = { ai: env.AI, shoot, now: () => Date.now(), deadline: budget };
+    // Asked first: it needs only the task, so a race that is not visual never waits for previews.
+    const visual = await visualTask(deps, input.task);
+    if (visual < VISUAL_THRESHOLD) return { visual, judged: false, forks: [] };
+    const room = env.TASK_ROOM.getByName(input.taskId);
     const waitUntil = Date.now() + PREVIEW_WAIT_MS;
     let task = await room.state();
     while (task !== null && readyPreviews(task).waiting.length > 0 && Date.now() < waitUntil) {
@@ -143,17 +153,11 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
     }
     if (task === null) throw new Error(`Task ${input.taskId} not found`);
     const { before, forks } = readyPreviews(task);
-    // The browser starts on the first screenshot, so a race that is not visual never opens one.
-    const shoot = async (url: string, viewport: Viewport): Promise<string> => {
-      browser ??= await puppeteer.launch(env.BROWSER);
-      return screenshot(browser, url, viewport);
-    };
-    const deps = { ai: env.AI, shoot, now: () => Date.now(), deadline: budget };
-    return await judgeLook(deps, { task: input.task, ...(before === undefined ? {} : { before }), forks });
+    return await judgeLook(deps, { task: input.task, ...(before === undefined ? {} : { before }), forks, visual });
   } catch (cause) {
     return { visual: 0, judged: false, forks: [], error: String(cause).slice(0, 300) };
   } finally {
-    await browser?.close().catch((cause: unknown) => console.error({ event: "look.close_failed", error: String(cause) }));
+    await browser?.then((b) => b.close()).catch((cause: unknown) => console.error({ event: "look.close_failed", error: String(cause) }));
   }
 }
 

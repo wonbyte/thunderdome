@@ -68,13 +68,15 @@ describe("judgeLook", () => {
   it("screenshots the before page once and each fork at desktop and phone width, then scores each fork", async () => {
     const { deps, shots, bodies } = fakeDeps({ levels: { careful: [4, 3], fast: [2, 4] } });
     const result = await judgeLook(deps, input);
-    expect(shots).toEqual([
-      { url: "https://base.test", viewport: DESKTOP },
+    // The before page first, then the forks at once.
+    expect(shots[0]).toEqual({ url: "https://base.test", viewport: DESKTOP });
+    expect(shots.slice(1)).toEqual(expect.arrayContaining([
       { url: "https://careful.test", viewport: DESKTOP },
       { url: "https://careful.test", viewport: PHONE },
       { url: "https://fast.test", viewport: DESKTOP },
       { url: "https://fast.test", viewport: PHONE },
-    ]);
+    ]));
+    expect(shots).toHaveLength(5);
     expect(result.judged).toBe(true);
     expect(result.forks).toEqual([
       { agent: "careful", look: combineLook(1, 0.75), fit: 1, quality: 0.75 },
@@ -82,7 +84,7 @@ describe("judgeLook", () => {
       { agent: "tester", look: 0, error: "no preview of its final commit" },
     ]);
     // The look request carries before, desktop and phone, and says which is which.
-    const careful = bodies[1]!;
+    const careful = bodies.find((b) => (b.images as { base64: string }[] | undefined)?.some((i) => i.base64.includes("careful")))!;
     expect((careful.images as { base64: string }[]).map((i) => i.base64)).toEqual([
       "jpeg:https://base.test:1280",
       "jpeg:https://careful.test:1280",
@@ -116,14 +118,23 @@ describe("judgeLook", () => {
     expect(result.forks.every((f) => f.look === 0)).toBe(true);
   });
 
-  it("judges without look when time runs out, instead of giving the forks left 0", async () => {
+  it("judges without look when time runs out, instead of giving the forks 0", async () => {
     const { deps } = fakeDeps();
     let clock = 0;
-    const slow: LookDeps = { ...deps, now: () => clock, deadline: 100, shoot: async (url, vp) => { clock += 60; return deps.shoot(url, vp); } };
+    const slow: LookDeps = { ...deps, now: () => clock, deadline: 50, shoot: async (url, vp) => { clock += 60; return deps.shoot(url, vp); } };
     const result = await judgeLook(slow, input);
     expect(result.judged).toBe(false);
-    expect(result.error).toBe("out of time after 1 of 3 forks");
-    expect(result.forks.map((f) => f.agent)).toEqual(["careful"]);
+    expect(result.error).toBe("out of time before judging 3 forks");
+    expect(result.forks).toEqual([]);
+  });
+
+  it("uses a visual answer it is given instead of asking again", async () => {
+    const { deps, bodies } = fakeDeps();
+    expect(await judgeLook(deps, { ...input, visual: 0.2 })).toEqual({ visual: 0.2, judged: false, forks: [] });
+    expect(bodies).toEqual([]);
+    const judged = await judgeLook(deps, { ...input, visual: 0.8 });
+    expect(judged.judged).toBe(true);
+    expect(bodies.some((b) => "visual" in (b.questions as object))).toBe(false);
   });
 
   it("throws when the visual question fails", async () => {

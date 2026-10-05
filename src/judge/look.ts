@@ -19,7 +19,7 @@ export interface LookDeps {
   // A JPEG screenshot of the whole page at url, base64. Throws when the page does not load.
   shoot(url: string, viewport: Viewport): Promise<string>;
   sleep?: (ms: number) => Promise<void>;
-  // When now() passes deadline (ms), forks not yet judged are not judged: the race is judged without look.
+  // When now() passes deadline (ms) before the forks are judged, the race is judged without look.
   now?: () => number;
   deadline?: number;
 }
@@ -33,6 +33,7 @@ export interface LookInput {
   task: string;
   before?: string; // URL of the source's preview before the race
   forks: LookFork[];
+  visual?: number; // visualTask's answer when the caller already asked it
 }
 
 export interface ForkLook {
@@ -202,7 +203,7 @@ async function lookFork(deps: LookDeps, task: string, before: string | undefined
 // Asks whether the task is visual; when it is, screenshots every fork's preview and scores it.
 // Throws only when the visual question itself fails; a fork that cannot be judged gets look 0.
 export async function judgeLook(deps: LookDeps, input: LookInput): Promise<LookResult> {
-  const visual = await visualTask(deps, input.task);
+  const visual = input.visual ?? (await visualTask(deps, input.task));
   if (visual < VISUAL_THRESHOLD) return { visual, judged: false, forks: [] };
   let before: string | undefined;
   let beforeError: string | undefined;
@@ -214,15 +215,13 @@ export async function judgeLook(deps: LookDeps, input: LookInput): Promise<LookR
       beforeError = `the before preview did not load: ${errorText(cause)}`;
     }
   }
-  const forks: ForkLook[] = [];
   const beforeNote = beforeError === undefined ? {} : { before: beforeError };
-  for (const fork of input.forks) {
-    // Running out of time is the judge's fault, not the fork's: 0 look points would be unfair.
-    if (deps.deadline !== undefined && (deps.now ?? Date.now)() > deps.deadline) {
-      return { visual, judged: false, forks, ...beforeNote, error: `out of time after ${forks.length} of ${input.forks.length} forks` };
-    }
-    forks.push(await lookFork(deps, input.task, before, fork));
+  // Running out of time is the judge's fault, not the forks': 0 look points would be unfair.
+  if (deps.deadline !== undefined && (deps.now ?? Date.now)() > deps.deadline) {
+    return { visual, judged: false, forks: [], ...beforeNote, error: `out of time before judging ${input.forks.length} forks` };
   }
+  // Each fork has its own pages and Clef call, so the forks are judged at once.
+  const forks = await Promise.all(input.forks.map((fork) => lookFork(deps, input.task, before, fork)));
   // Every fork failing means the screenshots or Clef broke, not the forks: judge without look.
   if (forks.every((f) => f.error !== undefined)) return { visual, judged: false, forks, ...beforeNote };
   return { visual, judged: true, forks, ...beforeNote };
