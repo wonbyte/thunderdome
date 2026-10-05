@@ -90,14 +90,14 @@ describe("U13 platform: each event names the Cloudflare product and its latency"
     }
     const find = (text: string) => hits.find((h) => h.text === text);
     expect(find("forked the repo 2 times")).toEqual({ stage: "fork", text: "forked the repo 2 times" });
-    expect(find("Dillion's sandbox is up")).toMatchObject({ stage: "containers", ms: 5000 });
-    expect(find("Dillion claimed 2 files")?.stage).toBe("claims");
-    expect(find("Sam's preview is live")).toMatchObject({ stage: "previews", ms: 4000 });
-    expect(find("Dillion's preview is live")).toMatchObject({ stage: "previews", ms: 6000 });
+    expect(find("Ponder's sandbox is up")).toMatchObject({ stage: "containers", ms: 5000 });
+    expect(find("Ponder claimed 2 files")?.stage).toBe("claims");
+    expect(find("Zippy's preview is live")).toMatchObject({ stage: "previews", ms: 4000 });
+    expect(find("Ponder's preview is live")).toMatchObject({ stage: "previews", ms: 6000 });
     expect(find(`the "before" preview is live`)).toMatchObject({ ms: 10_000 });
     expect(find("judge started: tests in every fork")?.stage).toBe("workflows");
     expect(find("Clef scored 2 diffs")).toMatchObject({ stage: "ai", ms: 15_000 });
-    expect(find("merged Dillion's fork (abcdef1)")?.stage).toBe("merge");
+    expect(find("merged Ponder's fork (abcdef1)")?.stage).toBe("merge");
     expect(state.counts.events).toBe(3);
     expect(state.counts.fork).toBe(1);
   });

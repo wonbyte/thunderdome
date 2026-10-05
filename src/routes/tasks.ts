@@ -1,6 +1,6 @@
 // The task routes. The caller checks admin auth first.
 import { judgeInstanceId } from "../judge/judge";
-import { RACE_LIST_LIMIT, summaryOf } from "../room/races";
+import { RACE_INDEX_MAX, RACE_LIST_LIMIT, summaryOf } from "../room/races";
 import { isTaskId, judgeInput, newTaskId, parseCreateTask } from "../room/task";
 import { isForkAgent } from "./access";
 
@@ -110,6 +110,26 @@ export async function handleRaceBackfill(request: Request, env: TasksEnv): Promi
     recorded.push(id);
   }
   return Response.json({ recorded, missing });
+}
+
+// POST /admin/purge: deletes races for good: their repos, their room state, and their place in
+// the race list. { ids } purges those ids; an empty body purges every race in the list. A race
+// still running or being judged is skipped, as is one whose repos fail to delete.
+export async function handlePurge(request: Request, env: TasksEnv): Promise<Response> {
+  const body = await jsonObject(request);
+  const index = env.RACE_INDEX.getByName(RACE_INDEX_NAME);
+  const ids = body === undefined || body.ids === undefined ? (await index.list(RACE_INDEX_MAX)).map((race) => race.id) : backfillIds(body);
+  if (ids === undefined) return Response.json({ error: `Body must be {} or { ids: 1..${MAX_BACKFILL_IDS} task ids }` }, { status: 400 });
+  const purged: { id: string; deleted: string[] }[] = [];
+  const skipped: { id: string; error: string }[] = [];
+  // One room at a time, so a big purge does not flood Artifacts with deletes.
+  for (const id of ids) {
+    const result = await env.TASK_ROOM.getByName(id).purge();
+    if (result.ok) purged.push({ id, deleted: result.deleted });
+    else skipped.push({ id, error: result.error });
+  }
+  if (purged.length > 0) await index.remove(purged.map((p) => p.id));
+  return Response.json({ purged, skipped });
 }
 
 // The unique ids in first-seen order, or undefined when the body is not { ids: 1..50 task ids }.

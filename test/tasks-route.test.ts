@@ -4,7 +4,7 @@ import type { SavedDiff } from "../src/judge/diffs";
 import { claimFiles, emptyBoard, type ClaimBoard, type ClaimResult } from "../src/room/claims";
 import { RACE_LIST_LIMIT, summaryOf, type RaceSummary } from "../src/room/races";
 import type { CreateTaskResult, LoggedStep, NewTask, RunTaskResult, Task } from "../src/room/task";
-import { handleRaceBackfill, handleTasks, isTasksPath } from "../src/routes/tasks";
+import { handlePurge, handleRaceBackfill, handleTasks, isTasksPath } from "../src/routes/tasks";
 
 const readyTask = (input: NewTask): Task => ({
   id: input.id,
@@ -27,6 +27,7 @@ interface FakeRoom {
   claimBoard?: () => Promise<ClaimBoard>;
   fetch?: (request: Request) => Promise<Response>;
   forkDiff?: (agent: string) => Promise<SavedDiff | null>;
+  purge?: () => Promise<{ ok: true; deleted: string[] } | { ok: false; error: string }>;
 }
 
 // The race index fake: list returns races, record does nothing.
@@ -34,6 +35,7 @@ function fakeIndex(races: RaceSummary[] = []) {
   const index = {
     list: vi.fn(async (_limit: number) => races),
     record: vi.fn(async (_summary: RaceSummary) => {}),
+    remove: vi.fn(async (_ids: string[]) => {}),
   };
   return { index, RACE_INDEX: { getByName: vi.fn(() => index) } };
 }
@@ -50,6 +52,7 @@ function fakeEnv(room: FakeRoom, races: RaceSummary[] = []) {
     // Node cannot build a 101 Response, so the fake room answers with a plain one.
     fetch: vi.fn(room.fetch ?? (async (_request: Request) => new Response("live"))),
     forkDiff: vi.fn(room.forkDiff ?? (async (_agent: string): Promise<SavedDiff | null> => null)),
+    purge: vi.fn(room.purge ?? (async () => ({ ok: true as const, deleted: [] as string[] }))),
   };
   const getByName = vi.fn(() => stub);
   const { index, RACE_INDEX } = fakeIndex(races);
@@ -350,5 +353,36 @@ describe("claim routes", () => {
     expect(stub.release).toHaveBeenCalledWith("fast", undefined);
     expect((await handleTasks(post("release", {}), env)).status).toBe(400);
     expect((await handleTasks(new Request("https://thunderdome.test/tasks/t-0123abcd/release"), env)).status).toBe(405);
+  });
+});
+
+describe("POST /admin/purge", () => {
+  const purge = (body?: unknown) =>
+    new Request("https://thunderdome.test/admin/purge", { method: "POST", ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const race = (id: string) => ({ id, prompt: "p", status: "finished", createdAt: "2026-10-05T00:00:00Z", agents: [], clash: false }) as RaceSummary;
+
+  it("purges every listed race with no body, drops only the purged ones from the list, and reports the skipped", async () => {
+    let call = 0;
+    const { env, index } = fakeEnv(
+      {
+        purge: async () => (++call === 2 ? { ok: false as const, error: "Task is running" } : { ok: true as const, deleted: [`fork-${call}`] }),
+      },
+      [race("t-00000001"), race("t-00000002"), race("t-00000003")],
+    );
+    const response = await handlePurge(purge(), env);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      purged: [{ id: "t-00000001", deleted: ["fork-1"] }, { id: "t-00000003", deleted: ["fork-3"] }],
+      skipped: [{ id: "t-00000002", error: "Task is running" }],
+    });
+    expect(index.remove).toHaveBeenCalledWith(["t-00000001", "t-00000003"]);
+  });
+
+  it("purges only the given ids, and rejects bad ids with 400", async () => {
+    const { env, getByName, index } = fakeEnv({}, [race("t-00000001")]);
+    await handlePurge(purge({ ids: ["t-0000000a"] }), env);
+    expect(getByName).toHaveBeenCalledWith("t-0000000a");
+    expect(index.list).not.toHaveBeenCalled();
+    expect((await handlePurge(purge({ ids: ["nope"] }), env)).status).toBe(400);
   });
 });

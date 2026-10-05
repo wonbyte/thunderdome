@@ -19,7 +19,7 @@ export const STAGE_INFO: Record<Stage, { product: string; role: string }> = {
 
 export interface PlatformHit {
   stage: Stage;
-  text: string; // e.g. "Leo's preview is live"
+  text: string; // e.g. "Testy's preview is live"
   ms?: number; // how long it took, when known
   agent?: string;
 }

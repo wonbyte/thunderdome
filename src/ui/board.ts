@@ -73,9 +73,11 @@ export const AGENT_COLORS: Readonly<Record<string, string>> = {
 };
 // The fighters' names on the page. The agent id (its style) stays the key everywhere else.
 export const AGENT_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  careful: "Dillion",
-  fast: "Sam",
-  tester: "Leo",
+  careful: "Ponder", // thinks before it types
+  fast: "Zippy",
+  tester: "Testy", // test-first, and a little testy about it
+  lean: "Snip", // the smallest diff
+  tidy: "Sparkle", // code that sparks joy
 };
 export const FALLBACK_COLOR = "#8b8d98";
 export const STEP_TEXT_MAX = 120;

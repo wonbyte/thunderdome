@@ -7,8 +7,8 @@
 Agents compete on each task. A judge picks the best change. The winner ships, and the
 "why" stays with the commit.
 
-You give one task. Thunderdome forks the repo once per agent, and 3 Claude Code agents (Dillion,
-Sam and Leo) race at the same time, each in its own container on its own fork. They claim
+You give one task. Thunderdome forks the repo once per agent, and 3 Claude Code agents (Ponder,
+Zippy and Testy) race at the same time, each in its own container on its own fork. They claim
 files before they edit, so clashes show up before they become merge conflicts. Every push
 builds a live preview. When the last agent ends, a judge runs each fork's tests, scores the
 diffs with Workers AI, merges the winner into the source repo, and writes why it won into
@@ -277,8 +277,8 @@ diffs and the `/live` WebSocket) are public. Creating, running and judging a tas
 `ADMIN_TOKEN`. Fork tokens never reach task state or the step log (the sandbox proxy adds them),
 so nothing secret is public.
 
-Each agent is a robot in its own color: Dillion (careful, orange), Sam (fast, red),
-Leo (tester, blue), and lean (green) and tidy (purple) in bigger races. Every move is a real event:
+Each agent is a robot in its own color: Ponder (careful, orange), Zippy (fast, red),
+Testy (tester, blue), and Snip (lean, green) and Sparkle (tidy, purple) in bigger races. Every move is a real event:
 
 | The robot | When the agent |
 |---|---|
@@ -335,6 +335,10 @@ one storage value.
   (`/race/<id>?replay`) once judged.
 - `POST /admin/races` with `{ ids }` (1 to 50 task ids) adds races made before the index. It
   needs `ADMIN_TOKEN` and returns `{ recorded, missing }`; `missing` lists ids with no task.
+- `POST /admin/purge` deletes races for good: each race's forks, the source repo a template
+  made for it (a source given as `repo` stays), its stored state, and its gallery entry. Send
+  `{ ids }` for some races or `{}` for every race in the list. A race that is running or being
+  judged is skipped. It needs `ADMIN_TOKEN` and returns `{ purged, skipped }`. This can't be undone.
 
 ```sh
 curl https://thunderdome.<your-subdomain>.workers.dev/tasks
@@ -342,6 +346,9 @@ curl https://thunderdome.<your-subdomain>.workers.dev/tasks
 curl -X POST https://thunderdome.<your-subdomain>.workers.dev/admin/races \
   -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" \
   -d '{"ids":["t-0123abcd","t-4567cdef"]}'
+
+curl -X POST https://thunderdome.<your-subdomain>.workers.dev/admin/purge \
+  -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" -d '{}'
 ```
 
 ### Live previews

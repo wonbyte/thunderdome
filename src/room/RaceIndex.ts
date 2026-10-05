@@ -16,6 +16,12 @@ export class RaceIndex extends DurableObject<Env> {
     this.ctx.storage.kv.put(RACES_KEY, races);
   }
 
+  // Drops the races with these ids.
+  remove(ids: string[]): void {
+    const drop = new Set(ids);
+    this.ctx.storage.kv.put(RACES_KEY, this.#races().filter((race) => !drop.has(race.id)));
+  }
+
   // Newest first, at most limit.
   list(limit: number = RACE_LIST_LIMIT): RaceSummary[] {
     return this.#races().slice(0, Math.max(0, limit));

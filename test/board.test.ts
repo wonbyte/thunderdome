@@ -276,9 +276,9 @@ describe("board", () => {
 });
 
 describe("U8 names: each fighter has a display name", () => {
-  it("U8 names careful, fast and tester, and falls back to the agent id", () => {
-    expect(["careful", "fast", "tester"].map(displayName)).toEqual(["Dillion", "Sam", "Leo"]);
-    expect(displayName("lean")).toBe("lean");
+  it("U8 names every agent, and falls back to the agent id", () => {
+    expect(["careful", "fast", "tester", "lean", "tidy"].map(displayName)).toEqual(["Ponder", "Zippy", "Testy", "Snip", "Sparkle"]);
+    expect(displayName("other")).toBe("other");
     expect(displayName("constructor")).toBe("constructor");
   });
 });
@@ -297,11 +297,11 @@ describe("U9 names: the why uses the names and keeps the table aligned", () => {
       "- A carefully kept claim; fast was faster.",
     ].join("\n");
     const out = whyWithNames(why, ["careful", "tester", "fast"]).split("\n");
-    expect(out[0]).toBe("Winner: Dillion (98.47/100)");
+    expect(out[0]).toBe("Winner: Ponder (98.47/100)");
     for (const row of out.slice(2, 6)) expect(row.indexOf("6/6") === -1 ? row.indexOf("tests") : row.indexOf("6/6")).toBe(9);
-    expect(out[4]).toBe("Leo      6/6 (50)  89.49");
-    expect(out[7]).toBe("Why Dillion won:");
-    expect(out[8]).toBe("- A carefully kept claim; Sam was faster.");
+    expect(out[4]).toBe("Testy    6/6 (50)  89.49");
+    expect(out[7]).toBe("Why Ponder won:");
+    expect(out[8]).toBe("- A carefully kept claim; Zippy was faster.");
   });
 });
 

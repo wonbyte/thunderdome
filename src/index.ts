@@ -2,7 +2,7 @@ import { isArtifactsError, isRepoName } from "./artifacts/repo";
 import { accessFor, pageAsset } from "./routes/access";
 import { modelCheck } from "./routes/admin";
 import { handlePlay, isPlayPath, type PlayEnv } from "./routes/play";
-import { handleJudge, handleRaceBackfill, handleTasks, isTasksPath, judgeTaskId } from "./routes/tasks";
+import { handleJudge, handlePurge, handleRaceBackfill, handleTasks, isTasksPath, judgeTaskId } from "./routes/tasks";
 import { CommandError } from "./sandbox/ThunderdomeSandbox";
 import { isDemoApp, runDay1, seedSample } from "./spike";
 
@@ -35,6 +35,7 @@ const ROUTES = {
   "GET /race/:id": "The live race page for a task. No auth; the read routes it uses are public too.",
   "GET /races": "The race gallery page. No auth.",
   "POST /admin/races": "Add races from before the index: { ids }.",
+  "POST /admin/purge": "Delete races for good (repos, state, race list entry): { ids } or {} for every listed race. Running races are skipped.",
   "GET /admin/model-check": "Test the Worker's model key against the model API. Shows the key type and length, never the key.",
 };
 
@@ -62,6 +63,7 @@ export default {
       // The PLAY_* bindings come from wrangler.jsonc and show up in Env after `npm run types`.
       if (play) return await handlePlay(request, env as Env & PlayEnv);
       if (route === "POST /admin/races") return await handleRaceBackfill(request, env);
+      if (route === "POST /admin/purge") return await handlePurge(request, env);
       if (route === "GET /admin/model-check") return await modelCheck(env);
       if (route === "POST /spike/seed") return await seed(request, env);
       if (route === "POST /spike/day1") return Response.json(await runDay1(env));

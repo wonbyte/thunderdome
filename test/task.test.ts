@@ -19,6 +19,8 @@ import {
   saveVerdict,
   type Task,
   type Verdict,
+  purgeRefusal,
+  purgeRepos,
 } from "../src/room/task";
 import { artifactsError, created, fakeArtifacts, fakeRepo } from "./fakes";
 
@@ -513,5 +515,37 @@ describe("claimRefusal", () => {
     expect(claimRefusal(task, "nobody")).toMatchObject({ status: 404 });
     task.agents[0]!.status = "done";
     expect(claimRefusal(task, "careful")).toMatchObject({ status: 409, error: "Agent careful has ended" });
+  });
+});
+
+describe("purge", () => {
+  const task = (over: Partial<Task> = {}): Task => ({
+    id: "t-00000001",
+    repo: "thunderdome-ui-t-00000001",
+    template: "thunderdome-ui",
+    prompt: "p",
+    status: "finished",
+    createdAt: "x",
+    agents: [
+      { name: "careful", fork: "t-00000001-careful", remote: "r", defaultBranch: "main", status: "done" },
+      { name: "fast", fork: "t-00000001-fast", remote: "r", defaultBranch: "main", status: "done" },
+    ],
+    verdict: { winner: "fast", why: "", judgedAt: "x", ship: { status: "merged", winner: "fast", locks: [] } },
+    ...over,
+  });
+
+  it("deletes the forks and a template-made source, but never a shared source repo", () => {
+    expect(purgeRepos(task())).toEqual(["t-00000001-careful", "t-00000001-fast", "thunderdome-ui-t-00000001"]);
+    const { template: _template, ...shared } = task({ repo: "thunderdome-sample" });
+    expect(purgeRepos(shared)).toEqual(["t-00000001-careful", "t-00000001-fast"]);
+  });
+
+  it("refuses a race that is creating, running or being judged", () => {
+    expect(purgeRefusal(task())).toBeUndefined();
+    expect(purgeRefusal(undefined)).toBeUndefined();
+    expect(purgeRefusal(task({ status: "failed" }))).toBeUndefined();
+    expect(purgeRefusal(task({ status: "running" }))).toBe("Task is running");
+    expect(purgeRefusal(task({ status: "creating" }))).toBe("Task is creating");
+    expect(purgeRefusal(task({ verdict: undefined }))).toBe("Task is being judged");
   });
 });

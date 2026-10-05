@@ -366,6 +366,21 @@ export function judgeInput(task: Task, board: ClaimBoard): JudgeInput {
   };
 }
 
+// The repos a purge deletes: every agent fork, and the source repo when a template made it for
+// this task. A source given as `repo` is shared with other tasks, so it stays.
+export function purgeRepos(task: Task): string[] {
+  const forks = task.agents.map((slot) => slot.fork);
+  return task.template === undefined ? forks : [...forks, task.repo];
+}
+
+// Why a task may not be purged now, or undefined when it may. Agents still push to a running task's forks.
+export function purgeRefusal(task: Task | undefined): string | undefined {
+  if (task === undefined) return undefined;
+  if (task.status === "creating" || task.status === "running") return `Task is ${task.status}`;
+  if (task.status === "finished" && task.verdict === undefined) return "Task is being judged";
+  return undefined;
+}
+
 // Why an agent may not use the claim board now, or undefined when it may.
 export function claimRefusal(task: Task | undefined, agent: string): { status: number; error: string } | undefined {
   if (task === undefined) return { status: 404, error: "not found" };

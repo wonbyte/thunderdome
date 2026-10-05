@@ -84,9 +84,9 @@ describe("leaderboard", () => {
   it("U17 standings rank by wins and average only the races with scores", () => {
     const rows = standings(races);
     expect(rows.map((r) => [r.agent, r.name, r.races, r.wins])).toEqual([
-      ["fast", "Sam", 3, 2],
-      ["careful", "Dillion", 3, 1],
-      ["tester", "Leo", 3, 0],
+      ["fast", "Zippy", 3, 2],
+      ["careful", "Ponder", 3, 1],
+      ["tester", "Testy", 3, 0],
     ]);
     expect(rows[0]?.avgScore).toBe(85);
     expect(rows[1]?.avgScore).toBe(93);

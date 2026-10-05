@@ -4,6 +4,7 @@ import type { Step } from "../agents/events";
 import { AGENT_TIME_LIMIT_MS, type AgentOutcome } from "../agents/runner";
 import type { SavedDiff } from "../judge/diffs";
 import { judgeInstanceId } from "../judge/judge";
+import { deleteRepo } from "../artifacts/repo";
 import { startWorkflow } from "../start";
 import {
   claimFiles,
@@ -28,6 +29,8 @@ import {
   justFinished,
   makeForks,
   needsPreview,
+  purgeRefusal,
+  purgeRepos,
   saveVerdict as recordVerdict,
   sourceName,
   type CreateTaskResult,
@@ -319,6 +322,27 @@ export class TaskRoom extends DurableObject<Env> {
       if (taskId !== undefined) this.#broadcast({ kind: "release", taskId, agent, released });
     }
     return { ok: true, released };
+  }
+
+  // Deletes the task's repos, then all of its state: task, tokens, claims, diffs and steps. A repo
+  // that fails to delete keeps the state, so the purge can be run again.
+  async purge(): Promise<{ ok: true; deleted: string[] } | { ok: false; error: string }> {
+    const task = this.#task();
+    const refusal = purgeRefusal(task);
+    if (refusal !== undefined) return { ok: false, error: refusal };
+    const repos = task === undefined ? [] : purgeRepos(task);
+    const settled = await Promise.allSettled(repos.map((name) => deleteRepo(this.env.ARTIFACTS, name)));
+    const failed = repos.filter((_name, i) => settled[i]?.status === "rejected");
+    if (failed.length > 0) return { ok: false, error: `Deleting ${failed.join(", ")} failed` };
+    for (const ws of this.ctx.getWebSockets()) {
+      try {
+        ws.close(1000, "purged");
+      } catch {
+        // Already gone.
+      }
+    }
+    await this.ctx.storage.deleteAll();
+    return { ok: true, deleted: repos };
   }
 
   claimBoard(): ClaimBoard {
