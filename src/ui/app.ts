@@ -46,7 +46,7 @@ const SPEEDS = [1, 2, 4, 8];
 // The judging reveal: one part of the score per beat, then the winner.
 const REVEAL_LEAD_MS = 600;
 const REVEAL_PART_MS = 1100;
-// When the winner shows: after every part the race has has filled.
+// When the winner shows: once every part of the race has filled.
 function revealWinnerMs(parts: readonly Part[]): number {
   return REVEAL_LEAD_MS + parts.length * REVEAL_PART_MS + 300;
 }
@@ -1261,6 +1261,7 @@ function renderResult(b: Board): void {
   const top = [scored[1], scored[0], scored[2]].filter((f): f is Scored => f !== undefined);
   byId("podium").replaceChildren(...top.map(podiumStep));
   byId("scoreboard").replaceChildren(...scored.map(scoreRow));
+  byId("legend-look").hidden = !scored.some((f) => f.score.parts.look !== undefined);
 }
 
 function podiumStep(f: Scored): HTMLElement {

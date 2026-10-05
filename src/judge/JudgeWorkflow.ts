@@ -47,6 +47,8 @@ const LOOK_STEP = {
 } as const;
 // A fork's final preview builds after its last push; the judge waits this long for it.
 const PREVIEW_WAIT_MS = 3 * 60 * 1_000;
+// The whole look, preview wait included, must end well inside LOOK_STEP's timeout.
+const LOOK_BUDGET_MS = 8 * 60 * 1_000;
 const PREVIEW_POLL_MS = 5_000;
 const PAGE_TIMEOUT_MS = 30_000;
 // Base64 written per exec call, under the kernel's limit for one argument.
@@ -76,8 +78,15 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
       );
       forks.push(JSON.parse(judged) as JudgedFork);
     }
-    // JSON text: LookResult has optional keys. A failed look never stops the judge.
-    const looked = await step.do("look", LOOK_STEP, async () => JSON.stringify(await lookAtPreviews(this.env, input)));
+    // JSON text: LookResult has optional keys. A failed look never stops the judge: lookAtPreviews
+    // does not throw, and a step that still fails (a timeout) is judged without look.
+    let looked: string;
+    try {
+      looked = await step.do("look", LOOK_STEP, async () => JSON.stringify(await lookAtPreviews(this.env, input)));
+    } catch (cause) {
+      const failed: LookResult = { visual: 0, judged: false, forks: [], error: `the look step failed: ${String(cause).slice(0, 300)}` };
+      looked = JSON.stringify(failed);
+    }
     const look = JSON.parse(looked) as LookResult;
     const result = { ...decide(input, applyLook(forks, look)), look };
     // JSON text, like the fork steps: ShipResult has optional keys.
@@ -128,9 +137,10 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
   let browser: Browser | undefined;
   try {
     const room = env.TASK_ROOM.getByName(input.taskId);
-    const deadline = Date.now() + PREVIEW_WAIT_MS;
+    const budget = Date.now() + LOOK_BUDGET_MS;
+    const waitUntil = Date.now() + PREVIEW_WAIT_MS;
     let task = await room.state();
-    while (task !== null && readyPreviews(task).waiting.length > 0 && Date.now() < deadline) {
+    while (task !== null && readyPreviews(task).waiting.length > 0 && Date.now() < waitUntil) {
       await new Promise((resolve) => setTimeout(resolve, PREVIEW_POLL_MS));
       task = await room.state();
     }
@@ -141,7 +151,8 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
       browser ??= await puppeteer.launch(env.BROWSER);
       return screenshot(browser, url, viewport);
     };
-    return await judgeLook({ ai: env.AI, shoot }, { task: input.task, ...(before === undefined ? {} : { before }), forks });
+    const deps = { ai: env.AI, shoot, now: () => Date.now(), deadline: budget };
+    return await judgeLook(deps, { task: input.task, ...(before === undefined ? {} : { before }), forks });
   } catch (cause) {
     return { visual: 0, judged: false, forks: [], error: String(cause).slice(0, 300) };
   } finally {

@@ -19,6 +19,9 @@ export interface LookDeps {
   // A JPEG screenshot of the whole page at url, base64. Throws when the page does not load.
   shoot(url: string, viewport: Viewport): Promise<string>;
   sleep?: (ms: number) => Promise<void>;
+  // When now() passes deadline (ms), forks not yet judged are not judged: the race is judged without look.
+  now?: () => number;
+  deadline?: number;
 }
 
 export interface LookFork {
@@ -45,7 +48,7 @@ export interface LookResult {
   judged: boolean; // true when the race is judged on look (visual at or above VISUAL_THRESHOLD)
   forks: ForkLook[]; // one per input fork when judged, else empty
   before?: string; // why there was no before screenshot, when there was none
-  error?: string; // why look was not judged at all, when the step itself failed
+  error?: string; // why look was not judged: the step failed, or time ran out
 }
 
 // The previews to judge: each fork's preview only when it was built from the fork's final commit
@@ -212,8 +215,15 @@ export async function judgeLook(deps: LookDeps, input: LookInput): Promise<LookR
     }
   }
   const forks: ForkLook[] = [];
-  for (const fork of input.forks) forks.push(await lookFork(deps, input.task, before, fork));
+  const beforeNote = beforeError === undefined ? {} : { before: beforeError };
+  for (const fork of input.forks) {
+    // Running out of time is the judge's fault, not the fork's: 0 look points would be unfair.
+    if (deps.deadline !== undefined && (deps.now ?? Date.now)() > deps.deadline) {
+      return { visual, judged: false, forks, ...beforeNote, error: `out of time after ${forks.length} of ${input.forks.length} forks` };
+    }
+    forks.push(await lookFork(deps, input.task, before, fork));
+  }
   // Every fork failing means the screenshots or Clef broke, not the forks: judge without look.
-  if (forks.every((f) => f.error !== undefined)) return { visual, judged: false, forks, ...(beforeError === undefined ? {} : { before: beforeError }) };
-  return { visual, judged: true, forks, ...(beforeError === undefined ? {} : { before: beforeError }) };
+  if (forks.every((f) => f.error !== undefined)) return { visual, judged: false, forks, ...beforeNote };
+  return { visual, judged: true, forks, ...beforeNote };
 }

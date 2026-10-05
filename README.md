@@ -186,7 +186,7 @@ public demo costs at most about $5.50 a day in agent spend.
 | Public races (`/play`) | 10 per UTC day, 2 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; 15 minutes per fork step | `src/judge/judge.ts` |
-| Look | waits up to 3 minutes for final previews; 30 s per page load; 10 minutes for the look step | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
+| Look | waits up to 3 minutes for final previews; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
 | Diff the scorer reads | first 100,000 characters | `src/judge/scorer.ts` |
 | Diff saved for the page | 200,000 characters, cut at a whole line | `src/judge/diffs.ts` |
@@ -379,8 +379,8 @@ final commit (up to 3 minutes), then uses the `BROWSER` binding to screenshot th
 each fork's page at desktop (1280 px) and phone (390 px) width. Clef sees those screenshots and
 scores two things on 5 levels: how completely the page shows what the task asks (60%) and how
 clean and readable it is (40%). A fork whose preview is missing or does not load gets 0 look
-points, and the why says so. If the screenshots or Clef fail for every fork, the race is judged
-without look. The merge commit holds the "why". Then it makes every fork read-only and saves
+points, and the why says so. If the screenshots or Clef fail for every fork, or the look runs past
+its 8-minute budget, the race is judged without look rather than give the forks left 0. The merge commit holds the "why". Then it makes every fork read-only and saves
 the verdict on the task.
 
 If the source moved on during the race (another race shipped first, or someone pushed), the

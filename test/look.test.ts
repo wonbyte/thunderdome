@@ -116,6 +116,16 @@ describe("judgeLook", () => {
     expect(result.forks.every((f) => f.look === 0)).toBe(true);
   });
 
+  it("judges without look when time runs out, instead of giving the forks left 0", async () => {
+    const { deps } = fakeDeps();
+    let clock = 0;
+    const slow: LookDeps = { ...deps, now: () => clock, deadline: 100, shoot: async (url, vp) => { clock += 60; return deps.shoot(url, vp); } };
+    const result = await judgeLook(slow, input);
+    expect(result.judged).toBe(false);
+    expect(result.error).toBe("out of time after 1 of 3 forks");
+    expect(result.forks.map((f) => f.agent)).toEqual(["careful"]);
+  });
+
   it("throws when the visual question fails", async () => {
     await expect(judgeLook(fakeDeps({ aiFails: true }).deps, input)).rejects.toThrow("AI down");
   });
