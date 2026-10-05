@@ -17,6 +17,11 @@ function fork(overrides: Partial<ForkInput> = {}): ForkInput {
   };
 }
 
+// A winner that did the task without src/a.ts, so a clash on src/a.ts was avoidable.
+function avoids(overrides: Partial<ForkInput> = {}): ForkInput {
+  return fork({ agent: "w", filesChanged: ["src/b.ts"], filesClaimed: ["src/b.ts"], ...overrides });
+}
+
 // Lines under a heading, up to the next blank line.
 function section(text: string, heading: string): string[] {
   const lines = text.split("\n");
@@ -113,6 +118,16 @@ describe("winnerReasons", () => {
     expect(winnerReasons(winner, [other]).join("\n")).toContain("Claim: changed files it held only as shared (src/a.ts), 8 points");
   });
 
+  it("says when shared files cost nothing because every fork changed them", () => {
+    const [winner, other] = scoreForks([
+      fork({ agent: "w", filesShared: ["src/a.ts"] }),
+      fork({ agent: "o", filesChanged: ["src/a.ts", "x.ts"] }),
+    ]).ranked;
+    expect(winnerReasons(winner!, [other!]).join("\n")).toContain(
+      "Claim: kept its file claim, 10 points; its shared files (src/a.ts) cost nothing, since every other fork changed them too",
+    );
+  });
+
   it("formats durations", () => {
     expect(duration(12_400)).toBe("12 s");
     expect(duration(120_000)).toBe("2 min");
@@ -178,22 +193,22 @@ describe("headline", () => {
     expect(headline(edge)).toBe("Decided by code: w's fix scored 1 more points on tests, task fit and clarity than r's.");
   });
 
-  it('W2: why: equal code with a claim lead gives "Decided by claims … claimed the files first (10 vs 8 claim points)"; a winner whose code is up to 1 point lower gets the "even though" clause', () => {
+  it('W2: why: equal code with a claim lead gives "Decided by claims … had no clash r could have avoided (10 vs 8 claim points)"; a winner whose code is up to 1 point lower gets the "even though" clause', () => {
     const shared = fork({ agent: "r", filesShared: ["src/a.ts"] });
-    expect(headline(scoreForks([fork({ agent: "w" }), shared]))).toBe(
-      "Decided by claims: the fixes were within 0 points on code; w claimed the files first (10 vs 8 claim points).",
+    expect(headline(scoreForks([avoids(), shared]))).toBe(
+      "Decided by claims: the fixes were within 0 points on code; w had no avoidable clash and r did (10 vs 8 claim points).",
     );
-    expect(headline(scoreForks([fork({ agent: "w", taskFit: 0.98 }), shared]))).toBe(
-      "Decided by claims: the fixes were within 0.5 points on code; w claimed the files first (10 vs 8 claim points) even though its code scored 0.5 lower.",
+    expect(headline(scoreForks([avoids({ taskFit: 0.98 }), shared]))).toBe(
+      "Decided by claims: the fixes were within 0.5 points on code; w had no avoidable clash and r did (10 vs 8 claim points) even though its code scored 0.5 lower.",
     );
     const unclaimed = fork({ agent: "r", filesChanged: ["src/a.ts", "x.ts"] });
-    expect(headline(scoreForks([fork({ agent: "w" }), unclaimed]))).toBe(
+    expect(headline(scoreForks([avoids(), unclaimed]))).toBe(
       "Decided by claims: the fixes were within 0 points on code; w kept its file claim (10 vs 0 claim points).",
     );
   });
 
   it('W3: why: a winner more than 1 point behind on code that wins on claims gets the "made up for it" headline; a close race with no claim gap gets "Decided by a close margin"', () => {
-    const behind = scoreForks([fork({ agent: "w", taskFit: 0.94 }), fork({ agent: "r", filesShared: ["src/a.ts"] })]);
+    const behind = scoreForks([avoids({ taskFit: 0.94 }), fork({ agent: "r", filesShared: ["src/a.ts"] })]);
     expect(behind.winner).toBe("w");
     expect(headline(behind)).toBe(
       "Decided by claims: w's code scored 1.5 points lower than r's, but its claim points made up for it (10 vs 8).",
@@ -239,19 +254,56 @@ describe("headline", () => {
   });
 });
 
+describe("same fix", () => {
+  it("says the forks wrote the same fix and that finish time decided it", () => {
+    const result = scoreForks([
+      fork({ agent: "late", fix: "f1", endedAt: "2026-10-05T10:00:30.000Z" }),
+      fork({ agent: "early", fix: "f1", endedAt: "2026-10-05T10:00:00.000Z" }),
+      fork({ agent: "third", fix: "f1", endedAt: "2026-10-05T10:01:00.000Z" }),
+    ]);
+    expect(result.winner).toBe("early");
+    expect(decidedBy(result)).toBe("same");
+    expect(headline(result)).toBe("Decided by finish time: early, late and third wrote the same fix; early finished first, 30 s earlier.");
+  });
+
+  it("names only the forks with the winner's fix, and the part that differed on the same code", () => {
+    const result = scoreForks([fork({ agent: "w", fix: "f1" }), fork({ agent: "r", fix: "f1", testsPassed: 9 }), fork({ agent: "o", fix: "f2", testsPassed: 8 })]);
+    expect(headline(result)).toBe("Decided by score on the same code: w and r wrote the same fix; w scored 5 more points on tests.");
+  });
+
+  it("says when diff size, not finish time, separated the same fix", () => {
+    const result = scoreForks([
+      fork({ agent: "w", fix: "f1", linesChanged: 10, endedAt: "2026-10-05T10:01:00.000Z" }),
+      fork({ agent: "r", fix: "f1", linesChanged: 12, endedAt: "2026-10-05T10:00:00.000Z" }),
+    ]);
+    expect(headline(result)).toBe("Decided by diff size: w and r wrote the same fix; w's diff was 2 lines smaller (blank lines or whitespace).");
+  });
+
+  it("falls back to agent order when the same fix finished at the same time", () => {
+    expect(headline(scoreForks([fork({ agent: "w", fix: "f1" }), fork({ agent: "r", fix: "f1" })]))).toBe(
+      "Decided by agent order: w and r wrote the same fix and finished together.",
+    );
+  });
+
+  it("is not used when the runner-up wrote a different fix, or the fix is unknown", () => {
+    expect(decidedBy(scoreForks([fork({ agent: "w", fix: "f1" }), fork({ agent: "r", fix: "f2" })]))).toBe("close");
+    expect(decidedBy(scoreForks([fork({ agent: "w" }), fork({ agent: "r" })]))).toBe("close");
+  });
+});
+
 describe("decidedBy", () => {
   it("X2: decidedBy gives code, claims (both cases), close and undefined in step with headline", () => {
     const shared = fork({ agent: "r", filesShared: ["src/a.ts"] });
     const cases = [
-      { result: scoreForks([fork({ agent: "w" }), fork({ agent: "r", testsPassed: 8 })]), by: "code", prefix: "Decided by code:" },
+      { result: scoreForks([avoids(), fork({ agent: "r", testsPassed: 8 })]), by: "code", prefix: "Decided by code:" },
       // Exactly CODE_TIE is still code.
-      { result: scoreForks([fork({ agent: "w" }), fork({ agent: "r", taskFit: 0.96 })]), by: "code", prefix: "Decided by code:" },
+      { result: scoreForks([avoids(), fork({ agent: "r", taskFit: 0.96 })]), by: "code", prefix: "Decided by code:" },
       // Claims within the tie, level and slightly lower on code.
-      { result: scoreForks([fork({ agent: "w" }), shared]), by: "claims", prefix: "Decided by claims: the fixes were within" },
-      { result: scoreForks([fork({ agent: "w", taskFit: 0.98 }), shared]), by: "claims", prefix: "Decided by claims: the fixes were within" },
+      { result: scoreForks([avoids(), shared]), by: "claims", prefix: "Decided by claims: the fixes were within" },
+      { result: scoreForks([avoids({ taskFit: 0.98 }), shared]), by: "claims", prefix: "Decided by claims: the fixes were within" },
       // Claims made up for code more than CODE_TIE lower.
-      { result: scoreForks([fork({ agent: "w", taskFit: 0.94 }), shared]), by: "claims", prefix: "Decided by claims: w's code scored" },
-      { result: scoreForks([fork({ agent: "w" }), fork({ agent: "r", taskFit: 0.98 })]), by: "close", prefix: "Decided by a close margin:" },
+      { result: scoreForks([avoids({ taskFit: 0.94 }), shared]), by: "claims", prefix: "Decided by claims: w's code scored" },
+      { result: scoreForks([avoids(), fork({ agent: "r", taskFit: 0.98 })]), by: "close", prefix: "Decided by a close margin:" },
     ] as const;
     for (const { result, by, prefix } of cases) {
       expect(decidedBy(result), prefix).toBe(by);

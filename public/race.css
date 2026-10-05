@@ -855,6 +855,7 @@ h2 {
 .d-code { background: var(--green); color: var(--green); }
 .d-claims { background: var(--red); color: var(--red); }
 .d-close { background: var(--accent); color: var(--accent); }
+.d-same { background: var(--dim); color: var(--dim); }
 .decided-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .decided-legend span { background: none; font: 700 11.5px var(--mono); }
 .standings { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -878,6 +879,7 @@ h2 {
 .pill.decided-code { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
 .pill.decided-claims { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
 .pill.decided-close { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.pill.decided-same { color: var(--dim); border-color: color-mix(in srgb, var(--dim) 40%, transparent); }
 @keyframes grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes lb-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (max-width: 640px) {

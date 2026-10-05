@@ -5,8 +5,9 @@ export const REASON_COUNT = 3;
 // Code points (tests + task fit + clarity) closer than this count as a tie on code.
 export const CODE_TIE = 1;
 
-// What decided a race with a winner and an eligible runner-up.
-export type DecidedBy = "code" | "claims" | "close";
+// What decided a race with a winner and an eligible runner-up. "same": the winner and the
+// runner-up wrote the same fix, so no score of the code could tell them apart.
+export type DecidedBy = "code" | "claims" | "close" | "same";
 
 type PartKey = keyof ScoreParts;
 
@@ -59,9 +60,10 @@ function partDetail(winner: ForkScore, key: PartKey): string {
   if (key === "tests") return `${winner.input.testsPassed}/${winner.input.testsTotal} passed, ${points} points`;
   if (key === "claim") {
     if (!winner.claimKept) return `changed unclaimed files (${winner.unclaimed.join(", ")}), ${points} points`;
-    return winner.shared.length > 0
-      ? `changed files it held only as shared (${winner.shared.join(", ")}), ${points} points`
-      : `kept its file claim, ${points} points`;
+    if (winner.shared.length > 0) return `changed files it held only as shared (${winner.shared.join(", ")}), ${points} points`;
+    const free =
+      winner.unavoidable.length > 0 ? `; its shared files (${winner.unavoidable.join(", ")}) cost nothing, since every other fork changed them too` : "";
+    return `kept its file claim, ${points} points${free}`;
   }
   return `${points} points`;
 }
@@ -181,11 +183,19 @@ function runnerUp(result: ScoreResult, winner: ForkScore): ForkScore | undefined
 }
 
 function claimVerb(winner: ForkScore, runner: ForkScore): string {
-  return runner.shared.length > 0 && winner.shared.length === 0 ? "claimed the files first" : "kept its file claim";
+  // A clash only costs when another fork did without the file, so the runner-up could have avoided it.
+  return runner.shared.length > 0 && winner.shared.length === 0 ? `had no avoidable clash and ${runner.agent} did` : "kept its file claim";
 }
 
 // Which case decided the race. Shared by headline and decidedBy so they cannot drift.
-type Decision = { kind: "code" | "claims-within" | "claims-lower" | "close"; winner: ForkScore; runner: ForkScore; gap: number; abs: number };
+type Decision = {
+  kind: "code" | "claims-within" | "claims-lower" | "close" | "same";
+  winner: ForkScore;
+  runner: ForkScore;
+  gap: number;
+  abs: number;
+  same: ForkScore[]; // eligible forks other than the winner with the winner's fix
+};
 
 // undefined with no winner or no eligible runner-up.
 function decision(result: ScoreResult): Decision | undefined {
@@ -195,7 +205,9 @@ function decision(result: ScoreResult): Decision | undefined {
   // Rounded first so float noise cannot change the case; Math.abs keeps -0 from printing.
   const gap = round2(codePoints(winner) - codePoints(runner));
   const abs = Math.abs(gap);
-  const base = { winner, runner, gap, abs };
+  const same = winner.input.fix === undefined ? [] : result.ranked.filter((s) => s !== winner && s.eligible && s.input.fix === winner.input.fix);
+  const base = { winner, runner, gap, abs, same };
+  if (same.includes(runner)) return { kind: "same", ...base };
   if (gap >= CODE_TIE) return { kind: "code", ...base };
   if (abs < CODE_TIE && winner.parts.claim - runner.parts.claim > 0) return { kind: "claims-within", ...base };
   if (gap <= -CODE_TIE) return { kind: "claims-lower", ...base };
@@ -220,14 +232,38 @@ export function headline(result: ScoreResult): string | undefined {
       return `Decided by claims: ${w}'s code scored ${num(abs)} points lower than ${r}'s, but its claim points made up for it (${num(wClaim)} vs ${num(rClaim)}).`;
     case "close":
       return `Decided by a close margin: the fixes were within ${num(abs)} points on code.`;
+    case "same":
+      return sameHeadline(winner, d.same);
   }
+}
+
+// The same fix from several forks: no score of the code can separate them, so say what did.
+function sameHeadline(winner: ForkScore, same: ForkScore[]): string {
+  const names = [winner, ...same].map((s) => s.agent);
+  const who = names.length === 2 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+  const head = `${who} wrote the same fix`;
+  const next = same[0];
+  if (next === undefined) return `Decided by finish time: ${head}.`;
+  // The same code can still score differently, for example from a flaky test or an unclaimed file.
+  if (winner.total !== next.total) {
+    const key = worstPart(next, winner);
+    const on = key === undefined ? "" : ` on ${PART_LABELS[key]}`;
+    return `Decided by score on the same code: ${head}; ${winner.agent} scored ${num(winner.total - next.total)} more points${on}.`;
+  }
+  // Blank lines and whitespace are not part of the fix but still count toward diff size.
+  const lines = next.input.linesChanged - winner.input.linesChanged;
+  if (lines > 0) return `Decided by diff size: ${head}; ${winner.agent}'s diff was ${lines} ${lines === 1 ? "line" : "lines"} smaller (blank lines or whitespace).`;
+  const ahead = endedMs(next.input) - endedMs(winner.input);
+  if (ahead > 0) return `Decided by finish time: ${head}; ${winner.agent} finished first${Number.isFinite(ahead) ? `, ${duration(ahead)} earlier` : ""}.`;
+  return `Decided by agent order: ${head} and finished together.`;
 }
 
 // What decided the race, in step with headline; undefined when headline is.
 export function decidedBy(result: ScoreResult): DecidedBy | undefined {
   const kind = decision(result)?.kind;
   if (kind === undefined) return undefined;
-  return kind === "code" ? "code" : kind === "close" ? "close" : "claims";
+  if (kind === "code" || kind === "close" || kind === "same") return kind;
+  return "claims";
 }
 
 function noWinnerLine(ranked: ForkScore[]): string {

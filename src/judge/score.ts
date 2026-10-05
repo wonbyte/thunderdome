@@ -1,7 +1,7 @@
 // Pure fork scoring: no I/O, no imports from cloudflare:workers.
 export const WEIGHTS = { tests: 50, taskFit: 25, clarity: 15, claim: 10 } as const;
-// Points off the claim part for changing a file held only as shared. Small, so who claimed first
-// breaks near-ties but does not outweigh a better fix.
+// Points off the claim part for changing a file held only as shared when another fork showed the
+// task could be done without it. Small, so an avoidable clash breaks near-ties but does not outweigh a better fix.
 export const SHARED_COST = 2;
 
 export interface ForkInput {
@@ -15,6 +15,40 @@ export interface ForkInput {
   filesClaimed: string[];
   filesShared?: string[]; // claimed files that were ever held only as shared (a clash)
   endedAt?: string; // ISO time the agent ended; the earlier one wins a tie on points and diff size
+  fix?: string; // fingerprint of the diff's changed lines (fixFingerprint); equal means the same fix
+}
+
+// A fingerprint of a unified diff's changed lines, each with its file, that ignores whitespace,
+// blank lines and line order, so two forks that wrote the same fix get the same value.
+// Not a security hash: it only compares forks.
+export function fixFingerprint(diff: string): string {
+  const lines: string[] = [];
+  let file = "";
+  let inHunk = false;
+  for (const line of diff.split("\n")) {
+    // File headers come before the first hunk of each file; inside a hunk "---"/"+++" are content.
+    if (line.startsWith("diff --git ")) {
+      [file, inHunk] = [line.slice("diff --git ".length), false];
+    } else if (line.startsWith("@@")) {
+      inHunk = true;
+    } else if (inHunk && (line.startsWith("+") || line.startsWith("-"))) {
+      const code = line.slice(1).replace(/\s+/g, "");
+      if (code !== "") lines.push(`${file}\0${line[0]}${code}`);
+    }
+  }
+  lines.sort();
+  // cyrb53: 53 bits, so equal diffs match and different ones practically never do.
+  let h1 = 0xdeadbeef;
+  let h2 = 0x41c6ce57;
+  const text = lines.join("\n");
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, "0");
 }
 
 // Points per part, each rounded to 2 decimals.
@@ -32,7 +66,8 @@ export interface ForkScore {
   eligible: boolean; // changed at least one file and passed at least one test
   claimKept: boolean;
   unclaimed: string[]; // changed files that were not claimed
-  shared: string[]; // changed files that were claimed only as shared
+  shared: string[]; // changed files claimed only as shared that cost SHARED_COST: another eligible fork did without them
+  unavoidable: string[]; // changed files claimed only as shared that cost nothing: every other eligible fork changed them too
   input: ForkInput;
 }
 
@@ -77,10 +112,14 @@ function claimPoints(kept: boolean, shared: string[]): number {
   return shared.length > 0 ? WEIGHTS.claim - SHARED_COST : WEIGHTS.claim;
 }
 
-export function scoreFork(input: ForkInput): ForkScore {
+// `needed` holds the files every other eligible fork changed too; a clash on one of those was
+// unavoidable and costs nothing. scoreFork alone does not know the other forks, so every clash costs.
+export function scoreFork(input: ForkInput, needed: ReadonlySet<string> = new Set()): ForkScore {
   const unclaimed = unclaimedFiles(input.filesChanged, input.filesClaimed);
   const kept = unclaimed.length === 0;
-  const shared = sharedFiles(input.filesChanged, input.filesShared);
+  const clashed = sharedFiles(input.filesChanged, input.filesShared);
+  const shared = clashed.filter((file) => !needed.has(file));
+  const unavoidable = clashed.filter((file) => needed.has(file));
   const parts: ScoreParts = {
     tests: round2(testPoints(input.testsPassed, input.testsTotal)),
     taskFit: round2(WEIGHTS.taskFit * clamp(input.taskFit, 0, 1)),
@@ -93,12 +132,25 @@ export function scoreFork(input: ForkInput): ForkScore {
     parts,
     total,
     // A fork that changed nothing would merge as a no-op, so it cannot win.
-    eligible: input.testsPassed > 0 && input.filesChanged.length > 0,
+    eligible: isEligible(input),
     claimKept: kept,
     unclaimed,
     shared,
+    unavoidable,
     input,
   };
+}
+
+function isEligible(input: ForkInput): boolean {
+  return input.testsPassed > 0 && input.filesChanged.length > 0;
+}
+
+// The files every eligible fork other than `fork` changed. With no other eligible fork, nobody showed
+// a way around any file, so every file counts as needed.
+export function neededFiles(fork: ForkInput, inputs: ForkInput[]): Set<string> {
+  const others = inputs.filter((other) => other !== fork && isEligible(other));
+  if (others.length === 0) return new Set(fork.filesChanged);
+  return new Set(fork.filesChanged.filter((file) => others.every((other) => other.filesChanged.includes(file))));
 }
 
 // Milliseconds of an ISO time; a missing or bad time sorts last.
@@ -126,7 +178,7 @@ export function rankForks(scores: ForkScore[]): ForkScore[] {
 }
 
 export function scoreForks(inputs: ForkInput[]): ScoreResult {
-  const ranked = rankForks(inputs.map(scoreFork));
+  const ranked = rankForks(inputs.map((input) => scoreFork(input, neededFiles(input, inputs))));
   const first = ranked[0];
   return { ranked, winner: first?.eligible ? first.agent : null };
 }

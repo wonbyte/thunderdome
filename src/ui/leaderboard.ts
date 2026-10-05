@@ -1,7 +1,7 @@
 // The leaderboard: how each agent style does across every race in the list. Pure, like board.ts.
 import { colorFor, displayName } from "./board";
 
-export type DecidedBy = "code" | "claims" | "close";
+export type DecidedBy = "code" | "claims" | "close" | "same";
 
 // The fields of a race summary the leaderboard reads.
 export interface RaceRow {
@@ -69,7 +69,7 @@ export function standings(races: readonly RaceRow[]): Standing[] {
 
 export function raceStats(races: readonly RaceRow[]): RaceStats {
   const done = judged(races);
-  const decided: Record<DecidedBy, number> = { code: 0, claims: 0, close: 0 };
+  const decided: Record<DecidedBy, number> = { code: 0, claims: 0, close: 0, same: 0 };
   let secs = 0;
   let timed = 0;
   for (const race of done) {

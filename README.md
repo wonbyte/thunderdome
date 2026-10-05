@@ -42,7 +42,8 @@ flowchart LR
    the template never changes.
 2. **Race.** Each agent runs Claude Code in its own Sandbox container, with its own style
    (careful, fast, tester). Before editing, it claims files on the TaskRoom's claim board; a
-   file another agent holds becomes a shared claim (a clash) and costs claim points. Agents
+   file another agent holds becomes a shared claim (a clash), which costs claim points when another
+   agent did the task without that file. Agents
    push to their fork as they work. Tokens stay outside the sandbox: the outbound proxy adds them.
 3. **Push events.** Each push fires an Artifacts `repo.pushed` event into the `thunderdome-push`
    Workflow. It records the push on the TaskRoom (the git graph) and builds a Workers Preview
@@ -191,8 +192,16 @@ What it does not do yet:
 
 - The judge scores diffs and test results, not how the preview looks, so in the `ui` demo the
   look of the page does not change the score.
-- When fixes score within about a point, claim order decides the race (10 vs 8 claim points).
-  In our runs that happened often: 4 of the 5 `clash-full` races on Oct 5 were decided by claims.
+- A task with one obvious answer makes the agents write the same fix. In both `bugs` races on Oct 5
+  all three diffs were the same code (one differed only in the order of an import). The judge
+  fingerprints each diff's changed lines and says so ("wrote the same fix; careful finished first"),
+  but nothing in the code can pick a winner then. `clash-full` asks for more than its tests check,
+  so its fixes differ; it is the race to watch.
+- Clef's task fit and clarity scores for different but similar fixes are often within a point, so
+  many races are decided by a close margin: then the smaller diff wins, then the agent that finished
+  first. A clash costs claim points only when it was avoidable, so claim order alone no longer picks
+  the winner (it decided all 4 races on the live deploy on Oct 5; replayed under this rule, 1 was
+  decided by code, 2 were close and 1 was the same fix).
 - A conflict race ships only a resolution whose tests all pass. When none does, or a resolver
   runs out of time, the ship stays `"conflict"` and nothing is merged. Resolvers see the conflict
   and the task, not the other race that changed the source.
@@ -382,7 +391,8 @@ fork, with `revoked` (the write tokens it revoked) or `error`. Other `ship.statu
 output), `"no-winner"`, and
 `"error"` (`ship.error` says why). The verdict also has `scores` (per fork, in ranked order:
 `agent`, `total`, `eligible`, and `parts` with `tests`, `taskFit`, `clarity` and `claim`) and
-`decidedBy` (`"code"`, `"claims"` or `"close"`, missing with no winner or no eligible runner-up).
+`decidedBy` (`"code"`, `"claims"`, `"close"`, or `"same"` when the winner and the runner-up wrote the
+same fix; missing with no winner or no eligible runner-up).
 After a conflict, `ship.resolve` has `files` (what conflicted), `attempts` (per resolver: `status`
 `"green"`, `"red"`, `"unresolved"` or `"failed"`, `seconds`, `tests`, `commit`, `costUsd`, `note`),
 `chosen`, `kept` (the branches that keep the other attempts) and `error` when the race itself failed.
@@ -458,7 +468,8 @@ Agents claim files before they edit them. In the sandbox they run `claim <file>.
 `claim --shared <file>...`, `claim --release [<file>...]`, or `claim --list`. A claim is never
 refused, because each agent works in its own fork: a claim on a file another agent holds becomes a
 shared claim, and the response lists the clash. The judge takes 2 of the 10 claim points from a fork
-that changed a file it held only as shared. You can use the board by hand too:
+that changed a file it held only as shared, but only when another fork that passed tests did the task
+without changing that file. A clash every fork needed costs nothing. You can use the board by hand too:
 
 ```sh
 curl -X POST https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/claims \

@@ -1,3 +1,4 @@
+import { fixFingerprint } from "../src/judge/score";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -48,6 +49,7 @@ describe("judgeTask", () => {
       filesChanged: ["src/careful.ts"],
       filesClaimed: ["src/careful.ts"],
       filesShared: [],
+      fix: fixFingerprint("+// change by careful\n"),
     });
 
     expect(deps.runTests).toHaveBeenCalledTimes(3);

@@ -36,7 +36,8 @@ export function systemPrompt(agent: AgentName, timeLimitMinutes: number): string
     "Claim first. Before you edit or create a file, claim it with the `claim` command, for example " +
       "`claim src/text.ts test/text.test.ts`. Do not edit files you did not claim. If another agent already holds " +
       "a file, your claim on it is shared and `claim` reports a clash. You may still edit it, but changing a shared " +
-      "file lowers your score, so prefer a solution in other files when there is one. Do not wait for files. " +
+      "file lowers your score when another agent solves the task without it, so prefer a solution in other files " +
+      "when there is one. Do not wait for files. " +
       "`claim --list` shows who holds what; `claim --release <file>` frees a file you no longer need.",
     "Commit and push after each working step: " +
       '`git add -A && git commit -m "<what changed>" && git push origin HEAD:refs/heads/main`. ' +

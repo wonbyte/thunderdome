@@ -65,7 +65,7 @@ function card(r: RaceSummary): HTMLElement {
   const state = ended ? (r.winner === null ? "no winner" : "finished") : r.status === "running" ? "live" : r.status;
   top.append(el("span", `pill state-${state.replace(" ", "-")}`, state));
   if (r.clash === true) top.append(el("span", "pill clash", "clash"));
-  if (r.decidedBy !== undefined) top.append(el("span", `pill decided-${r.decidedBy}`, r.decidedBy === "close" ? "close call" : `by ${r.decidedBy}`));
+  if (r.decidedBy !== undefined) top.append(el("span", `pill decided-${r.decidedBy}`, decidedLabel(r.decidedBy)));
   if (r.template !== undefined) top.append(el("span", "pill tpl", `demo: ${r.template.replace(/^thunderdome-/, "")}`));
   top.append(el("span", "when", ago(r.createdAt)));
   const prompt = el("p", "race-prompt", r.prompt);
@@ -97,9 +97,13 @@ function tile(value: string, label: string, extra?: HTMLElement): HTMLElement {
   return box;
 }
 
+function decidedLabel(by: DecidedBy): string {
+  return by === "close" ? "close call" : by === "same" ? "same fix" : `by ${by}`;
+}
+
 // What decided the races, as one stacked bar.
 function decidedBar(stats: RaceStats): HTMLElement | undefined {
-  const parts = (["code", "claims", "close"] as const).filter((k) => stats.decided[k] > 0);
+  const parts = (["code", "claims", "close", "same"] as const).filter((k) => stats.decided[k] > 0);
   const total = parts.reduce((n, k) => n + stats.decided[k], 0);
   if (total === 0) return undefined;
   const bar = el("div", "decided-bar");
@@ -112,7 +116,7 @@ function decidedBar(stats: RaceStats): HTMLElement | undefined {
   const box = el("div", "stat wide");
   box.append(bar);
   const legend = el("span", "decided-legend");
-  for (const k of parts) legend.append(el("span", `d-${k}`, `${k === "close" ? "close call" : `by ${k}`} ${stats.decided[k]}`));
+  for (const k of parts) legend.append(el("span", `d-${k}`, `${decidedLabel(k)} ${stats.decided[k]}`));
   box.append(legend);
   return box;
 }

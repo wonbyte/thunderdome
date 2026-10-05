@@ -1,6 +1,6 @@
 // Pure judge orchestration: tests, diff and scorer are injected. No cloudflare:workers import.
 import { retry } from "../retry";
-import { scoreForks, type ForkInput, type ScoreResult } from "./score";
+import { fixFingerprint, scoreForks, type ForkInput, type ScoreResult } from "./score";
 import type { Scorer, ScorerResult } from "./scorer";
 import { buildWhy } from "./why";
 
@@ -146,6 +146,7 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
       filesClaimed: [...fork.filesClaimed],
       filesShared: [...(fork.filesShared ?? [])],
       ...(fork.endedAt === undefined ? {} : { endedAt: fork.endedAt }),
+      ...(filesChanged.length === 0 ? {} : { fix: fixFingerprint(diff) }),
     },
   };
   if (scorer) judged.scorer = scorer;
