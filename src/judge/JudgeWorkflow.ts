@@ -1,4 +1,4 @@
-// Thin Workflow around judge.ts and ship.ts: one step per fork, decide, ship, then save the verdict.
+// Thin Workflow around judge.ts and ship.ts: one step per fork and a look step, all at once, then decide, ship, then save the verdict.
 import puppeteer, { type Browser } from "@cloudflare/puppeteer";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 
@@ -70,23 +70,20 @@ export type JudgeOutput = JudgeResult & { ship: ShipResult };
 export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
   async run(event: WorkflowEvent<JudgeInput>, step: WorkflowStep): Promise<JudgeOutput> {
     const input = event.payload;
-    const forks: JudgedFork[] = [];
-    for (const fork of input.forks) {
-      // JSON text: the scorer's raw legend is typed unknown, which step.do's Serializable type rejects.
-      const judged = await step.do(`fork ${fork.agent}`, FORK_STEP, async () =>
-        JSON.stringify(await judgeInSandbox(this.env, input, fork)),
-      );
-      forks.push(JSON.parse(judged) as JudgedFork);
-    }
+    // Every fork is judged in its own sandbox, and the look needs only the previews, so all of
+    // these steps run at once: the judge takes as long as its slowest step, not their sum.
+    // JSON text: the scorer's raw legend is typed unknown, which step.do's Serializable type rejects.
+    const judging = input.forks.map((fork) =>
+      step.do(`fork ${fork.agent}`, FORK_STEP, async () => JSON.stringify(await judgeInSandbox(this.env, input, fork))),
+    );
     // JSON text: LookResult has optional keys. A failed look never stops the judge: lookAtPreviews
     // does not throw, and a step that still fails (a timeout) is judged without look.
-    let looked: string;
-    try {
-      looked = await step.do("look", LOOK_STEP, async () => JSON.stringify(await lookAtPreviews(this.env, input)));
-    } catch (cause) {
+    const looking = step.do("look", LOOK_STEP, async () => JSON.stringify(await lookAtPreviews(this.env, input))).catch((cause: unknown) => {
       const failed: LookResult = { visual: 0, judged: false, forks: [], error: `the look step failed: ${String(cause).slice(0, 300)}` };
-      looked = JSON.stringify(failed);
-    }
+      return JSON.stringify(failed);
+    });
+    const [looked, ...judged] = await Promise.all([looking, ...judging]);
+    const forks = judged.map((text) => JSON.parse(text) as JudgedFork);
     const look = JSON.parse(looked) as LookResult;
     const result = { ...decide(input, applyLook(forks, look)), look };
     // JSON text, like the fork steps: ShipResult has optional keys.

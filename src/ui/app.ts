@@ -241,11 +241,10 @@ function addMotes(): void {
 }
 
 async function fetchRace(id: string): Promise<{ task: WireTask; steps: WireStep[]; claims: WireClaimBoard } | number> {
-  const res = await fetch(`/tasks/${id}`, { headers: { accept: "application/json" } });
+  // The three reads are independent, so they go out together.
+  const [res, steps, raw] = await Promise.all([fetch(`/tasks/${id}`, { headers: { accept: "application/json" } }), loadSteps(id), getJson(`/tasks/${id}/claims`)]);
   if (!res.ok) return res.status;
   const task = (await res.json()) as WireTask;
-  const steps = await loadSteps(id);
-  const raw = await getJson(`/tasks/${id}/claims`);
   const claims: WireClaimBoard = isObject(raw) && Array.isArray(raw.active) && Array.isArray(raw.history) ? (raw as unknown as WireClaimBoard) : { active: [], history: [] };
   return { task, steps, claims };
 }
@@ -1299,11 +1298,15 @@ let flipTimer: ReturnType<typeof setInterval> | undefined;
 let flipPaused = false;
 const frameSizer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(fitFrames);
 
-// Each page renders at PAGE_WIDTH and is scaled down to its frame, so it looks like a real page.
+// Each page renders at least PAGE_WIDTH wide and is scaled down to its frame, so it looks like a real
+// page. A frame wider than that (the flip view) renders the page at its own width, so it fills it.
 function fitFrames(entries: ResizeObserverEntry[]): void {
   for (const entry of entries) {
     const box = entry.target as HTMLElement;
-    box.style.setProperty("--s", String(Math.min(1, entry.contentRect.width / PAGE_WIDTH)));
+    const width = entry.contentRect.width;
+    const page = Math.max(PAGE_WIDTH, width);
+    box.style.setProperty("--pw", `${page}px`);
+    box.style.setProperty("--s", String(width / page));
   }
 }
 

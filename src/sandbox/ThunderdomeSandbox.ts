@@ -245,8 +245,11 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
         run.result = resultOf(event) ?? run.result;
         steps.push(...stepsOf(event));
       }
-      run.offset += consumed;
-      if (consumed === 0 || output.stdout.byteLength < READ_CHUNK_BYTES) break;
+      // A full chunk with no newline is one line longer than a chunk: skip past it, or the reader
+      // would stop on it forever. The rest of that line fails to parse and adds no steps.
+      const oversized = consumed === 0 && output.stdout.byteLength >= READ_CHUNK_BYTES;
+      run.offset += oversized ? output.stdout.byteLength : consumed;
+      if ((consumed === 0 && !oversized) || output.stdout.byteLength < READ_CHUNK_BYTES) break;
     }
     this.ctx.storage.kv.put(RUN_KEY, run);
     if (steps.length > 0) await this.env.TASK_ROOM.getByName(run.taskId).agentSteps(run.agent, steps);

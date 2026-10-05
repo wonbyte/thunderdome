@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { clip, resultOf, splitLines, stepsOf } from "../src/agents/events";
+import { clip, resultOf, splitLines, stepsOf, testRunIn } from "../src/agents/events";
 import { AGENT_NAMES, AGENT_STYLES, isAgentName, systemPrompt } from "../src/agents/prompt";
 import {
   agentCommand,
@@ -179,5 +179,30 @@ describe("agentCommand", () => {
     for (const name of AGENT_NAMES) {
       expect(systemPrompt(name, 8)).toContain("commits and pushes your work after each test run and as you edit");
     }
+  });
+});
+
+describe("test runs in long commands", () => {
+  const bash = (command: string) => ({ type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command } }] } });
+  const heredoc = `claim src/page.ts && cat > src/page.ts <<'EOF'\n${"export const x = 1;\n".repeat(60)}EOF`;
+
+  it("keeps a test run that clipping would cut off, at the end of the step text", () => {
+    const [step] = stepsOf(bash(`${heredoc} && npm test 2>&1 | tail -5`));
+    expect(step?.text.length).toBeLessThanOrEqual(500);
+    expect(step?.text.startsWith("Bash claim src/page.ts && cat > src/page.ts")).toBe(true);
+    expect(step?.text.endsWith(" … npm test 2>&1")).toBe(true);
+  });
+
+  it("leaves a short command, or one with no test run, as it was", () => {
+    expect(stepsOf(bash("npm test"))).toEqual([{ kind: "tool", text: "Bash npm test" }]);
+    expect(stepsOf(bash(heredoc))[0]?.text).toBe(clip(`Bash ${heredoc}`));
+  });
+
+  it("finds only sub-commands that start a test runner, not test code in a heredoc", () => {
+    expect(testRunIn("cd app && npm run test -- --run")).toBe("npm run test -- --run");
+    expect(testRunIn("timeout 120 npx vitest run; echo done")).toBe("timeout 120 npx vitest run");
+    expect(testRunIn("node --experimental-strip-types --test test/")).toBe("node --experimental-strip-types --test test/");
+    expect(testRunIn("cat > test/a.test.ts <<'EOF'\ntest('adds', () => {});\nEOF")).toBeUndefined();
+    expect(testRunIn("git commit -m 'add tests' && git push")).toBeUndefined();
   });
 });

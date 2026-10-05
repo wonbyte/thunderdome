@@ -720,7 +720,7 @@ h2 {
 .cmp.after .cmp-frame { border-color: var(--color); box-shadow: 0 0 34px color-mix(in srgb, var(--color) 30%, transparent); }
 .cmp-frame iframe {
   position: absolute; top: 0; left: 0; border: 0; background: #fff; pointer-events: none;
-  width: 800px; height: calc(100% / var(--s)); transform: scale(var(--s)); transform-origin: 0 0;
+  width: var(--pw, 800px); height: calc(100% / var(--s)); transform: scale(var(--s)); transform-origin: 0 0;
 }
 .cmp.after .cmp-frame::after {
   content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0;

@@ -3,7 +3,8 @@
 // Rules:
 // - An agent claims files before it edits them. Each agent works in its own fork, so a claim is never
 //   refused: a claim on a file another agent holds succeeds as a "shared" claim and returns the clash.
-// - A shared claim (forced by a clash, or asked for) is recorded, and the judge counts it against the agent.
+// - A shared claim (forced by a clash, or asked for) is recorded. The judge counts it against
+//   the agent only when another fork solved the task without changing that file.
 // - Claiming a file you already hold changes nothing. Releasing frees files for other agents.
 // - History keeps every claim ever made, for the "claim kept" score.
 

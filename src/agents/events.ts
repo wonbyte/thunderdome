@@ -64,10 +64,37 @@ export function stepsOf(event: unknown): Step[] {
     if (block.type === "text" && typeof block.text === "string" && block.text.trim() !== "") {
       steps.push({ kind: "text", text: clip(block.text) });
     } else if (block.type === "tool_use" && typeof block.name === "string") {
-      steps.push({ kind: "tool", text: clip(`${block.name} ${describeInput(block.input)}`) });
+      steps.push({ kind: "tool", text: toolText(block.name, block.input) });
     }
   }
   return steps;
+}
+
+// A sub-command that starts a test runner. Strict on purpose: a heredoc that writes a test file
+// full of `test(...)` calls is not a test run.
+const TEST_RUN =
+  /^(?:timeout\s+(?:-\S+\s+)*\S+\s+)?(?:npx\s+)?(?:vitest|jest|pytest|mocha|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?t(?:est)?\b|node\s+(?:\S+\s+)*--test\b|go\s+test\b|cargo\s+test\b)/;
+const TEST_RUN_MAX = 80;
+
+// The first sub-command of a shell command that runs the tests, whitespace collapsed.
+export function testRunIn(command: string): string | undefined {
+  for (const part of command.split(/\n|&&|\|\||;|\|/)) {
+    const run = part.replace(/\s+/g, " ").trim();
+    if (TEST_RUN.test(run)) return run;
+  }
+  return undefined;
+}
+
+// A tool call's step text. A long Bash command is clipped, but a test run it holds is kept at the
+// end ("… npm test"), so the page still sees that the agent ran the tests.
+function toolText(name: string, input: unknown): string {
+  const full = `${name} ${describeInput(input)}`;
+  const text = clip(full);
+  const command = name === "Bash" && isRecord(input) && typeof input.command === "string" ? input.command : undefined;
+  const run = command === undefined ? undefined : testRunIn(command);
+  if (run === undefined || text.includes(run)) return text;
+  const tail = ` … ${clip(run, TEST_RUN_MAX)}`;
+  return `${clip(full, MAX_STEP_TEXT - tail.length)}${tail}`;
 }
 
 // The most telling field of a tool call, e.g. the command for Bash or the path for Edit.

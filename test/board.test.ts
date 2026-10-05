@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { stepsOf } from "../src/agents/events";
 import { scoreForks, type ScoreResult } from "../src/judge/score";
 import type { ClaimBoard, ClaimResult } from "../src/room/claims";
 import type { LoggedStep, Task } from "../src/room/task";
@@ -396,5 +397,15 @@ describe("progress squares", () => {
     expect(reached(board, "fast")).toEqual([...PROGRESS_STEPS]);
     expect(reached(board, "careful")).toEqual(["started"]);
     expect(PROGRESS_STEPS.map((s) => PROGRESS_LABELS[s])).toEqual(["sandbox up", "claimed files", "edited code", "ran the tests", "pushed", "won the race"]);
+  });
+});
+
+describe("a test run hidden in a long command", () => {
+  it("still lights \"ran the tests\": the server keeps the run at the end of the clipped text", () => {
+    const command = `claim src/page.ts && cat > src/page.ts <<'EOF'\n${"export const x = 1;\n".repeat(60)}EOF\nnpm test`;
+    const [logged] = stepsOf({ type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command } }] } });
+    let board = initBoard(wireTask(), [], { active: [], history: [] }, now);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "fast", steps: [step(1, "fast", "tool", logged!.text)] }, now);
+    expect(progressOf(board, fighter(board, "fast")).has("tested")).toBe(true);
   });
 });

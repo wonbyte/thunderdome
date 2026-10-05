@@ -5,7 +5,7 @@
 //   claim --shared <file>...   claim files as shared on purpose
 //
 // A file another agent already holds is claimed as shared and reported as a clash. Changing a
-// file you hold only as shared lowers your score.
+// file you hold only as shared lowers your score when another agent solves the task without it.
 //   claim --release [<file>...] release files, or all of your files
 //   claim --list               show who holds what
 //
@@ -64,7 +64,7 @@ async function main(args) {
   if (data.clashes.length > 0) {
     console.error("Clash: other agents already hold these files, so your claim on them is shared:");
     for (const clash of data.clashes) console.error(`  ${clash.file}: ${clash.heldBy.join(", ")}`);
-    console.error("You may still edit them, but changing a shared file lowers your score. Prefer other files if you can.");
+    console.error("You may still edit them, but changing a shared file lowers your score when another agent solves the task without it. Prefer other files if you can.");
   }
   if (data.already.length > 0) console.log(`Already yours: ${data.already.join(", ")}`);
 }
