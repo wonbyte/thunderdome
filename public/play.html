@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Run a race · Thunderdome</title>
+  <link rel="stylesheet" href="/race.css">
+  <script type="module" src="/play.js"></script>
+</head>
+<body class="gallery play-page">
+  <header class="hero">
+    <div id="hero-bots" class="hero-bots" aria-hidden="true"></div>
+    <div>
+      <a class="brand" href="/races"><span class="brand-mark" aria-hidden="true"></span>Thunderdome</a>
+      <h1>Run your own race</h1>
+      <p class="sub">Pick a demo app and give the task. Dillion, Sam and Leo each get their own fork, race to build it, and the judge merges the best change. A race takes about 5 minutes.</p>
+    </div>
+  </header>
+  <main>
+    <form id="play" class="card play-form" novalidate>
+      <div class="gallery-head"><h2>1 · Pick a demo app</h2><span id="quota" class="count-pill"></span></div>
+      <div id="templates" class="templates" role="radiogroup" aria-label="Demo app"></div>
+      <h2 class="step-title"><label for="prompt">2 · The task</label></h2>
+      <textarea id="prompt" name="prompt" rows="6" maxlength="600" spellcheck="true"></textarea>
+      <div class="prompt-foot"><span id="count" class="count-pill"></span><button id="reset" class="link-btn" type="button">use the sample task</button></div>
+      <div id="invite-row" class="invite-row" hidden>
+        <h2 class="step-title"><label for="invite">Invite code</label></h2>
+        <input id="invite" name="invite" type="text" autocomplete="off" spellcheck="false">
+      </div>
+      <p id="error" class="play-error" role="alert" hidden></p>
+      <button id="go" class="cta-btn go" type="submit">▶ Start the race</button>
+      <p class="hint">Races are public: anyone can watch and replay them in the <a href="/races">gallery</a>.</p>
+    </form>
+  </main>
+</body>
+</html>

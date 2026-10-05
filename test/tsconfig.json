@@ -1,0 +1,23 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": [
+      "@cloudflare/workers-types",
+      "node"
+    ]
+  },
+  "include": [
+    ".",
+    "../src",
+    "../worker-configuration.d.ts",
+    "../vitest.config.ts"
+  ],
+  "exclude": [
+    "../src/ui/app.ts",
+    "../src/ui/sprites.ts",
+    "../src/ui/races.ts",
+    "../src/ui/graphview.ts",
+    "../src/ui/diffdialog.ts",
+    "../src/ui/playpage.ts"
+  ]
+}

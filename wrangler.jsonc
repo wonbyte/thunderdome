@@ -1,0 +1,131 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "thunderdome",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-15",
+  // @cloudflare/sandbox Files resolves Linux errno names through node:os.
+  "compatibility_flags": ["nodejs_compat"],
+  // The race page. The Worker answers every path that is not a file in public/.
+  // html_handling "none": the default would redirect /race.html to /race and lose the task id.
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "html_handling": "none"
+  },
+  "vars": {
+    // Model the agents run. Empty means Claude Code's default. Override with:
+    // npm run deploy -- --var AGENT_MODEL:<model id>
+    "AGENT_MODEL": "",
+    // The Worker each fork push is previewed under (wrangler preview --name <task>-<agent>).
+    "PREVIEW_WORKER": "thunderdome-sample",
+    // The account that owns PREVIEW_WORKER. Preview sandboxes may call only its previews API.
+    "CF_ACCOUNT_ID": "bc1c0551f58de19c91a2d34f1a75e97c",
+    // Races POST /play may start per UTC day.
+    "PLAY_DAILY_LIMIT": "10",
+    // Invite code for POST /play. Empty means no invite code. Set it at deploy with:
+    // npm run deploy -- --var PLAY_INVITE:<code>
+    "PLAY_INVITE": ""
+  },
+  "secrets": {
+    // ADMIN_TOKEN: Bearer token for the admin routes.
+    // ANTHROPIC_API_KEY: the agents' model key. It stays in the Worker; sandboxes get a placeholder.
+    // CLOUDFLARE_PREVIEW_TOKEN: Workers Previews token (Account → Workers Scripts: Edit). It stays in the Worker.
+    // Set each with: npx wrangler secret put <NAME>
+    "required": ["ADMIN_TOKEN", "ANTHROPIC_API_KEY", "CLOUDFLARE_PREVIEW_TOKEN"]
+  },
+  "artifacts": [
+    {
+      "binding": "ARTIFACTS",
+      "namespace": "thunderdome"
+    }
+  ],
+  // The judge's scorer: Cloudflare's Clef on Workers AI.
+  "ai": { "binding": "AI" },
+  // Every push to an Thunderdome repo starts the push Workflow.
+  // The docs disagree on this syntax: the Events & schemas notes use `targets: [{ type, workflow_name }]`
+  // with `repo_name`; the Artifacts "build and deploy on push" guide uses `target: { scriptName, workflowName }`
+  // with `repoName`. This follows docs/api-notes.md. Check on deploy.
+  "triggers": {
+    "events": [
+      {
+        "type": "cf.artifacts.repo.pushed",
+        "filter": { "namespace": "thunderdome" },
+        "targets": [{ "type": "workflow", "workflow_name": "thunderdome-push" }]
+      }
+    ]
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SANDBOX",
+        "class_name": "ThunderdomeSandbox"
+      },
+      {
+        "name": "TASK_ROOM",
+        "class_name": "TaskRoom"
+      },
+      // One instance, "all": the race list for GET /tasks and the gallery.
+      {
+        "name": "RACE_INDEX",
+        "class_name": "RaceIndex"
+      },
+      // One instance, "daily": the public /play quota.
+      {
+        "name": "PLAY_QUOTA",
+        "class_name": "PlayQuota"
+      }
+    ]
+  },
+  "workflows": [
+    {
+      "name": "thunderdome-judge",
+      "binding": "JUDGE",
+      "class_name": "JudgeWorkflow"
+    },
+    {
+      "name": "thunderdome-push",
+      "binding": "PUSH",
+      "class_name": "PushWorkflow"
+    }
+  ],
+  "containers": [
+    {
+      "class_name": "ThunderdomeSandbox",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "sandbox": {
+          "dockerfile": "./Dockerfile"
+        }
+      }
+    }
+  ],
+  "exports": {
+    "ThunderdomeSandbox": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    },
+    "TaskRoom": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    },
+    "RaceIndex": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    },
+    "PlayQuota": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    },
+    "JudgeWorkflow": {
+      "type": "workflow",
+      "name": "thunderdome-judge"
+    },
+    "PushWorkflow": {
+      "type": "workflow",
+      "name": "thunderdome-push"
+    }
+  },
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,0 +1,8 @@
+// The Worker that fork previews are made under (PREVIEW_WORKER in wrangler.jsonc). Deploy it once per account:
+// npx wrangler deploy -c scripts/preview-worker.jsonc
+{
+  "name": "thunderdome-sample",
+  "main": "../demo/sample-app/src/index.ts",
+  "compatibility_date": "2026-09-15",
+  "previews": {}
+}

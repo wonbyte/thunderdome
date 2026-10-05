@@ -1,0 +1,377 @@
+// Task model: input checks, ids, and the forks one task owns. No Durable Object code here,
+// so the unit tests can run it with a mock Artifacts binding.
+import { AGENT_NAMES, type AgentName } from "../agents/prompt";
+import type { AgentOutcome } from "../agents/runner";
+import { deleteRepo, forkFor, forkName, isArtifactsError, isRepoName, latestCommit, notReady } from "../artifacts/repo";
+import type { JudgeInput } from "../judge/judge";
+import type { ScoreParts } from "../judge/score";
+import type { DecidedBy } from "../judge/why";
+import type { BaseRequest } from "../push/push"; // type-only: push.ts imports isTaskId from here
+import { retry } from "../retry";
+import type { ShipResult } from "../ship/ship";
+import { claimsOf, type ClaimBoard } from "./claims";
+
+// A task with N agents uses the first N names.
+export { AGENT_NAMES };
+export const MIN_AGENTS = 3;
+export const MAX_AGENTS = AGENT_NAMES.length;
+export const MAX_PROMPT_LENGTH = 10_000;
+// Pushes remembered per agent, so event retries are recorded once.
+export const MAX_SEEN_PUSHES = 50;
+
+const TASK_ID_PATTERN = /^t-[0-9a-f]{8}$/;
+
+// Exactly one of repo and template. A template task forks the template into a fresh source
+// repo first, so the race and the merge never change the template.
+export type CreateTaskInput = { prompt: string; agents: number } & ({ repo: string; template?: never } | { template: string; repo?: never });
+
+export type NewTask = CreateTaskInput & { id: string };
+
+export interface ForkSlot {
+  name: AgentName;
+  fork: string;
+  remote: string;
+  defaultBranch: string;
+}
+
+export type AgentStatus = "idle" | "starting" | "running" | AgentOutcome["end"];
+
+// One push to an agent's fork. push.ts's PushEvent fits this shape.
+export interface PushInput {
+  agent: string;
+  after: string;
+  commits: number;
+  message?: string;
+}
+
+export interface PreviewInput {
+  url: string;
+  commit: string;
+}
+
+export interface Preview extends PreviewInput {
+  at: string; // ISO
+}
+
+// One recorded push, for the git graph.
+export interface PushLogEntry {
+  at: string; // ISO, when it was recorded
+  commit: string; // the push's `after`
+  commits: number; // counted commits, 0 for a bad count
+  message?: string; // only when the push had one
+}
+
+export interface PushState {
+  commits: number; // sum of commit counts of recorded pushes
+  pushes: number; // recorded pushes (distinct `after`)
+  lastPushAt: string; // ISO, time of the last recorded push
+  head: string; // newest head commit by push (record) order
+  headMessage?: string; // its message (removed when the newest push has none)
+  seen: string[]; // recorded `after` commits, oldest first, capped at MAX_SEEN_PUSHES
+  log?: PushLogEntry[]; // recorded pushes, oldest first, capped at MAX_SEEN_PUSHES; missing (older tasks) = empty
+  preview?: Preview; // newest saved preview and the commit it was built from
+}
+
+export interface AgentSlot extends ForkSlot, Partial<Omit<AgentOutcome, "end">> {
+  status: AgentStatus;
+  startedAt?: string;
+  endedAt?: string;
+  push?: PushState;
+}
+
+// creating → ready → running → finished. "failed" means the forks could not be made.
+export type TaskStatus = "creating" | "ready" | "running" | "finished" | "failed";
+
+// One fork's score in a verdict.
+export interface VerdictScore {
+  agent: string;
+  total: number;
+  eligible: boolean;
+  parts: ScoreParts;
+}
+
+// The judge's outcome and what shipping it did.
+export interface Verdict {
+  winner: string | null;
+  why: string;
+  judgedAt: string; // ISO
+  ship: ShipResult;
+  scores?: VerdictScore[]; // ranked order; missing on older verdicts
+  decidedBy?: DecidedBy; // missing with no winner or no eligible runner-up
+}
+
+export interface Task {
+  id: string;
+  repo: string; // the source repo the forks come from and the winner merges into
+  template?: string; // the template the source repo was forked from, if any
+  prompt: string;
+  status: TaskStatus;
+  createdAt: string;
+  startedAt?: string;
+  finishedAt?: string;
+  agents: AgentSlot[];
+  error?: TaskError;
+  verdict?: Verdict;
+  baseCommit?: string; // the source head when the forks were made; the base preview is built from it
+  basePreview?: Preview; // the "before" preview of the source at baseCommit
+}
+
+// A type alias, not an interface, so it fits the SQL row type.
+export type LoggedStep = {
+  seq: number;
+  agent: string;
+  at: string;
+  kind: string;
+  text: string;
+};
+
+// What TaskRoom.recordPush returns. known: the task and agent exist.
+export type PushRecordResult = { known: boolean; recorded: boolean; build: boolean };
+
+export function isAgentDone(status: AgentStatus): boolean {
+  return status === "done" || status === "failed" || status === "timeout";
+}
+
+export interface TaskError {
+  error: string;
+  code?: string;
+}
+
+// Errors do not keep their fields across Durable Object RPC, so TaskRoom returns these instead.
+export type CreateTaskResult =
+  | { ok: true; task: Task; tokens: Record<string, string> }
+  | { ok: false; status: number; error: TaskError };
+
+export type RunTaskResult = { ok: true; task: Task } | { ok: false; status: number; error: TaskError };
+
+export function newTaskId(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(4));
+  return `t-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function isTaskId(id: string): boolean {
+  return TASK_ID_PATTERN.test(id);
+}
+
+// Returns the checked input, or an error message for the client.
+export function parseCreateTask(body: unknown): CreateTaskInput | string {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return "Body must be a JSON object";
+  const { repo, template, prompt, agents = MIN_AGENTS } = body as Record<string, unknown>;
+  if ((repo === undefined) === (template === undefined)) return "Give exactly one of repo and template";
+  if (repo !== undefined && (typeof repo !== "string" || !isRepoName(repo))) return "repo must be an Artifacts repo name";
+  // The source name adds "-t-xxxxxxxx" to the template name.
+  if (template !== undefined && (typeof template !== "string" || !isRepoName(sourceName(template, "t-00000000")))) {
+    return "template must be an Artifacts repo name of at most 89 characters";
+  }
+  if (typeof prompt !== "string" || prompt.trim() === "") return "prompt must be a non-empty string";
+  if (prompt.length > MAX_PROMPT_LENGTH) return `prompt must be at most ${MAX_PROMPT_LENGTH} characters`;
+  if (typeof agents !== "number" || !Number.isInteger(agents) || agents < MIN_AGENTS || agents > MAX_AGENTS) {
+    return `agents must be an integer from ${MIN_AGENTS} to ${MAX_AGENTS}`;
+  }
+  return typeof repo === "string" ? { repo, prompt, agents } : { template: template as string, prompt, agents };
+}
+
+export function sourceName(template: string, taskId: string): string {
+  return `${template}-${taskId}`;
+}
+
+export interface ForkWithToken extends ForkSlot {
+  token: string;
+}
+
+export interface MadeForks {
+  source: string;
+  forks: ForkWithToken[];
+  base: string | undefined; // source head hash after the agent forks are made; undefined if unreadable or empty
+}
+
+// The source repo of a task: the given repo, or a fresh fork of the template.
+// If an agent fork fails, deletes the forks made so far (and a fresh source) and throws the first error.
+export async function makeForks(artifacts: Artifacts, task: NewTask, sleep?: (ms: number) => Promise<void>): Promise<MadeForks> {
+  if (task.template === undefined) {
+    const forks = await forkAgents(artifacts, task.id, task.repo, task.agents, sleep);
+    return { source: task.repo, forks, base: await headOf(artifacts, task.repo) };
+  }
+  const source = sourceName(task.template, task.id);
+  await retry(
+    () => forkFor(artifacts, task.template, source, `Thunderdome task ${task.id}, source from ${task.template}`),
+    { attempts: 10, delayMs: 1_000, shouldRetry: notReady },
+    sleep,
+  );
+  try {
+    const forks = await forkAgents(artifacts, task.id, source, task.agents, sleep);
+    // headOf never throws, so a missing head never deletes the source.
+    return { source, forks, base: await headOf(artifacts, source) };
+  } catch (cause) {
+    await Promise.allSettled([deleteRepo(artifacts, source)]);
+    throw cause;
+  }
+}
+
+// The head commit hash of a repo's default branch, or undefined when unreadable or empty.
+async function headOf(artifacts: Artifacts, source: string): Promise<string | undefined> {
+  try {
+    return (await latestCommit(artifacts, source))?.hash;
+  } catch {
+    return undefined;
+  }
+}
+
+// Makes one fork per agent, one at a time, because a source repo can be busy while it forks.
+async function forkAgents(artifacts: Artifacts, taskId: string, source: string, agents: number, sleep?: (ms: number) => Promise<void>): Promise<ForkWithToken[]> {
+  const forks: ForkWithToken[] = [];
+  try {
+    for (const name of AGENT_NAMES.slice(0, agents)) {
+      const fork = forkName(taskId, name);
+      const access = await retry(
+        () => forkFor(artifacts, source, fork, `Thunderdome task ${taskId}, agent ${name}`),
+        { attempts: 10, delayMs: 1_000, shouldRetry: notReady },
+        sleep,
+      );
+      forks.push({ name, fork: access.name, remote: access.remote, defaultBranch: access.defaultBranch, token: access.token });
+    }
+    return forks;
+  } catch (cause) {
+    await Promise.allSettled(forks.map((fork) => deleteRepo(artifacts, fork.fork)));
+    throw cause;
+  }
+}
+
+// Maps a failure to an HTTP status and a message for the client.
+export function describeFailure(cause: unknown, repo: string): { status: number; error: TaskError } {
+  if (isArtifactsError(cause, "NOT_FOUND")) {
+    return { status: 404, error: { error: `Repo not found: ${repo}`, code: cause.code } };
+  }
+  if (isArtifactsError(cause)) return { status: 502, error: { error: cause.message, code: cause.code } };
+  return { status: 500, error: { error: String(cause) } };
+}
+
+// Records one agent's end. Returns false when the agent already ended (alarm retries repeat it).
+// The task finishes when every agent has ended.
+export function applyOutcome(task: Task, agent: string, outcome: AgentOutcome, now: string): boolean {
+  const slot = slotOf(task, agent);
+  if (slot === undefined || isAgentDone(slot.status)) return false;
+  const { end, ...rest } = outcome;
+  Object.assign(slot, rest, { status: end, endedAt: now });
+  finishIfAllDone(task, now);
+  return true;
+}
+
+// Records whether each sandbox started. Only agents still "starting" change, so an end that
+// arrived first is kept.
+export function applyStarts(task: Task, starts: { agent: string; error?: string }[], now: string): void {
+  for (const start of starts) {
+    const slot = slotOf(task, start.agent);
+    if (slot === undefined || slot.status !== "starting") continue;
+    if (start.error === undefined) {
+      slot.status = "running";
+    } else {
+      Object.assign(slot, { status: "failed", pushed: false, error: start.error, endedAt: now });
+    }
+  }
+  finishIfAllDone(task, now);
+}
+
+// Records a push once per `after` commit (event retries repeat it). The newest recorded push
+// becomes the head and is appended to the log. Any task status, because the runner's last push
+// lands after the agent ends.
+export function applyPush(task: Task, push: PushInput, now: string): boolean {
+  const slot = slotOf(task, push.agent);
+  if (slot === undefined) return false;
+  const state = slot.push;
+  if (state?.seen.includes(push.after)) return false;
+  const commits = Number.isSafeInteger(push.commits) && push.commits > 0 ? push.commits : 0;
+  const entry: PushLogEntry = { at: now, commit: push.after, commits, ...(push.message === undefined ? {} : { message: push.message }) };
+  slot.push = {
+    commits: (state?.commits ?? 0) + commits,
+    pushes: (state?.pushes ?? 0) + 1,
+    lastPushAt: now,
+    head: push.after,
+    ...(push.message === undefined ? {} : { headMessage: push.message }),
+    seen: [...(state?.seen ?? []), push.after].slice(-MAX_SEEN_PUSHES),
+    log: [...(state?.log ?? []), entry].slice(-MAX_SEEN_PUSHES),
+    ...(state?.preview === undefined ? {} : { preview: state.preview }),
+  };
+  return true;
+}
+
+// True when commit is the agent's newest head and has no saved preview yet.
+export function needsPreview(task: Task, agent: string, commit: string): boolean {
+  const push = slotOf(task, agent)?.push;
+  return push !== undefined && push.head === commit && push.preview?.commit !== commit;
+}
+
+// Saves a preview only for the agent's newest head, so an older build never replaces a newer one.
+export function applyPreview(task: Task, agent: string, preview: PreviewInput, now: string): boolean {
+  const push = slotOf(task, agent)?.push;
+  if (push === undefined || push.head !== preview.commit) return false;
+  push.preview = { url: preview.url, commit: preview.commit, at: now };
+  return true;
+}
+
+// Saves the base preview only when it was built from the task's base commit.
+export function applyBasePreview(task: Task, preview: PreviewInput, now: string): boolean {
+  if (task.baseCommit === undefined || task.baseCommit !== preview.commit) return false;
+  task.basePreview = { url: preview.url, commit: preview.commit, at: now };
+  return true;
+}
+
+// The PushWorkflow params for the base preview, or undefined without a base commit.
+export function baseRequest(task: Task): BaseRequest | undefined {
+  if (task.baseCommit === undefined) return undefined;
+  return { kind: "base", taskId: task.id, repo: task.repo, commit: task.baseCommit };
+}
+
+function slotOf(task: Task, agent: string): AgentSlot | undefined {
+  return task.agents.find((candidate) => candidate.name === agent);
+}
+
+function finishIfAllDone(task: Task, now: string): void {
+  if (task.status === "running" && task.agents.every((slot) => isAgentDone(slot.status))) {
+    task.status = "finished";
+    task.finishedAt = now;
+  }
+}
+
+// True only for the change that made the task finished, so the room starts one judge run.
+export function justFinished(before: TaskStatus, task: Task): boolean {
+  return before !== "finished" && task.status === "finished";
+}
+
+// Saves the verdict once. Returns false, and leaves the task unchanged, when it already has one.
+export function saveVerdict(task: Task, verdict: Verdict): boolean {
+  if (task.verdict !== undefined) return false;
+  task.verdict = verdict;
+  return true;
+}
+
+// The Workflow params from task state and the claim board. Every agent slot is judged.
+export function judgeInput(task: Task, board: ClaimBoard): JudgeInput {
+  return {
+    taskId: task.id,
+    repo: task.repo,
+    task: task.prompt,
+    forks: task.agents.map((slot) => {
+      const claims = claimsOf(board, slot.name);
+      return {
+        agent: slot.name,
+        fork: slot.fork,
+        remote: slot.remote,
+        defaultBranch: slot.defaultBranch,
+        filesClaimed: claims.files,
+        filesShared: claims.shared,
+        ...(slot.endedAt === undefined ? {} : { endedAt: slot.endedAt }),
+      };
+    }),
+  };
+}
+
+// Why an agent may not use the claim board now, or undefined when it may.
+export function claimRefusal(task: Task | undefined, agent: string): { status: number; error: string } | undefined {
+  if (task === undefined) return { status: 404, error: "not found" };
+  if (task.status !== "ready" && task.status !== "running") return { status: 409, error: `Task is ${task.status}` };
+  const slot = slotOf(task, agent);
+  if (slot === undefined) return { status: 404, error: `No agent ${agent} in this task` };
+  if (isAgentDone(slot.status)) return { status: 409, error: `Agent ${agent} has ended` };
+  return undefined;
+}

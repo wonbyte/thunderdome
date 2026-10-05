@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Thunderdome race</title>
+  <link rel="stylesheet" href="/race.css">
+  <script type="module" src="/race.js"></script>
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="/races"><span class="brand-mark" aria-hidden="true"></span>Thunderdome</a>
+    <div class="pills">
+      <span id="status" class="pill status">loading</span>
+      <span id="live" class="pill live" data-live="off">offline</span>
+      <a id="replay-link" class="pill replay-link" href="#" hidden>▶ replay</a>
+    </div>
+    <time id="timer" class="timer" aria-label="Race time">--:--</time>
+  </header>
+
+  <p id="message" class="message" role="alert" hidden></p>
+
+  <div id="replay-bar" class="replay-bar" hidden>
+    <button id="replay-play" class="play" type="button" aria-label="Pause">❚❚</button>
+    <div class="scrub">
+      <input id="replay-range" type="range" aria-label="Race time">
+      <div id="replay-marks" class="marks" aria-hidden="true"></div>
+    </div>
+    <span id="replay-time" class="replay-time">00:00 / 00:00</span>
+    <div id="replay-speeds" class="speeds" role="group" aria-label="Speed"></div>
+  </div>
+
+  <main id="thunderdome" class="thunderdome">
+    <section class="task card">
+      <h2>Task</h2>
+      <p id="prompt" class="prompt">Loading the race…</p>
+    </section>
+
+    <section id="stage" class="stage" aria-label="Race stage">
+      <div class="sky" aria-hidden="true"><div class="motes"></div></div>
+      <div class="floor" aria-hidden="true"></div>
+      <svg id="beams" class="beams" aria-hidden="true"></svg>
+      <div id="core" class="core" role="img" aria-label="The repo core">
+        <div id="core-art" class="core-art"></div>
+        <span class="core-label">repo</span>
+      </div>
+      <div id="bots" class="bots"></div>
+      <div id="banner" class="banner" hidden></div>
+      <ol id="ticker" class="ticker" aria-live="polite"></ol>
+    </section>
+
+    <section class="card pipe" aria-labelledby="pipe-title">
+      <h2 id="pipe-title">Under the hood · Cloudflare</h2>
+      <ol id="pipeline" class="pipeline"></ol>
+    </section>
+
+    <section id="graph-panel" class="card graph-panel" aria-labelledby="graph-title" hidden>
+      <div class="graph-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></div>
+      <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Click a lane or a robot to see its code.</p>
+      <div id="graph" class="graph"></div>
+    </section>
+
+    <div class="cols">
+      <section class="card" aria-labelledby="claims-title">
+        <h2 id="claims-title">Claims</h2>
+        <p class="hint">Agents claim files before editing. <b>Clash</b>: two or more claimed the same file; the first claim keeps full claim points.</p>
+        <ul class="key" aria-label="Chip key">
+          <li><span class="chip own held">first</span>claimed first</li>
+          <li><span class="chip shared held">shared</span>claimed after another agent</li>
+          <li><span class="chip own">dim</span>released</li>
+        </ul>
+        <div id="claims" class="claims"></div>
+      </section>
+      <section class="card" aria-labelledby="log-title">
+        <h2 id="log-title">Live feed</h2>
+        <ol id="log" class="log" aria-live="polite" aria-relevant="additions"></ol>
+      </section>
+    </div>
+
+    <section class="card" aria-labelledby="previews-title">
+      <h2 id="previews-title">Previews</h2>
+      <div id="previews" class="previews"></div>
+    </section>
+
+    <section id="wipe-panel" class="card compare-panel" aria-labelledby="wipe-title" hidden>
+      <div class="compare-head">
+        <h2 id="wipe-title">Before → after</h2>
+        <div id="compare-modes" class="seg" role="group" aria-label="Compare mode">
+          <button type="button" data-mode="side" class="on" aria-pressed="true">Side by side</button>
+          <button type="button" data-mode="flip" aria-pressed="false">Flip</button>
+        </div>
+      </div>
+      <div id="compare" class="compare" data-mode="side">
+        <figure class="cmp before">
+          <figcaption><span class="cmp-tag">Before</span><span class="cmp-sub">the repo before the race</span></figcaption>
+          <div id="cmp-before" class="cmp-frame"></div>
+        </figure>
+        <div class="cmp-arrow" aria-hidden="true"><span><svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
+        <figure class="cmp after">
+          <figcaption><span id="cmp-after-tag" class="cmp-tag">After</span><span id="cmp-after-sub" class="cmp-sub"></span></figcaption>
+          <div id="cmp-after" class="cmp-frame"></div>
+        </figure>
+      </div>
+    </section>
+
+    <section id="result-panel" class="card result" aria-labelledby="result-title" hidden>
+      <h2 id="result-title">Result</h2>
+      <p id="decided" class="decided" hidden></p>
+      <div id="podium" class="podium"></div>
+      <ol id="scoreboard" class="scoreboard"></ol>
+      <ul class="legend" aria-hidden="true">
+        <li><span class="swatch part-tests"></span>tests</li>
+        <li><span class="swatch part-taskFit"></span>task fit</li>
+        <li><span class="swatch part-clarity"></span>clarity</li>
+        <li><span class="swatch part-claim"></span>claims</li>
+      </ul>
+      <details class="why-box" open>
+        <summary>Why the judge picked <span id="winner"></span></summary>
+        <pre id="why" class="why"></pre>
+      </details>
+    </section>
+  </main>
+</body>
+</html>

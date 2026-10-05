@@ -1,0 +1,14 @@
+node_modules/
+.wrangler/
+.dev.vars
+src/generated/
+dist/
+.env
+public/race.js
+public/races.js
+harness/*.log
+harness/.vitest.json
+harness/plan.json
+harness/report.md
+harness/stop-detail.txt
+public/play.js

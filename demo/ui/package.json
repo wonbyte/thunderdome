@@ -1,0 +1,10 @@
+{
+  "name": "thunderdome-ui-app",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.ts"
+  }
+}
