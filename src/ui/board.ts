@@ -27,7 +27,7 @@ export interface WireVerdict {
   winner: string | null;
   why: string;
   judgedAt?: string;
-  ship?: { status: string; commit?: string };
+  ship?: { status: string; commit?: string; resolve?: { chosen?: string } };
 }
 export interface WireTask {
   id: string;
@@ -287,7 +287,13 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
         winner,
         why,
         ...(judgedAt === undefined ? {} : { judgedAt }),
-        ...(ship === undefined ? {} : { ship: { status: ship.status, ...(ship.commit === undefined ? {} : { commit: ship.commit }) } }),
+        ...(ship === undefined ? {} : {
+              ship: {
+                status: ship.status,
+                ...(ship.commit === undefined ? {} : { commit: ship.commit }),
+                ...(ship.resolve?.chosen === undefined ? {} : { resolve: { chosen: ship.resolve.chosen } }),
+              },
+            }),
       };
       const next = board.task === undefined ? board : { ...board, task: { ...board.task, verdict } };
       return applyVerdict(next, verdict, now);

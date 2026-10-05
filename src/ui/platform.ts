@@ -112,7 +112,9 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
       const ship = event.verdict.ship;
       if (ship?.status === "merged" && event.verdict.winner !== null) {
         const commit = ship.commit === undefined ? "" : ` (${ship.commit.slice(0, 7)})`;
-        hits.push(hit("merge", `merged ${displayName(event.verdict.winner)}'s fork${commit}`, { agent: event.verdict.winner }));
+        const chosen = ship.resolve?.chosen;
+        const raced = chosen === undefined ? "" : `; ${displayName(chosen)} won the conflict race`;
+        hits.push(hit("merge", `merged ${displayName(event.verdict.winner)}'s fork${commit}${raced}`, { agent: event.verdict.winner }));
       }
       break;
     }

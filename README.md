@@ -160,6 +160,7 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 | Part | Cost per race | Notes |
 |---|---|---|
 | Agents (Anthropic API) | $0.43–0.55 | Reported by Claude Code per agent (`costUsd` on each agent). The `bugs` and `ui` demos cost $0.29–0.46 (PLAN.md, Day 9). |
+| Conflict race | about $0.10–0.30 | Only when the winner conflicts with a newer source: 3 short resolver runs. |
 | Judge (Workers AI, Clef) | small | 2 short questions per fork; billed as Workers AI usage. |
 | Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 3 agent containers busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
 | Artifacts | — | Not billed before Oct 15, 2026, when Artifacts billing starts. |
@@ -178,6 +179,7 @@ public demo costs at most about $5.50 a day in agent spend.
 | Public races (`/play`) | 10 per UTC day, 2 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; 15 minutes per fork step | `src/judge/judge.ts` |
+| Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
 | Diff the scorer reads | first 100,000 characters | `src/judge/scorer.ts` |
 | Diff saved for the page | 200,000 characters, cut at a whole line | `src/judge/diffs.ts` |
 | Push log per agent | newest 50 pushes | `src/room/task.ts` |
@@ -191,8 +193,9 @@ What it does not do yet:
   look of the page does not change the score.
 - When fixes score within about a point, claim order decides the race (10 vs 8 claim points).
   In our runs that happened often: 4 of the 5 `clash-full` races on Oct 5 were decided by claims.
-- The merge is a plain git merge into the source repo; a conflict stops the ship
-  (`ship.status: "conflict"`) and nothing is merged.
+- A conflict race ships only a resolution whose tests all pass. When none does, or a resolver
+  runs out of time, the ship stays `"conflict"` and nothing is merged. Resolvers see the conflict
+  and the task, not the other race that changed the source.
 - Agents run on Anthropic's API, so `ANTHROPIC_API_KEY` must have credits.
 
 ## Reference
@@ -354,6 +357,16 @@ picks a winner, and merges the winner's fork into the source repo's
 default branch. The merge commit holds the "why". Then it makes every fork read-only and saves
 the verdict on the task.
 
+If the source moved on during the race (another race shipped first, or someone pushed), the
+winner's merge can conflict. Then the ship starts a **conflict race**: a second sandbox clones
+the source, adds one `git worktree` per resolver (careful, fast, tester), starts the same merge in
+each, and runs Claude Code in all of them at once. Each resolution is checked (no conflict markers left, and
+a real merge of the source head and the winner), then tested and committed. The one that finished
+first with all its tests passing is pushed as the merge commit, with a line under the why on who resolved it.
+The other committed resolutions are kept on the source as `thunderdome/<task>/resolve-<resolver>`
+branches. The resolvers' sandbox has read tokens only; the chosen merge comes back to the ship sandbox,
+which holds the write token, as a git bundle.
+
 Read the verdict on the task once it is saved:
 
 ```sh
@@ -365,10 +378,17 @@ Pass: the task has a `verdict` with `winner`, `why`, `judgedAt` and `ship`. When
 `ship.status` is `"merged"`, `ship.commit` is the merge commit on the source repo. Its message is
 `Thunderdome: ship <winner>'s fork for task <id>`, then the why. `ship.locks` has one entry per
 fork, with `revoked` (the write tokens it revoked) or `error`. Other `ship.status` values:
-`"conflict"` (the merge did not apply; `ship.output` has git's output), `"no-winner"`, and
+`"conflict"` (the merge did not apply and no resolver passed every test; `ship.output` has git's
+output), `"no-winner"`, and
 `"error"` (`ship.error` says why). The verdict also has `scores` (per fork, in ranked order:
 `agent`, `total`, `eligible`, and `parts` with `tests`, `taskFit`, `clarity` and `claim`) and
 `decidedBy` (`"code"`, `"claims"` or `"close"`, missing with no winner or no eligible runner-up).
+After a conflict, `ship.resolve` has `files` (what conflicted), `attempts` (per resolver: `status`
+`"green"`, `"red"`, `"unresolved"` or `"failed"`, `seconds`, `tests`, `commit`, `costUsd`, `note`),
+`chosen`, `kept` (the branches that keep the other attempts) and `error` when the race itself failed.
+
+To stage a conflict on the live deploy, `node --env-file=.env scripts/conflict.mjs` runs two races
+at once on one source repo; the one that ships second conflicts (about $1).
 
 To follow the judge while it runs, or to see each fork's scores:
 
@@ -490,6 +510,7 @@ If git fails with 401, see open item 1 in [docs/api-notes.md](docs/api-notes.md)
 | `src/judge/JudgeWorkflow.ts` | Workflow: judge each fork, save its diff, decide, ship, save the verdict |
 | `src/judge/diffs.ts` | Clips a fork diff before it is saved (unit tested) |
 | `src/ship/ship.ts` | Merges the winner into the source repo and locks every fork (unit tested) |
+| `src/ship/resolve.ts` | The conflict race: resolvers in git worktrees, checked and tested; the first green resolution ships (unit tested) |
 | `src/push/push.ts` | Reads fork push events; preview name, config and URL (unit tested) |
 | `src/push/PushWorkflow.ts` | Workflow per push: record it in the TaskRoom, build the preview, save its URL |
 | `src/sandbox/thunderdomeApi.ts` | The Thunderdome API agents call from the sandbox (claims) |
@@ -511,6 +532,7 @@ If git fails with 401, see open item 1 in [docs/api-notes.md](docs/api-notes.md)
 | `public/*.html`, `public/race.css` | The pages, served as static assets |
 | `scripts/build-ui.mjs` | Bundles the page scripts into `public/race.js`, `races.js` and `play.js` |
 | `scripts/race.mjs` | Runs one demo race from the command line and prints what happened |
+| `scripts/conflict.mjs` | Runs two races on one source repo so the second ship starts a conflict race |
 | `demo/` | The demo apps (`bugs`, `ui`, `clash`) and their prompts |
 
 ## License

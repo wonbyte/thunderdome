@@ -1,5 +1,6 @@
 // Ships a task: merges the judge's winner into the source repo, then locks every fork.
 // Pure: git and token revocation are injected, so this runs in plain Node tests.
+import { RESOLVE_REF_PREFIX, type ConflictRequest, type RaceOutcome, type ResolveAttempt, type ResolverName } from "./resolve";
 
 export interface ShipRepo { name: string; remote: string; defaultBranch: string }
 export interface ShipFork extends ShipRepo { agent: string }
@@ -18,6 +19,21 @@ export interface ShipDeps {
   git(args: string[]): Promise<GitResult>;
   // Revokes every active write token of a repo by name; returns how many were revoked.
   revokeWriteTokens(repo: string): Promise<number>;
+  // When given, a merge conflict starts the conflict race (src/ship/resolve.ts) instead of stopping the ship.
+  resolver?: ShipResolver;
+}
+export interface ShipResolver {
+  race(req: ConflictRequest): Promise<RaceOutcome>;
+  // Puts the race's bundle where git in the source clone can fetch it; returns its path.
+  importBundle(bundle: string): Promise<string>;
+}
+// The conflict race behind a ship: which files conflicted, every attempt, and the one that shipped.
+export interface ShipResolve {
+  files: string[];
+  attempts: ResolveAttempt[];
+  chosen?: ResolverName;
+  kept?: string[]; // branches on the source repo that keep the other committed attempts
+  error?: string; // why the race itself failed
 }
 export type ShipStatus = "merged" | "conflict" | "no-winner" | "error";
 export interface ForkLock { agent: string; fork: string; revoked?: number; error?: string } // exactly one of revoked/error
@@ -27,6 +43,7 @@ export interface ShipResult {
   commit?: string; // merge commit hash, only when status is "merged"
   output?: string; // git stdout+stderr (last 4_000 chars) for "conflict" and failed git commands
   error?: string; // why status is "error"
+  resolve?: ShipResolve; // set when the winner conflicted with the source and a resolver was given
   locks: ForkLock[]; // one per input fork, same order
 }
 export const SHIP_OUTPUT_LIMIT = 4_000;
@@ -65,15 +82,92 @@ async function mergeFork(deps: ShipDeps, input: ShipInput, fork: ShipFork): Prom
   const message = mergeMessage(input.taskId, input.prompt, fork.agent, input.why);
   const merged = await deps.git(["merge", "--no-ff", "--cleanup=verbatim", "-m", message, "FETCH_HEAD"]);
   if (merged.exitCode !== 0) {
-    await abortMerge(deps);
     const output = gitOutput(merged);
     // Exit 1 (or CONFLICT lines) is a content conflict; anything else (e.g. 128) is a git failure.
-    if (isConflict(merged, output)) return { status: "conflict", output };
-    throw new GitFailure(`git merge exited with ${merged.exitCode}`, output);
+    if (!isConflict(merged, output)) {
+      await abortMerge(deps);
+      throw new GitFailure(`git merge exited with ${merged.exitCode}`, output);
+    }
+    const files = await unmergedFiles(deps);
+    await abortMerge(deps);
+    if (deps.resolver === undefined) return { status: "conflict", output };
+    return resolveConflict(deps, deps.resolver, input, fork, { files, output, message });
   }
   const head = await runOk(deps, ["rev-parse", "HEAD"]);
   await runOk(deps, ["push", "origin", `HEAD:refs/heads/${branch}`]);
   return { status: "merged", commit: head.stdout.trim() };
+}
+
+interface Conflict { files: string[]; output: string; message: string }
+
+// Races resolvers on the conflict and ships the chosen resolution. With none, the ship stays "conflict".
+async function resolveConflict(deps: ShipDeps, resolver: ShipResolver, input: ShipInput, fork: ShipFork, conflict: Conflict): Promise<MergeOutcome> {
+  const { files, output, message } = conflict;
+  const base = (await runOk(deps, ["rev-parse", "HEAD"])).stdout.trim();
+  const theirs = (await runOk(deps, ["rev-parse", "FETCH_HEAD"])).stdout.trim();
+  let race: RaceOutcome;
+  try {
+    race = await resolver.race({
+      taskId: input.taskId,
+      prompt: input.prompt,
+      winner: fork.agent,
+      winnerRemote: fork.remote,
+      winnerBranch: fork.defaultBranch,
+      base,
+      theirs,
+      message,
+      files,
+    });
+  } catch (err) {
+    return { status: "conflict", output, resolve: { files, attempts: [], error: errorText(err) } };
+  }
+  const resolve: ShipResolve = { files, attempts: race.attempts };
+  if (race.chosen === undefined || race.bundle === undefined) return { status: "conflict", output, resolve };
+  const chosen = race.attempts.find((a) => a.agent === race.chosen);
+  if (chosen?.commit === undefined) return { status: "conflict", output, resolve };
+  try {
+    const bundle = await resolver.importBundle(race.bundle);
+    await runOk(deps, ["fetch", bundle, `+${RESOLVE_REF_PREFIX}*:${RESOLVE_REF_PREFIX}*`]);
+    // The bundle came from another sandbox: ship only a merge of exactly this source head and the winner.
+    const parents = (await runOk(deps, ["rev-parse", `${chosen.commit}^1`, `${chosen.commit}^2`])).stdout.trim().split("\n");
+    if (parents[0] !== base || parents[1] !== theirs) {
+      return { status: "conflict", output, resolve: { ...resolve, error: `${chosen.agent}'s commit is not a merge of ${base} and ${theirs}` } };
+    }
+    // Rejected when the source moved again during the conflict race.
+    await runOk(deps, ["push", "origin", `${chosen.commit}:refs/heads/${input.source.defaultBranch}`]);
+  } catch (err) {
+    // Keep the race's attempts with the error, so their cost and outcome are not lost.
+    if (err instanceof GitFailure) return { status: "error", error: err.message, output: err.output, resolve };
+    return { status: "error", error: errorText(err), resolve };
+  }
+  resolve.chosen = chosen.agent;
+  const kept = await keepAttempts(deps, input.taskId, race.attempts, chosen.agent);
+  if (kept.length > 0) resolve.kept = kept;
+  return { status: "merged", commit: chosen.commit, resolve };
+}
+
+// Best effort: the other committed attempts stay on the source as branches, like the losing forks.
+async function keepAttempts(deps: ShipDeps, taskId: string, attempts: ResolveAttempt[], chosen: ResolverName): Promise<string[]> {
+  const others = attempts.filter((a) => a.agent !== chosen && a.commit !== undefined);
+  if (others.length === 0) return [];
+  const branches = others.map((a) => `thunderdome/${taskId}/resolve-${a.agent}`);
+  const refspecs = others.map((a, i) => `${RESOLVE_REF_PREFIX}${a.agent}:refs/heads/${branches[i] ?? ""}`);
+  try {
+    const pushed = await deps.git(["push", "origin", ...refspecs]);
+    return pushed.exitCode === 0 ? branches : [];
+  } catch {
+    return [];
+  }
+}
+
+// The conflicted paths while the merge is still in progress.
+async function unmergedFiles(deps: ShipDeps): Promise<string[]> {
+  try {
+    const result = await deps.git(["diff", "--name-only", "--diff-filter=U"]);
+    return result.exitCode === 0 ? result.stdout.split("\n").filter((f) => f !== "") : [];
+  } catch {
+    return [];
+  }
 }
 
 function isConflict(result: GitResult, output: string): boolean {

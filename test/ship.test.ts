@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { mergeMessage, shipTask, SHIP_OUTPUT_LIMIT, type GitResult, type ShipDeps, type ShipInput } from "../src/ship/ship";
+import type { ConflictRequest, RaceOutcome } from "../src/ship/resolve";
+import { mergeMessage, shipTask, SHIP_OUTPUT_LIMIT, type GitResult, type ShipDeps, type ShipInput, type ShipResolver } from "../src/ship/ship";
 
 const input: ShipInput = {
   taskId: "t1",
@@ -159,5 +160,135 @@ describe("shipTask", () => {
     expect(result.status).toBe("error");
     expect(calls).toEqual([]);
     expect(revoked).toEqual(["fork-alpha", "fork-beta"]);
+  });
+});
+
+describe("shipTask with a conflict race", () => {
+  const conflict: GitResult = { exitCode: 1, stdout: "CONFLICT (content): a.ts", stderr: "" };
+  const green: RaceOutcome = {
+    attempts: [
+      { agent: "careful", status: "red", seconds: 50, commit: "m-careful", tests: { passed: 1, total: 2 } },
+      { agent: "fast", status: "unresolved", seconds: 20, note: "conflict markers left in: a.ts" },
+      { agent: "tester", status: "green", seconds: 41, commit: "m-tester", tests: { passed: 2, total: 2 } },
+    ],
+    chosen: "tester",
+    bundle: "QlVORExF",
+  };
+
+  // Git answers for the ship clone: HEAD is the source head, FETCH_HEAD the winner's head.
+  function raceDeps(race: RaceOutcome | Error, parents = "base0\ntheir1\n", keepPush: GitResult = ok()) {
+    const calls: string[][] = [];
+    const requests: ConflictRequest[] = [];
+    const imported: string[] = [];
+    const resolver: ShipResolver = {
+      async race(req) {
+        requests.push(req);
+        if (race instanceof Error) throw race;
+        return race;
+      },
+      async importBundle(bundle) {
+        imported.push(bundle);
+        return "/workspace/resolve.bundle";
+      },
+    };
+    const deps: ShipDeps = {
+      async git(args) {
+        calls.push(args);
+        if (args[0] === "merge" && args[1] !== "--abort") return conflict;
+        if (args[0] === "diff") return ok("a.ts\n");
+        if (args[0] === "rev-parse") return ok(args[1] === "HEAD" ? "base0\n" : args[1] === "FETCH_HEAD" ? "their1\n" : parents);
+        if (args[0] === "push" && args[2]?.startsWith("refs/resolve/")) return keepPush;
+        return ok();
+      },
+      revokeWriteTokens: async () => 1,
+      resolver,
+    };
+    return { deps, calls, requests, imported };
+  }
+
+  it("races resolvers on the conflict and pushes the chosen merge commit", async () => {
+    const { deps, calls, requests, imported } = raceDeps(green);
+    const result = await shipTask(deps, input);
+    expect(requests).toEqual([
+      {
+        taskId: "t1",
+        prompt: "Add a feature",
+        winner: "beta",
+        winnerRemote: "https://git.test/git/thunderdome/fork-beta.git",
+        winnerBranch: "trunk",
+        base: "base0",
+        theirs: "their1",
+        message: mergeMessage("t1", "Add a feature", "beta", input.why),
+        files: ["a.ts"],
+      },
+    ]);
+    expect(imported).toEqual(["QlVORExF"]);
+    // The conflicted files are read before the merge is aborted.
+    const diffAt = calls.findIndex((c) => c[0] === "diff");
+    const abortAt = calls.findIndex((c) => c[0] === "merge" && c[1] === "--abort");
+    expect(diffAt).toBeGreaterThan(-1);
+    expect(diffAt).toBeLessThan(abortAt);
+    expect(calls).toContainEqual(["fetch", "/workspace/resolve.bundle", "+refs/resolve/*:refs/resolve/*"]);
+    expect(calls).toContainEqual(["push", "origin", "m-tester:refs/heads/main"]);
+    expect(calls).toContainEqual(["push", "origin", "refs/resolve/careful:refs/heads/thunderdome/t1/resolve-careful"]);
+    expect(result).toMatchObject({
+      status: "merged",
+      commit: "m-tester",
+      resolve: { files: ["a.ts"], chosen: "tester", kept: ["thunderdome/t1/resolve-careful"], attempts: green.attempts },
+    });
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+
+  it("stays \"conflict\" with the attempts when no resolution is green", async () => {
+    const red: RaceOutcome = { attempts: green.attempts.map((a) => ({ ...a, status: "red" as const })) };
+    const { deps, calls } = raceDeps(red);
+    const result = await shipTask(deps, input);
+    expect(result.status).toBe("conflict");
+    expect(result.output).toContain("CONFLICT");
+    expect(result.resolve).toEqual({ files: ["a.ts"], attempts: red.attempts });
+    expect(calls.some((c) => c[0] === "push")).toBe(false);
+  });
+
+  it("stays \"conflict\" when the race itself fails, and still locks every fork", async () => {
+    const { deps, calls } = raceDeps(new Error("no sandbox"));
+    const result = await shipTask(deps, input);
+    expect(result).toMatchObject({ status: "conflict", resolve: { files: ["a.ts"], attempts: [], error: "no sandbox" } });
+    expect(calls.some((c) => c[0] === "push")).toBe(false);
+    expect(result.locks).toHaveLength(2);
+  });
+
+  it("refuses a bundled commit that is not a merge of the source head and the winner", async () => {
+    const { deps, calls } = raceDeps(green, "elsewhere\ntheir1\n");
+    const result = await shipTask(deps, input);
+    expect(result.status).toBe("conflict");
+    expect(result.resolve?.error).toContain("not a merge of base0 and their1");
+    expect(calls.some((c) => c[0] === "push")).toBe(false);
+  });
+
+  it("keeps the attempts when the push is rejected because the source moved again", async () => {
+    const { deps } = raceDeps(green);
+    const git = deps.git;
+    deps.git = async (args) => (args[0] === "push" && args[2] === "m-tester:refs/heads/main" ? { exitCode: 1, stdout: "", stderr: "non-fast-forward" } : git(args));
+    const result = await shipTask(deps, input);
+    expect(result).toMatchObject({ status: "error", resolve: { files: ["a.ts"], attempts: green.attempts } });
+    expect(result.output).toContain("non-fast-forward");
+    expect(result.resolve?.chosen).toBeUndefined();
+  });
+
+  it("keeps the attempts when the push is rejected because the source moved again", async () => {
+    const { deps } = raceDeps(green);
+    const git = deps.git;
+    deps.git = async (args) => (args[0] === "push" && args[2] === "m-tester:refs/heads/main" ? { exitCode: 1, stdout: "", stderr: "non-fast-forward" } : git(args));
+    const result = await shipTask(deps, input);
+    expect(result).toMatchObject({ status: "error", resolve: { files: ["a.ts"], attempts: green.attempts } });
+    expect(result.output).toContain("non-fast-forward");
+    expect(result.resolve?.chosen).toBeUndefined();
+  });
+
+  it("ships even when keeping the other attempts fails", async () => {
+    const { deps } = raceDeps(green, undefined, { exitCode: 1, stdout: "", stderr: "rejected" });
+    const result = await shipTask(deps, input);
+    expect(result.status).toBe("merged");
+    expect(result.resolve?.kept).toBeUndefined();
   });
 });

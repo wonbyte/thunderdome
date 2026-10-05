@@ -7,7 +7,8 @@ import type { VerdictScore } from "../room/task";
 import { CommandError, REPO_DIR } from "../sandbox/ThunderdomeSandbox";
 import type { OutboundProps } from "../sandbox/outbound";
 import { gitRepoPath } from "../sandbox/policy";
-import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResult } from "../ship/ship";
+import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
+import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { clipDiff } from "./diffs";
 import {
   decide,
@@ -31,10 +32,13 @@ const FORK_STEP = {
   retries: { limit: 2, delay: "10 seconds", backoff: "exponential" },
   timeout: `${FORK_STEP_TIMEOUT_S} seconds`,
 } as const;
+// Long enough for a conflict race: clones, resolvers (RESOLVE_TIME_S), their tests, then the push.
 const SHIP_STEP = {
   retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
-  timeout: "10 minutes",
+  timeout: "20 minutes",
 } as const;
+// Base64 written per exec call, under the kernel's limit for one argument.
+const BUNDLE_CHUNK = 64 * 1_024;
 const TOKEN_TTL_S = 3_600;
 const LOG_LIMIT = 200; // commits read from each repo to find a fork's starting point
 // The merge commit names Thunderdome, not an agent.
@@ -128,7 +132,11 @@ async function judgeInSandbox(env: Env, input: JudgeInput, fork: JudgeFork): Pro
 // Merges the winner into the source repo and locks every fork. shipTask never throws, so a
 // failed source lookup or clone becomes status "error" and the forks are still locked.
 async function shipInSandbox(env: Env, input: JudgeInput, result: JudgeResult): Promise<ShipResult> {
-  const deps = (git: ShipDeps["git"]): ShipDeps => ({ git, revokeWriteTokens: (name) => revokeWriteTokens(env.ARTIFACTS, name) });
+  const deps = (git: ShipDeps["git"], resolver?: ShipResolver): ShipDeps => ({
+    git,
+    revokeWriteTokens: (name) => revokeWriteTokens(env.ARTIFACTS, name),
+    ...(resolver === undefined ? {} : { resolver }),
+  });
   let found: { repo: ArtifactsRepo; info: ShipRepo };
   try {
     found = await sourceRepo(env.ARTIFACTS, input.repo);
@@ -139,10 +147,34 @@ async function shipInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   using source = found.repo;
   const ship = shipInput(input, result, found.info);
   const git = shipGit(env, source, ship);
+  const resolver: ShipResolver = { race: (req) => raceInSandbox(env, source, ship, req), importBundle: (bundle) => git.importBundle(bundle) };
   try {
-    return await shipTask(deps(git.run), ship);
+    return await shipTask(deps(git.run, resolver), ship);
   } finally {
     await git.close();
+  }
+}
+
+// The conflict race runs in its own sandbox with read tokens and the model API. The source write
+// token stays in the ship sandbox, so no resolver can push; the result comes back as a bundle.
+async function raceInSandbox(env: Env, source: ArtifactsRepo, ship: ShipInput, req: ConflictRequest): Promise<RaceOutcome> {
+  const winner = ship.forks.find((f) => f.agent === req.winner);
+  if (winner === undefined) throw new Error(`No fork for winner ${req.winner}`);
+  const sourceRead = (await source.createToken("read", TOKEN_TTL_S)).plaintext;
+  const winnerRead = await readToken(env.ARTIFACTS, winner.name);
+  const props: OutboundProps = {
+    gitHost: new URL(ship.source.remote).hostname,
+    gitToken: sourceRead,
+    repoTokens: { [repoPath(ship.source.remote)]: sourceRead, [repoPath(winner.remote)]: winnerRead },
+    modelApi: true,
+  };
+  const box = env.SANDBOX.getByName(`resolve-${ship.taskId}`);
+  try {
+    await retry(() => box.clone(props, ship.source.remote), { attempts: 10, delayMs: 2_000, shouldRetry: () => true });
+    const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e), now: () => Date.now(), model: env.AGENT_MODEL ?? "" };
+    return await raceConflict(deps, req);
+  } finally {
+    await box.stop().catch((cause: unknown) => console.error({ event: "resolve.stop_failed", error: String(cause) }));
   }
 }
 
@@ -170,7 +202,11 @@ function shipInput(input: JudgeInput, result: JudgeResult, source: ShipRepo): Sh
 }
 
 // Git in a clone of the source, made on the first call. With no winner nothing is made.
-function shipGit(env: Env, source: ArtifactsRepo, ship: ShipInput): { run: ShipDeps["git"]; close(): Promise<void> } {
+function shipGit(
+  env: Env,
+  source: ArtifactsRepo,
+  ship: ShipInput,
+): { run: ShipDeps["git"]; importBundle(bundle: string): Promise<string>; close(): Promise<void> } {
   let sandbox: Sandbox | undefined;
   let writeTokenId: string | undefined;
   let opened: Promise<Sandbox> | undefined;
@@ -194,6 +230,18 @@ function shipGit(env: Env, source: ArtifactsRepo, ship: ShipInput): { run: ShipD
       opened ??= open();
       const box = await opened;
       return box.exec(["git", ...args], REPO_DIR, SHIP_IDENTITY);
+    },
+    // Writes the base64 bundle in chunks, then decodes it next to the clone.
+    async importBundle(bundle) {
+      opened ??= open();
+      const box = await opened;
+      const b64 = `${BUNDLE_PATH}.b64`;
+      await mustIn(box, ["rm", "-f", b64, BUNDLE_PATH]);
+      for (let i = 0; i < bundle.length; i += BUNDLE_CHUNK) {
+        await mustIn(box, ["/bin/sh", "-c", 'printf %s "$1" >> "$2"', "chunk", bundle.slice(i, i + BUNDLE_CHUNK), b64]);
+      }
+      await mustIn(box, ["/bin/sh", "-c", 'base64 -d "$1" > "$2"', "decode", b64, BUNDLE_PATH]);
+      return BUNDLE_PATH;
     },
     // Best effort: a failed stop or revoke must not lose the ship result.
     async close() {
@@ -249,6 +297,11 @@ async function saveForkDiff(env: Env, taskId: string, agent: string, diff: strin
   } catch (cause) {
     console.error({ event: "judge.diff_save_failed", taskId, agent, error: String(cause) });
   }
+}
+
+async function mustIn(sandbox: Sandbox, argv: string[]): Promise<void> {
+  const result = await sandbox.exec(argv, "/workspace");
+  if (result.exitCode !== 0) throw new CommandError(argv, result);
 }
 
 async function must(sandbox: Sandbox, argv: string[]): Promise<string> {
