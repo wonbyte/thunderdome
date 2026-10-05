@@ -208,6 +208,8 @@ export interface Fighter {
   lastStep?: string;
   bubble?: string; // short label of the newest step, for the speech bubble
   commits: number;
+  edited?: boolean; // the agent has changed a file
+  tested?: boolean; // the agent has run the tests
   preview?: WirePreview;
   files: string[]; // files held now, claim order, no duplicates
   clashFile?: string;
@@ -234,6 +236,35 @@ export interface Board {
 
 export function emptyBoard(taskId: string): Board {
   return { taskId, fighters: [], grid: { files: [], cells: {}, clashes: [] }, claimed: { files: [], cells: {}, clashes: [] }, ended: false, lastSeq: 0 };
+}
+
+// The steps of an agent's race, in order; the squares under each robot.
+export const PROGRESS_STEPS = ["started", "claimed", "edited", "tested", "pushed", "won"] as const;
+export type ProgressStep = (typeof PROGRESS_STEPS)[number];
+export const PROGRESS_LABELS: Record<ProgressStep, string> = {
+  started: "sandbox up",
+  claimed: "claimed files",
+  edited: "edited code",
+  tested: "ran the tests",
+  pushed: "pushed",
+  won: "won the race",
+};
+
+// The steps this agent has reached. The winner has every step: the full bar is the win.
+export function progressOf(board: Board, f: Fighter): Set<ProgressStep> {
+  if (board.winner === f.agent) return new Set(PROGRESS_STEPS);
+  const reached = new Set<ProgressStep>();
+  // A step means the sandbox already runs, even before the status says so. "failed" alone does
+  // not: the sandbox may never have started.
+  const ran = f.status === "running" || f.status === "done" || f.status === "timeout";
+  if (ran || f.lastStep !== undefined) reached.add("started");
+  const claimed = board.claimed.files.some((file) => board.claimed.cells[file]?.[f.agent] !== undefined);
+  if (claimed || f.files.length > 0) reached.add("claimed");
+  // A push carries changed code, even when the agent edited with shell commands.
+  if (f.edited === true || f.commits > 0) reached.add("edited");
+  if (f.tested === true) reached.add("tested");
+  if (f.commits > 0) reached.add("pushed");
+  return reached;
 }
 
 // Built by replaying events, so a page that loads late sees the same board as one that watched live.
@@ -381,11 +412,14 @@ function applySteps(board: Board, steps: WireStep[], now: number): Board {
     if (step.seq <= next.lastSeq) continue;
     const lastStep = clipStep(step.text);
     const bubble = bubbleFor(step);
+    const action = actionForStep(step);
     const current = next;
     next = withFighter({ ...current, lastSeq: step.seq }, step.agent, (f) => ({
-      ...(isActive(current, f) ? act(f, actionForStep(step), now) : f),
+      ...(isActive(current, f) ? act(f, action, now) : f),
       lastStep,
       ...(bubble === undefined ? {} : { bubble }),
+      ...(action === "hammer" ? { edited: true } : {}),
+      ...(action === "charge" ? { tested: true } : {}),
     }));
   }
   return next;

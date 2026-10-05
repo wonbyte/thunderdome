@@ -16,6 +16,9 @@ import {
   emptyBoard,
   FALLBACK_COLOR,
   initBoard,
+  PROGRESS_LABELS,
+  PROGRESS_STEPS,
+  progressOf,
   STEP_TEXT_MAX,
   type Board,
   type BoardEvent,
@@ -355,5 +358,43 @@ describe("U14 decided: the page shows the judge's deciding line", () => {
     expect(decidedLine(why)).toBe("Decided by claims: the fixes were within 0.55 points on code; fast claimed the files first (10 vs 8 claim points).");
     expect(decidedLine("Winner: a (1/100)")).toBeUndefined();
     expect(decidedLine(undefined)).toBeUndefined();
+  });
+});
+
+describe("progress squares", () => {
+  const reached = (board: Board, agent: string) => [...progressOf(board, fighter(board, agent))];
+
+  it("lights one step at a time as the agent works, and only the steps it reached", () => {
+    let board = initBoard(wireTask("starting"), [], { active: [], history: [] }, now);
+    expect(reached(board, "careful")).toEqual([]);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "careful", steps: [step(1, "careful", "init", "started")] }, now);
+    expect(reached(board, "careful")).toEqual(["started"]);
+    board = applyEvent(board, claim("careful", ["src/a.ts"], [], []), now);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "careful", steps: [step(2, "careful", "tool", "Edit src/a.ts")] }, now);
+    expect(reached(board, "careful")).toEqual(["started", "claimed", "edited"]);
+    // fast pushed without running the tests: its "ran the tests" square stays dark.
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "fast", steps: [step(3, "fast", "tool", "Write src/b.ts")] }, now);
+    board = applyEvent(board, { kind: "push", taskId: id, agent: "fast", push: { commits: 1 } }, now);
+    expect(reached(board, "fast")).toEqual(["started", "edited", "pushed"]);
+    // tester edited with sed only, then pushed: the push counts as edited code.
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "tester", steps: [step(4, "tester", "tool", "Bash sed -i s/a/b/ src/c.ts")] }, now);
+    board = applyEvent(board, { kind: "push", taskId: id, agent: "tester", push: { commits: 1 } }, now);
+    expect(reached(board, "tester")).toEqual(["started", "edited", "pushed"]);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "careful", steps: [step(5, "careful", "tool", "Bash npm test")] }, now);
+    board = applyEvent(board, { kind: "push", taskId: id, agent: "careful", push: { commits: 2 } }, now);
+    expect(reached(board, "careful")).toEqual(["started", "claimed", "edited", "tested", "pushed"]);
+  });
+
+  it("does not light \"sandbox up\" for an agent that failed before it ever ran", () => {
+    const board = initBoard(wireTask("failed"), [], { active: [], history: [] }, now);
+    expect(reached(board, "careful")).toEqual([]);
+  });
+
+  it("fills the winner's bar completely, and only the winner's", () => {
+    let board = initBoard(wireTask("done"), [step(1, "careful", "init", "started")], { active: [], history: [] }, now);
+    board = applyEvent(board, { kind: "verdict", taskId: id, verdict: { winner: "fast", why: "Fast won." } }, later);
+    expect(reached(board, "fast")).toEqual([...PROGRESS_STEPS]);
+    expect(reached(board, "careful")).toEqual(["started"]);
+    expect(PROGRESS_STEPS.map((s) => PROGRESS_LABELS[s])).toEqual(["sandbox up", "claimed files", "edited code", "ran the tests", "pushed", "won the race"]);
   });
 });

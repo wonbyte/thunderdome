@@ -206,7 +206,12 @@ h2 {
 .pips { display: inline-flex; gap: 3px; align-items: center; }
 .pips i { width: 7px; height: 7px; border-radius: 2px; background: #ffffff1a; }
 .pips i.on { background: var(--color); box-shadow: 0 0 6px var(--color); }
-.pips b { font-weight: 700; color: var(--text); margin-left: 2px; }
+.pips i { transition: background .3s, box-shadow .3s; }
+.pips i.new { animation: pip-on .5s var(--ease); }
+.pips.full i { background: var(--color); box-shadow: 0 0 8px var(--color); animation: pip-win 1.6s ease-in-out infinite; animation-delay: calc(var(--i, 0) * .08s); }
+@keyframes pip-on { from { transform: scale(1.8); } to { transform: none; } }
+@keyframes pip-win { 0%, 100% { filter: none; } 50% { filter: brightness(1.6); } }
+@media (prefers-reduced-motion: reduce) { .pips i, .pips.full i { animation: none; } }
 .state { text-transform: uppercase; letter-spacing: .1em; font-weight: 700; font-size: 10px; }
 
 /* effects layer */

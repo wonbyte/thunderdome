@@ -1,7 +1,7 @@
 // The race page: follows a race live (WebSocket) or replays a recorded one (?replay), and draws
 // the board, the Cloudflare pipeline under it, the judging and the before/after compare.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
-import { applyEvent, applyScores, bubbleFor, decidedLine, displayName, initBoard, whyWithNames } from "./board";
+import { applyEvent, applyScores, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
 import type { Action, Board, BoardEvent, Fighter, WireClaimBoard, WirePreview, WireScore, WireStep, WireTask } from "./board";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
@@ -38,7 +38,6 @@ function scoreParts(parts: { look?: number }): { shown: Part[]; max: Record<Part
 const MOTES = 28;
 const SPARKS = 6;
 const CONFETTI = 14;
-const MAX_PIPS = 6;
 const TOAST_MS = 2600;
 const TICKER_MAX = 3;
 const TICKER_MS = 5200;
@@ -89,6 +88,7 @@ interface BotView {
   action?: Action;
   actionAt?: number;
   bubbleKey?: string;
+  pipsKey?: string;
 }
 interface PreviewView { root: HTMLElement; frame: HTMLElement; host: HTMLElement; commit: HTMLElement; link: HTMLAnchorElement; iframe?: HTMLIFrameElement; shown?: string }
 interface Slot { key: string; label: string; color?: string; preview?: WirePreview }
@@ -852,10 +852,24 @@ function updateBot(b: Board, f: Fighter, index: number): void {
     view.bubbleText.textContent = bubble;
     kick(view.bubble, "pop");
   }
-  const pips = Math.min(f.commits, MAX_PIPS);
-  view.pips.replaceChildren(...Array.from({ length: MAX_PIPS }, (_, i) => el("i", i < pips ? "on" : undefined)));
-  if (f.commits > MAX_PIPS) view.pips.append(el("b", undefined, `+${f.commits - MAX_PIPS}`));
-  view.pips.title = `${f.commits} commit${f.commits === 1 ? "" : "s"}`;
+  // One square per step of the race; the winner's bar fills completely.
+  const reached = progressOf(b, f);
+  const key = PROGRESS_STEPS.map((step) => (reached.has(step) ? "1" : "0")).join("");
+  if (key !== view.pipsKey) {
+    const before = view.pipsKey;
+    view.pipsKey = key;
+    view.pips.replaceChildren(...PROGRESS_STEPS.map((step, i) => {
+      // Only a square that just lit up pops; the others were already on.
+      const lit = reached.has(step);
+      const pip = el("i", lit ? (before !== undefined && before[i] !== "1" ? "on new" : "on") : undefined);
+      pip.title = PROGRESS_LABELS[step];
+      pip.style.setProperty("--i", String(i));
+      return pip;
+    }));
+    view.pips.classList.toggle("full", reached.size === PROGRESS_STEPS.length);
+  }
+  const done = PROGRESS_STEPS.filter((step) => reached.has(step)).map((step) => PROGRESS_LABELS[step]);
+  view.pips.setAttribute("aria-label", done.length === 0 ? "not started" : done.join(", "));
   view.state.textContent = f.score === undefined ? LABELS[f.action] : `#${f.score.place}`;
   root.setAttribute("aria-label", `${displayName(f.agent)}: ${LABELS[f.action]}, ${f.commits} commits`);
 }
