@@ -977,28 +977,122 @@ function renderBanner(b: Board, final: boolean): void {
 }
 
 // ---- the Cloudflare pipeline ----
+// Each product is a small server unit: an LCD count, activity LEDs, a fan and a terminal line.
+// A hit sends a packet along the bus from the stage before it, then the unit works for a moment.
 
-interface StageView { root: HTMLElement; count: HTMLElement; last: HTMLElement }
+interface StageView { root: HTMLElement; count: HTMLElement; line: HTMLElement; text: string; busy?: ReturnType<typeof setTimeout> }
 const stageViews = new Map<Stage, StageView>();
+const BUSY_MS = 3_200;
+const PACKET_MS = 650;
+const TYPE_MS = 18; // per character
+const LEDS = 4;
+
+const svgNs = "http://www.w3.org/2000/svg";
+
+// A four-blade fan; CSS spins it.
+function fanSvg(): SVGSVGElement {
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", "-10 -10 20 20");
+  svg.setAttribute("class", "fan");
+  svg.setAttribute("aria-hidden", "true");
+  const ring = document.createElementNS(svgNs, "circle");
+  ring.setAttribute("r", "9");
+  ring.setAttribute("class", "fan-ring");
+  svg.append(ring);
+  const blades = document.createElementNS(svgNs, "g");
+  blades.setAttribute("class", "fan-blades");
+  for (let i = 0; i < 4; i++) {
+    const blade = document.createElementNS(svgNs, "path");
+    blade.setAttribute("d", "M0 0 C2 -3 2 -7 0 -7.5 C-2.5 -7 -2 -3 0 0 Z");
+    blade.setAttribute("transform", `rotate(${i * 90})`);
+    blades.append(blade);
+  }
+  const hub = document.createElementNS(svgNs, "circle");
+  hub.setAttribute("r", "1.8");
+  hub.setAttribute("class", "fan-hub");
+  svg.append(blades, hub);
+  return svg;
+}
 
 function buildPipeline(): void {
   const list = byId("pipeline");
   list.replaceChildren(
     ...STAGES.map((stage, i) => {
-      const item = el("li", "node");
+      const item = el("li", "unit");
       item.dataset.stage = stage;
       item.style.setProperty("--n", String(i));
       const info = STAGE_INFO[stage];
-      const head = el("div", "node-head");
-      head.append(el("span", "node-dot"), el("span", "product", info.product));
-      const count = el("span", "count", "0");
-      head.append(count);
-      const last = el("span", "last", info.role);
-      item.append(head, last);
-      stageViews.set(stage, { root: item, count, last });
+      const top = el("div", "unit-top");
+      const count = el("span", "count lcd", "00");
+      top.append(el("span", "product", info.product), count);
+      const face = el("div", "unit-face");
+      const leds = el("span", "leds");
+      leds.append(el("i", "led power"));
+      for (let k = 1; k < LEDS; k++) {
+        const led = el("i", "led act");
+        led.style.setProperty("--k", String(k));
+        leds.append(led);
+      }
+      face.append(leds, el("span", "vents"), fanSvg());
+      const screen = el("div", "screen");
+      const line = el("span", "line", info.role);
+      screen.append(el("span", "prompt", ">"), line, el("span", "caret"));
+      item.append(top, face, screen);
+      stageViews.set(stage, { root: item, count, line, text: info.role });
       return item;
     }),
   );
+}
+
+// Types a new terminal line; an older typing is cut short by the newer one.
+function typeLine(view: StageView, text: string): void {
+  if (text === view.text) return;
+  view.text = text;
+  if (reducedMotion()) {
+    view.line.textContent = text;
+    return;
+  }
+  const start = performance.now();
+  const step = (): void => {
+    if (view.text !== text) return;
+    const n = Math.min(text.length, Math.ceil((performance.now() - start) / TYPE_MS));
+    view.line.textContent = text.slice(0, n);
+    if (n < text.length) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+// The unit works for a moment: fast fan, flickering LEDs.
+function setBusy(view: StageView): void {
+  view.root.classList.add("busy");
+  if (view.busy !== undefined) clearTimeout(view.busy);
+  view.busy = setTimeout(() => view.root.classList.remove("busy"), BUSY_MS);
+}
+
+// A packet along the bus from the stage before (or the bus start) into this unit.
+function sendPacket(stage: Stage): void {
+  if (reducedMotion()) return;
+  const list = byId("pipeline");
+  const to = stageViews.get(stage)?.root;
+  if (to === undefined || to.offsetParent === null) return;
+  const index = STAGES.indexOf(stage);
+  const from = index > 0 ? stageViews.get(STAGES[index - 1]!)?.root : undefined;
+  const y = (n: HTMLElement): number => n.offsetTop + n.offsetHeight + 7;
+  const x = (n: HTMLElement): number => n.offsetLeft + n.offsetWidth / 2;
+  const startX = from === undefined ? 0 : x(from);
+  const startY = from === undefined ? y(to) : y(from);
+  const packet = el("i", "packet");
+  list.append(packet);
+  const anim = packet.animate(
+    [
+      { transform: `translate(${startX}px, ${startY}px) scale(.6)`, opacity: 0 },
+      { transform: `translate(${startX}px, ${startY}px) scale(1)`, opacity: 1, offset: 0.1 },
+      { transform: `translate(${x(to)}px, ${y(to)}px) scale(1)`, opacity: 1, offset: 0.85 },
+      { transform: `translate(${x(to)}px, ${y(to) - 10}px) scale(.4)`, opacity: 0 },
+    ],
+    { duration: PACKET_MS, easing: "cubic-bezier(.5,0,.3,1)" },
+  );
+  anim.onfinish = () => packet.remove();
 }
 
 function renderPipeline(hits: PlatformHit[]): void {
@@ -1006,14 +1100,28 @@ function renderPipeline(hits: PlatformHit[]): void {
     const view = stageViews.get(stage);
     if (view === undefined) continue;
     const count = platform.counts[stage];
-    view.count.textContent = String(count);
+    view.count.textContent = String(Math.min(count, 99)).padStart(2, "0");
     view.root.classList.toggle("used", count > 0);
+    // Seeking back can power a unit down while it still works; it stops at once.
+    if (count === 0 && view.busy !== undefined) {
+      clearTimeout(view.busy);
+      view.busy = undefined;
+      view.root.classList.remove("busy");
+    }
     const last = platform.last[stage];
-    view.last.textContent = last === undefined ? STAGE_INFO[stage].role : `${last.text}${last.ms === undefined ? "" : ` · ${formatMs(last.ms)}`}`;
+    typeLine(view, last === undefined ? STAGE_INFO[stage].role : `${last.text}${last.ms === undefined ? "" : ` · ${formatMs(last.ms)}`}`);
   }
   for (const h of hits) {
     const view = stageViews.get(h.stage);
-    if (view !== undefined) kick(view.root, "ping");
+    if (view !== undefined) {
+      sendPacket(h.stage);
+      // The unit lights up as the packet lands.
+      setTimeout(() => {
+        if (!view.root.classList.contains("used")) return; // a seek back powered it down meanwhile
+        kick(view.root, "ping");
+        setBusy(view);
+      }, reducedMotion() ? 0 : PACKET_MS * 0.8);
+    }
     addTicker(h);
   }
 }

@@ -571,35 +571,88 @@ h2 {
 .tick em { font: 700 11px var(--mono); font-style: normal; color: var(--green); }
 .tick.gone { opacity: 0; transform: translateX(-12px); }
 
-/* ---------- pipeline ---------- */
+/* ---------- pipeline: a row of server units on a data bus ---------- */
 .pipe h2 { color: #f6821f; }
 .pipeline {
-  list-style: none; margin: 0; padding: 0; display: grid; gap: 10px;
-  grid-template-columns: repeat(8, minmax(0, 1fr)); counter-reset: n;
+  position: relative; list-style: none; margin: 0; padding: 0 0 18px; display: grid; gap: 10px;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
 }
-.node {
-  position: relative; padding: 10px 10px 9px; border-radius: 12px; min-width: 0;
-  background: #ffffff05; border: 1px solid var(--line); transition: border-color .4s, background .4s;
+/* The bus under the units; packets ride along it. */
+.pipeline::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 6px; height: 3px; border-radius: 2px;
+  background: repeating-linear-gradient(90deg, #2a3045 0 10px, #1d2232 10px 14px);
 }
-.node + .node::before { /* the wire between stages */
-  content: ""; position: absolute; left: -11px; top: 21px; width: 10px; height: 2px; background: var(--line);
+.unit {
+  position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0;
+  padding: 8px 9px 9px; border-radius: 8px;
+  background:
+    radial-gradient(circle at 5px 5px, #4a5168 1.6px, transparent 2.2px),
+    radial-gradient(circle at calc(100% - 5px) 5px, #4a5168 1.6px, transparent 2.2px),
+    radial-gradient(circle at 5px calc(100% - 5px), #4a5168 1.6px, transparent 2.2px),
+    radial-gradient(circle at calc(100% - 5px) calc(100% - 5px), #4a5168 1.6px, transparent 2.2px),
+    linear-gradient(180deg, #1f2434, #141824);
+  border: 1px solid #2c3247; box-shadow: inset 0 1px 0 #ffffff12, 0 4px 10px #0006;
+  transition: border-color .4s, box-shadow .4s;
 }
-.node.used { border-color: #f6821f44; background: #f6821f0a; }
-.node.used + .node::before, .node.used::before { background: #f6821f66; }
-.node-head { display: flex; align-items: flex-start; gap: 6px; }
-.node-head .node-dot { margin-top: 4px; }
-.node-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; background: #39405a; }
-.node.used .node-dot { background: #f6821f; box-shadow: 0 0 8px #f6821f; animation: blink 2.4s ease-in-out infinite; animation-delay: calc(var(--n) * -.3s); }
-.product { font-weight: 800; font-size: 12px; line-height: 1.25; min-width: 0; }
-.count { margin-left: auto; font: 700 11px var(--mono); color: var(--dim); }
-.node.used .count { color: #f6821f; }
-.last {
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  margin-top: 4px; font-size: 11px; line-height: 1.35; color: var(--faint);
+/* A short cable from each unit down to the bus. */
+.unit::after {
+  content: ""; position: absolute; left: 50%; bottom: -12px; width: 2px; height: 11px; transform: translateX(-50%);
+  background: #2a3045;
 }
-.node.used .last { color: #c3c8d8; }
-.node.ping { animation: ping .9s var(--ease); }
-.node.ping .node-dot { animation: none; transform: scale(1.8); transition: transform .5s; }
+.unit.used { border-color: #f6821f55; }
+.unit.used::after { background: #f6821f77; }
+.unit.busy { box-shadow: inset 0 1px 0 #ffffff12, 0 0 16px #f6821f40, 0 4px 10px #0006; }
+.unit-top { display: flex; align-items: flex-start; gap: 6px; padding: 0 4px; min-height: 28px; }
+.product { font-weight: 800; font-size: 11.5px; line-height: 1.2; min-width: 0; color: #c9cede; letter-spacing: .01em; }
+.unit.used .product { color: #fff; }
+.lcd {
+  margin-left: auto; flex: none; padding: 1px 4px; border-radius: 3px; background: #0b0d0a; border: 1px solid #262b1e;
+  font: 700 11px var(--mono); letter-spacing: .08em; color: #3a3324;
+}
+.unit.used .lcd { color: #ffae4a; text-shadow: 0 0 6px #f6821f; }
+.unit-face { display: flex; align-items: center; gap: 6px; padding: 0 4px; height: 18px; }
+.leds { display: flex; gap: 3px; flex: none; }
+.led { width: 5px; height: 5px; border-radius: 1px; background: #2a2f40; }
+.unit.used .led.power { background: #3ddc97; box-shadow: 0 0 5px #3ddc97; }
+.unit.used .led.act { background: #6b3f1a; }
+.unit.busy .led.act { animation: led-flicker .32s steps(2, jump-none) infinite; animation-delay: calc(var(--k) * -.11s); }
+.vents {
+  flex: 1; height: 10px; border-radius: 2px; opacity: .8;
+  background: repeating-linear-gradient(90deg, #0d1018 0 2px, transparent 2px 5px);
+}
+.fan { flex: none; width: 18px; height: 18px; }
+.fan-ring { fill: #0d1018; stroke: #343a50; stroke-width: 1.2; }
+.fan-blades { fill: #3a4058; transform-origin: 0 0; }
+.fan-hub { fill: #565e78; }
+.unit.used .fan-blades { fill: #7a6248; animation: spin 2.6s linear infinite; }
+.unit.busy .fan-blades { fill: #f6821f; animation-duration: .35s; }
+.screen {
+  position: relative; display: flex; align-items: flex-start; gap: 4px; min-height: 34px; overflow: hidden;
+  padding: 4px 6px; border-radius: 4px; background: #04060a; border: 1px solid #1c2131;
+  font: 10.5px/1.35 var(--mono); color: #3c4458;
+}
+/* Scanlines over the screen. */
+.screen::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(180deg, #ffffff07 0 1px, transparent 1px 3px);
+}
+.prompt { flex: none; color: inherit; }
+.line { min-width: 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.caret { flex: none; align-self: flex-end; width: 6px; height: 11px; margin-bottom: 1px; background: currentColor; opacity: 0; }
+.unit.used .screen { color: #57e3a6; text-shadow: 0 0 6px #3ddc9766; }
+.unit.used .caret { animation: caret 1.05s steps(1) infinite; }
+.unit.busy .screen { border-color: #3ddc9744; }
+.unit.ping { animation: ping .9s var(--ease); }
+.packet {
+  position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 2px; pointer-events: none; z-index: 2;
+  background: #ffcf8a; box-shadow: 0 0 8px #f6821f, 0 0 16px #f6821f, -10px 0 10px -3px #f6821f99;
+}
+@keyframes led-flicker { 0% { background: #ffae4a; box-shadow: 0 0 6px #f6821f; } 100% { background: #6b3f1a; box-shadow: none; } }
+@keyframes caret { 0%, 49% { opacity: .9; } 50%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .unit .fan-blades, .unit .led, .unit .caret, .unit.ping { animation: none !important; }
+  .unit.used .caret { opacity: .9; }
+}
 
 /* ---------- judging ---------- */
 .stage[data-state="judging"]::before {
@@ -704,12 +757,13 @@ h2 {
 @keyframes laser { from { left: -140px; } to { left: 100%; } }
 
 @media (max-width: 1100px) {
-  .pipeline { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-  .node:nth-child(4n + 1)::before { display: none; }
+  .pipeline { grid-template-columns: repeat(4, minmax(0, 1fr)); padding-bottom: 0; }
+  .pipeline::after { display: none; }
+  .unit::after { display: none; }
+  .packet { display: none; }
 }
 @media (max-width: 640px) {
   .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .node:nth-child(odd)::before { display: none; }
   .replay-bar { flex-wrap: wrap; }
   .scrub { order: 3; flex-basis: 100%; }
   .ticker { display: none; }
