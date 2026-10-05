@@ -1,5 +1,6 @@
 // Pure judge orchestration: tests, diff and scorer are injected. No cloudflare:workers import.
 import { retry } from "../retry";
+import type { ForkLook, LookResult } from "./look";
 import { fixFingerprint, scoreForks, type ForkInput, type ScoreResult } from "./score";
 import type { Scorer, ScorerResult } from "./scorer";
 import { buildWhy } from "./why";
@@ -64,6 +65,7 @@ export interface JudgedFork {
   tests: TestRun & { error?: string }; // error set when all attempts failed (then 0/0)
   diff: { filesChanged: string[]; linesAdded: number; linesRemoved: number }; // no diff text
   scorer?: ScorerResult; // undefined when the fork changed no files (taskFit = clarity = 0)
+  look?: ForkLook; // only when the race is judged on look
   input: ForkInput;
 }
 
@@ -73,6 +75,7 @@ export interface JudgeResult {
   scores: ScoreResult;
   winner: string | null;
   why: string;
+  look?: LookResult; // whether the race was judged on look, and each fork's look
 }
 
 export function judgeInstanceId(taskId: string): string {
@@ -151,6 +154,16 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
   };
   if (scorer) judged.scorer = scorer;
   return judged;
+}
+
+// Gives every fork its look when the race is judged on look; a fork missing from the result gets 0.
+export function applyLook(forks: JudgedFork[], look: LookResult): JudgedFork[] {
+  if (!look.judged) return forks;
+  return forks.map((fork) => {
+    const found = look.forks.find((l) => l.agent === fork.agent) ?? { agent: fork.agent, look: 0, error: "not judged" };
+    const input: ForkInput = { ...fork.input, look: found.look, ...(found.error === undefined ? {} : { lookError: found.error }) };
+    return { ...fork, look: found, input };
+  });
 }
 
 // Pure: scores, winner and why from the judged forks.

@@ -41,6 +41,8 @@
   ],
   // The judge's scorer: Cloudflare's Clef on Workers AI.
   "ai": { "binding": "AI" },
+  // The judge screenshots each fork's preview with Browser Rendering, so Clef can score the look.
+  "browser": { "binding": "BROWSER" },
   // Every push to an Thunderdome repo starts the push Workflow.
   // The docs disagree on this syntax: the Events & schemas notes use `targets: [{ type, workflow_name }]`
   // with `repo_name`; the Artifacts "build and deploy on push" guide uses `target: { scriptName, workflowName }`

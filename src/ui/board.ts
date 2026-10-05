@@ -48,7 +48,7 @@ export type WireClaimResult =
   | { ok: false };
 export interface WireScore {
   agent: string;
-  parts: { tests: number; taskFit: number; clarity: number; claim: number };
+  parts: { tests: number; taskFit: number; clarity: number; look?: number; claim: number };
   total: number;
   eligible: boolean;
 }
@@ -311,8 +311,9 @@ export function applyScores(board: Board, ranked: WireScore[]): Board {
     const place = ranked.findIndex((score) => score.agent === f.agent);
     const score = ranked[place];
     if (score === undefined) return f;
-    const { tests, taskFit, clarity, claim } = score.parts;
-    return { ...f, score: { total: score.total, parts: { tests, taskFit, clarity, claim }, eligible: score.eligible, place: place + 1 } };
+    const { tests, taskFit, clarity, look, claim } = score.parts;
+    const parts = { tests, taskFit, clarity, ...(look === undefined ? {} : { look }), claim };
+    return { ...f, score: { total: score.total, parts, eligible: score.eligible, place: place + 1 } };
   });
   return { ...board, fighters };
 }

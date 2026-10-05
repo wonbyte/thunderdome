@@ -437,6 +437,7 @@ h2 {
 .part-tests { background: #3ddc97; }
 .part-taskFit { background: #4ea8ff; }
 .part-clarity { background: #b18cff; }
+.part-look { background: #ff6fb5; }
 .part-claim { background: #ffb547; }
 .score-total { font: 700 15px var(--mono); text-align: right; font-variant-numeric: tabular-nums; }
 .legend { list-style: none; display: flex; gap: 16px; margin: 12px 0 0; padding: 0; font-size: 12px; color: var(--dim); }
@@ -624,6 +625,7 @@ h2 {
 .stage[data-part="tests"] .meter-stack i.part-tests,
 .stage[data-part="taskFit"] .meter-stack i.part-taskFit,
 .stage[data-part="clarity"] .meter-stack i.part-clarity,
+.stage[data-part="look"] .meter-stack i.part-look,
 .stage[data-part="claim"] .meter-stack i.part-claim { filter: brightness(1.5); box-shadow: 0 0 12px currentColor; }
 /* While the judge's scores play, nobody has won yet. */
 .revealing .act-won .body, .revealing .act-won .shadow { animation-name: hover; animation-duration: 2.6s; animation-timing-function: ease-in-out; }

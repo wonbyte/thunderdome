@@ -2,7 +2,7 @@
 import { endedMs, type ForkScore, type ScoreParts, type ScoreResult } from "./score";
 
 export const REASON_COUNT = 3;
-// Code points (tests + task fit + clarity) closer than this count as a tie on code.
+// Code points (tests + task fit + clarity, and look when judged) closer than this count as a tie on code.
 export const CODE_TIE = 1;
 
 // What decided a race with a winner and an eligible runner-up. "same": the winner and the
@@ -15,35 +15,46 @@ const PART_LABELS: Record<PartKey, string> = {
   tests: "tests",
   taskFit: "task fit",
   clarity: "clarity",
+  look: "look",
   claim: "claim",
 };
-const PART_KEYS: PartKey[] = ["tests", "taskFit", "clarity", "claim"];
+const BASE_KEYS: PartKey[] = ["tests", "taskFit", "clarity", "claim"];
+const LOOK_KEYS: PartKey[] = ["tests", "taskFit", "clarity", "look", "claim"];
+
+// The parts these scores have: look only in a race judged on look.
+function keysOf(scores: ForkScore[]): PartKey[] {
+  return scores.some((s) => s.parts.look !== undefined) ? LOOK_KEYS : BASE_KEYS;
+}
+
+// A part's points; a part the fork does not have counts as 0.
+function pts(score: ForkScore, key: PartKey): number {
+  return score.parts[key] ?? 0;
+}
 
 // Diff size has no points; a smaller diff ranks just after any real point margin (points have 2 decimals).
 const DIFF_MARGIN = 0.001;
 // A tie-break that decided the winner ranks after diff size but ahead of level parts.
 const TIE_MARGIN = DIFF_MARGIN / 2;
 
-const HEADER = ["agent", "tests", "task fit", "clarity", "claim", "total"];
-
 function testsCell(score: ForkScore): string {
   return `${score.input.testsPassed}/${score.input.testsTotal} (${score.parts.tests})`;
 }
 
-function tableRow(score: ForkScore): string[] {
-  const { parts } = score;
-  return [score.agent, testsCell(score), String(parts.taskFit), String(parts.clarity), String(parts.claim), String(score.total)];
+function tableRow(score: ForkScore, keys: PartKey[]): string[] {
+  const cells = keys.map((key) => (key === "tests" ? testsCell(score) : String(pts(score, key))));
+  return [score.agent, ...cells, String(score.total)];
 }
 
 // Pads every column to its widest cell; columns are separated by two spaces.
 function formatRows(rows: string[][]): string {
-  const widths = HEADER.map((_, col) => Math.max(...rows.map((row) => (row[col] ?? "").length)));
+  const widths = (rows[0] ?? []).map((_, col) => Math.max(...rows.map((row) => (row[col] ?? "").length)));
   return rows.map((row) => row.map((cell, col) => cell.padEnd(widths[col] ?? 0)).join("  ").trimEnd()).join("\n");
 }
 
-// Header row: agent | tests | task fit | clarity | claim | total. One row per fork in ranked order.
+// Header row: agent | tests | task fit | clarity | (look |) claim | total. One row per fork in ranked order.
 export function scoresTable(ranked: ForkScore[]): string {
-  return formatRows([HEADER, ...ranked.map(tableRow)]);
+  const keys = keysOf(ranked);
+  return formatRows([["agent", ...keys.map((key) => PART_LABELS[key]), "total"], ...ranked.map((s) => tableRow(s, keys))]);
 }
 
 interface Reason {
@@ -52,11 +63,11 @@ interface Reason {
 }
 
 function bestOther(others: ForkScore[], key: PartKey): number | undefined {
-  return others.length === 0 ? undefined : Math.max(...others.map((o) => o.parts[key]));
+  return others.length === 0 ? undefined : Math.max(...others.map((o) => pts(o, key)));
 }
 
 function partDetail(winner: ForkScore, key: PartKey): string {
-  const points = winner.parts[key];
+  const points = pts(winner, key);
   if (key === "tests") return `${winner.input.testsPassed}/${winner.input.testsTotal} passed, ${points} points`;
   if (key === "claim") {
     if (!winner.claimKept) return `changed unclaimed files (${winner.unclaimed.join(", ")}), ${points} points`;
@@ -65,6 +76,7 @@ function partDetail(winner: ForkScore, key: PartKey): string {
       winner.unavoidable.length > 0 ? `; its shared files (${winner.unavoidable.join(", ")}) cost nothing, since every other fork changed them too` : "";
     return `kept its file claim, ${points} points${free}`;
   }
+  if (key === "look" && winner.input.lookError !== undefined) return `${points} points (${winner.input.lookError})`;
   return `${points} points`;
 }
 
@@ -72,8 +84,8 @@ function partReason(winner: ForkScore, others: ForkScore[], key: PartKey): Reaso
   const best = bestOther(others, key);
   const label = PART_LABELS[key];
   const head = `${label[0]?.toUpperCase()}${label.slice(1)}: ${partDetail(winner, key)}`;
-  if (best === undefined) return { margin: winner.parts[key], text: `${head}.` };
-  const margin = winner.parts[key] - best;
+  if (best === undefined) return { margin: pts(winner, key), text: `${head}.` };
+  const margin = pts(winner, key) - best;
   // Only a positive margin is a reason it won; level or behind is said plainly.
   if (margin > 0) return { margin, text: `${head} vs ${best} for the best other fork.` };
   if (margin === 0) return { margin, text: `${head}, level with the best other fork.` };
@@ -123,7 +135,7 @@ export function winnerReasons(winner: ForkScore, others: ForkScore[]): string[] 
   const rivals = others.filter((o) => o.eligible);
   const tie = tieReason(winner, rivals);
   const reasons = [
-    ...PART_KEYS.map((key) => partReason(winner, rivals, key)),
+    ...keysOf([winner, ...rivals]).map((key) => partReason(winner, rivals, key)),
     diffReason(winner, rivals),
     ...(tie ? [tie] : []),
   ];
@@ -138,8 +150,8 @@ export function winnerReasons(winner: ForkScore, others: ForkScore[]): string[] 
 function worstPart(loser: ForkScore, winner: ForkScore): PartKey | undefined {
   let worst: PartKey | undefined;
   let gap = 0;
-  for (const key of PART_KEYS) {
-    const d = winner.parts[key] - loser.parts[key];
+  for (const key of keysOf([winner, loser])) {
+    const d = pts(winner, key) - pts(loser, key);
     if (d > gap) [worst, gap] = [key, d];
   }
   return worst;
@@ -153,7 +165,10 @@ export function loserLine(loser: ForkScore, winner: ForkScore | undefined): stri
   }
   if (!winner) return `${head}.`;
   const key = worstPart(loser, winner);
-  if (key) return `${head}: lost most on ${PART_LABELS[key]} (${loser.parts[key]} vs ${winner.parts[key]}).`;
+  if (key) {
+    const note = key === "look" && loser.input.lookError !== undefined ? `: ${loser.input.lookError}` : "";
+    return `${head}: lost most on ${PART_LABELS[key]} (${pts(loser, key)} vs ${pts(winner, key)})${note}.`;
+  }
   if (loser.input.linesChanged !== winner.input.linesChanged) {
     return `${head}: no lower part, lost on diff size (${loser.input.linesChanged} vs ${winner.input.linesChanged} lines changed).`;
   }
@@ -173,8 +188,13 @@ function num(x: number): string {
   return String(round2(x));
 }
 
+// Everything but claims: what the fix itself earned.
 function codePoints(s: ForkScore): number {
-  return s.parts.tests + s.parts.taskFit + s.parts.clarity;
+  return s.parts.tests + s.parts.taskFit + s.parts.clarity + (s.parts.look ?? 0);
+}
+
+function codeParts(s: ForkScore): string {
+  return s.parts.look === undefined ? "tests, task fit and clarity" : "tests, task fit, clarity and look";
 }
 
 // The highest-ranked eligible fork other than the winner.
@@ -223,7 +243,7 @@ export function headline(result: ScoreResult): string | undefined {
   const [wClaim, rClaim] = [winner.parts.claim, runner.parts.claim];
   switch (d.kind) {
     case "code":
-      return `Decided by code: ${w}'s fix scored ${num(gap)} more points on tests, task fit and clarity than ${r}'s.`;
+      return `Decided by code: ${w}'s fix scored ${num(gap)} more points on ${codeParts(winner)} than ${r}'s.`;
     case "claims-within": {
       const though = gap < 0 ? ` even though its code scored ${num(abs)} lower` : "";
       return `Decided by claims: the fixes were within ${num(abs)} points on code; ${w} ${claimVerb(winner, runner)} (${num(wClaim)} vs ${num(rClaim)} claim points)${though}.`;

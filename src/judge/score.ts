@@ -1,5 +1,8 @@
 // Pure fork scoring: no I/O, no imports from cloudflare:workers.
 export const WEIGHTS = { tests: 50, taskFit: 25, clarity: 15, claim: 10 } as const;
+// Weights for a race judged on the look of each fork's preview too (the task asks for a visible change).
+export const LOOK_WEIGHTS = { tests: 45, taskFit: 20, clarity: 10, look: 15, claim: 10 } as const;
+export interface Weights { tests: number; taskFit: number; clarity: number; look?: number; claim: number }
 // Points off the claim part for changing a file held only as shared when another fork showed the
 // task could be done without it. Small, so an avoidable clash breaks near-ties but does not outweigh a better fix.
 export const SHARED_COST = 2;
@@ -16,6 +19,8 @@ export interface ForkInput {
   filesShared?: string[]; // claimed files that were ever held only as shared (a clash)
   endedAt?: string; // ISO time the agent ended; the earlier one wins a tie on points and diff size
   fix?: string; // fingerprint of the diff's changed lines (fixFingerprint); equal means the same fix
+  look?: number; // 0..1, how the preview looks for the task; set on a fork only when the race is judged on look
+  lookError?: string; // why the fork's preview could not be judged (then look is 0)
 }
 
 // A fingerprint of a unified diff's changed lines, each with its file, that ignores whitespace,
@@ -56,6 +61,7 @@ export interface ScoreParts {
   tests: number;
   taskFit: number;
   clarity: number;
+  look?: number; // only in a race judged on look
   claim: number;
 }
 
@@ -72,6 +78,7 @@ export interface ForkScore {
 }
 
 export interface ScoreResult {
+  weights: Weights; // LOOK_WEIGHTS when any fork has a look, else WEIGHTS
   ranked: ForkScore[]; // eligible first, then total desc, then linesChanged asc, then endedAt asc, then input order
   winner: string | null; // ranked[0].agent when it is eligible, else null
 }
@@ -95,9 +102,9 @@ export function claimKept(filesChanged: string[], filesClaimed: string[]): boole
   return unclaimedFiles(filesChanged, filesClaimed).length === 0;
 }
 
-function testPoints(passed: number, total: number): number {
+function testPoints(passed: number, total: number, weight: number): number {
   if (!(total > 0)) return 0;
-  return (WEIGHTS.tests * clamp(passed, 0, total)) / total;
+  return (weight * clamp(passed, 0, total)) / total;
 }
 
 // Changed files that were claimed only as shared.
@@ -107,26 +114,28 @@ function sharedFiles(filesChanged: string[], filesShared: string[] = []): string
 }
 
 // Full points when every changed file was claimed, SHARED_COST less when some were shared, none when some were not claimed.
-function claimPoints(kept: boolean, shared: string[]): number {
+function claimPoints(kept: boolean, shared: string[], weight: number): number {
   if (!kept) return 0;
-  return shared.length > 0 ? WEIGHTS.claim - SHARED_COST : WEIGHTS.claim;
+  return shared.length > 0 ? weight - SHARED_COST : weight;
 }
 
 // `needed` holds the files every other eligible fork changed too; a clash on one of those was
 // unavoidable and costs nothing. scoreFork alone does not know the other forks, so every clash costs.
-export function scoreFork(input: ForkInput, needed: ReadonlySet<string> = new Set()): ForkScore {
+// With look weights, a fork without a look (its preview failed) gets 0 look points.
+export function scoreFork(input: ForkInput, needed: ReadonlySet<string> = new Set(), weights: Weights = WEIGHTS): ForkScore {
   const unclaimed = unclaimedFiles(input.filesChanged, input.filesClaimed);
   const kept = unclaimed.length === 0;
   const clashed = sharedFiles(input.filesChanged, input.filesShared);
   const shared = clashed.filter((file) => !needed.has(file));
   const unavoidable = clashed.filter((file) => needed.has(file));
   const parts: ScoreParts = {
-    tests: round2(testPoints(input.testsPassed, input.testsTotal)),
-    taskFit: round2(WEIGHTS.taskFit * clamp(input.taskFit, 0, 1)),
-    clarity: round2(WEIGHTS.clarity * clamp(input.clarity, 0, 1)),
-    claim: claimPoints(kept, shared),
+    tests: round2(testPoints(input.testsPassed, input.testsTotal, weights.tests)),
+    taskFit: round2(weights.taskFit * clamp(input.taskFit, 0, 1)),
+    clarity: round2(weights.clarity * clamp(input.clarity, 0, 1)),
+    ...(weights.look === undefined ? {} : { look: round2(weights.look * clamp(input.look ?? 0, 0, 1)) }),
+    claim: claimPoints(kept, shared, weights.claim),
   };
-  const total = round2(parts.tests + parts.taskFit + parts.clarity + parts.claim);
+  const total = round2(parts.tests + parts.taskFit + parts.clarity + (parts.look ?? 0) + parts.claim);
   return {
     agent: input.agent,
     parts,
@@ -177,8 +186,10 @@ export function rankForks(scores: ForkScore[]): ForkScore[] {
   );
 }
 
+// The race is judged on look when the judge gave any fork a look score.
 export function scoreForks(inputs: ForkInput[]): ScoreResult {
-  const ranked = rankForks(inputs.map((input) => scoreFork(input, neededFiles(input, inputs))));
+  const weights: Weights = inputs.some((input) => input.look !== undefined) ? LOOK_WEIGHTS : WEIGHTS;
+  const ranked = rankForks(inputs.map((input) => scoreFork(input, neededFiles(input, inputs), weights)));
   const first = ranked[0];
-  return { ranked, winner: first?.eligible ? first.agent : null };
+  return { weights, ranked, winner: first?.eligible ? first.agent : null };
 }

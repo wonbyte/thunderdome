@@ -1,4 +1,5 @@
 // Thin Workflow around judge.ts and ship.ts: one step per fork, decide, ship, then save the verdict.
+import puppeteer, { type Browser } from "@cloudflare/puppeteer";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 
 import { revokeWriteTokens } from "../artifacts/repo";
@@ -10,7 +11,9 @@ import { gitRepoPath } from "../sandbox/policy";
 import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
 import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { clipDiff } from "./diffs";
+import { judgeLook, readyPreviews, type LookResult, type Viewport } from "./look";
 import {
+  applyLook,
   decide,
   FORK_STEP_TIMEOUT_S,
   forkPoint,
@@ -37,6 +40,15 @@ const SHIP_STEP = {
   retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
   timeout: "20 minutes",
 } as const;
+// Screenshots and Clef questions for every fork, after waiting for the final previews.
+const LOOK_STEP = {
+  retries: { limit: 1, delay: "10 seconds", backoff: "constant" },
+  timeout: "10 minutes",
+} as const;
+// A fork's final preview builds after its last push; the judge waits this long for it.
+const PREVIEW_WAIT_MS = 3 * 60 * 1_000;
+const PREVIEW_POLL_MS = 5_000;
+const PAGE_TIMEOUT_MS = 30_000;
 // Base64 written per exec call, under the kernel's limit for one argument.
 const BUNDLE_CHUNK = 64 * 1_024;
 const TOKEN_TTL_S = 3_600;
@@ -64,7 +76,10 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
       );
       forks.push(JSON.parse(judged) as JudgedFork);
     }
-    const result = decide(input, forks);
+    // JSON text: LookResult has optional keys. A failed look never stops the judge.
+    const looked = await step.do("look", LOOK_STEP, async () => JSON.stringify(await lookAtPreviews(this.env, input)));
+    const look = JSON.parse(looked) as LookResult;
+    const result = { ...decide(input, applyLook(forks, look)), look };
     // JSON text, like the fork steps: ShipResult has optional keys.
     const shipped = await step.do("ship", SHIP_STEP, async () => JSON.stringify(await shipInSandbox(this.env, input, result)));
     const ship = JSON.parse(shipped) as ShipResult;
@@ -92,13 +107,60 @@ function verdictScores(ranked: ForkScore[]): VerdictScore[] {
     agent,
     total,
     eligible,
-    parts: { tests: parts.tests, taskFit: parts.taskFit, clarity: parts.clarity, claim: parts.claim },
+    parts: {
+      tests: parts.tests,
+      taskFit: parts.taskFit,
+      clarity: parts.clarity,
+      ...(parts.look === undefined ? {} : { look: parts.look }),
+      claim: parts.claim,
+    },
   }));
 }
 
 async function commitHashes(artifacts: Artifacts, name: string): Promise<string[]> {
   using repo = await artifacts.get(name);
   return (await repo.log({ limit: LOG_LIMIT })).map((c) => c.hash);
+}
+
+// Waits for each fork's final preview, then judges the look. Never throws: a failure means the
+// race is judged without look, and the error is kept in the result.
+async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> {
+  let browser: Browser | undefined;
+  try {
+    const room = env.TASK_ROOM.getByName(input.taskId);
+    const deadline = Date.now() + PREVIEW_WAIT_MS;
+    let task = await room.state();
+    while (task !== null && readyPreviews(task).waiting.length > 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, PREVIEW_POLL_MS));
+      task = await room.state();
+    }
+    if (task === null) throw new Error(`Task ${input.taskId} not found`);
+    const { before, forks } = readyPreviews(task);
+    // The browser starts on the first screenshot, so a race that is not visual never opens one.
+    const shoot = async (url: string, viewport: Viewport): Promise<string> => {
+      browser ??= await puppeteer.launch(env.BROWSER);
+      return screenshot(browser, url, viewport);
+    };
+    return await judgeLook({ ai: env.AI, shoot }, { task: input.task, ...(before === undefined ? {} : { before }), forks });
+  } catch (cause) {
+    return { visual: 0, judged: false, forks: [], error: String(cause).slice(0, 300) };
+  } finally {
+    await browser?.close().catch((cause: unknown) => console.error({ event: "look.close_failed", error: String(cause) }));
+  }
+}
+
+// A JPEG of the whole page, base64. A page that does not answer 2xx is an error, not a screenshot.
+async function screenshot(browser: Browser, url: string, viewport: Viewport): Promise<string> {
+  const page = await browser.newPage();
+  try {
+    await page.setViewport(viewport);
+    const response = await page.goto(url, { waitUntil: "networkidle0", timeout: PAGE_TIMEOUT_MS });
+    if (response === null || !response.ok()) throw new Error(`${url} answered ${response?.status() ?? "nothing"}`);
+    const shot = await page.screenshot({ type: "jpeg", quality: 70, fullPage: true, encoding: "base64" });
+    return typeof shot === "string" ? shot : Buffer.from(shot).toString("base64");
+  } finally {
+    await page.close();
+  }
 }
 
 // The commit the fork started from, so its diff holds only the agent's changes.

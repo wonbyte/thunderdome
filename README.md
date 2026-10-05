@@ -11,8 +11,8 @@ diffs with Workers AI, merges the winner into the source repo, and writes why it
 the merge commit. There is no pull request: the race replaces it.
 
 Built on Cloudflare: Artifacts (git repos with a Workers binding, plus push events), Sandbox
-containers, Durable Objects, Workflows, Workers Previews, Workers AI (Clef) and Workers static
-assets. See [PLAN.md](PLAN.md) for the build plan and [docs/api-notes.md](docs/api-notes.md)
+containers, Durable Objects, Workflows, Workers Previews, Workers AI (Clef), Browser Rendering
+and Workers static assets. See [PLAN.md](PLAN.md) for the build plan and [docs/api-notes.md](docs/api-notes.md)
 for the platform APIs we use.
 
 ## How it works
@@ -31,6 +31,8 @@ flowchart LR
   TR -->|"last agent ends"| JW{{JudgeWorkflow}}
   JW -->|"run tests, get diff"| SB
   JW -->|"score the diffs"| AI[Workers AI: Clef]
+  JW -->|"screenshot each preview"| BR[Browser Rendering]
+  BR -.->|"screenshots"| AI
   JW -->|"merge winner, why in commit,<br/>lock every fork"| AF
   JW -->|"verdict"| TR
   TR -->|"race summary"| RI[(RaceIndex)]
@@ -50,7 +52,10 @@ flowchart LR
    of that commit.
 4. **Judge.** When the last agent ends, the `thunderdome-judge` Workflow clones each fork, runs its
    tests, and scores its diff for task fit and clarity with Clef on Workers AI. The score is
-   tests 50, task fit 25, clarity 15 and claims 10. It writes a "why" that names what decided the race.
+   tests 50, task fit 25, clarity 15 and claims 10. When the task asks for a visible change, the
+   judge also screenshots each fork's preview with Browser Rendering and Clef scores how the page
+   looks; then the score is tests 45, task fit 20, clarity 10, look 15 and claims 10. It writes a
+   "why" that names what decided the race.
 5. **Ship.** The winner's fork is merged into the source repo with the why as the merge commit
    body, and every fork is locked and kept as a record. There is no pull request: the race replaces it.
 
@@ -69,7 +74,7 @@ The live deploy is at **https://thunderdome.git-bc1.workers.dev**:
 
 ## Needs
 
-- A Cloudflare account on the **Workers Paid** plan, with Artifacts on. Workers AI needs no extra setup.
+- A Cloudflare account on the **Workers Paid** plan, with Artifacts on. Workers AI and Browser Rendering need no extra setup.
 - An Anthropic API key for the agents.
 - Node.js 22.18 or later.
 - Docker or Podman: wrangler builds the sandbox image on deploy. For Podman, see
@@ -162,7 +167,8 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 |---|---|---|
 | Agents (Anthropic API) | $0.43–0.55 | Reported by Claude Code per agent (`costUsd` on each agent). The `bugs` and `ui` demos cost $0.29–0.46 (PLAN.md, Day 9). |
 | Conflict race | about $0.10–0.30 | Only when the winner conflicts with a newer source: 3 short resolver runs. |
-| Judge (Workers AI, Clef) | small | 2 short questions per fork; billed as Workers AI usage. |
+| Judge (Workers AI, Clef) | small | 2 short questions per fork, plus 1 question per race and 1 question with 3 screenshots per fork when the task is visual; billed as Workers AI usage. |
+| Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. |
 | Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 3 agent containers busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
 | Artifacts | — | Not billed before Oct 15, 2026, when Artifacts billing starts. |
 
@@ -180,6 +186,7 @@ public demo costs at most about $5.50 a day in agent spend.
 | Public races (`/play`) | 10 per UTC day, 2 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; 15 minutes per fork step | `src/judge/judge.ts` |
+| Look | waits up to 3 minutes for final previews; 30 s per page load; 10 minutes for the look step | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
 | Diff the scorer reads | first 100,000 characters | `src/judge/scorer.ts` |
 | Diff saved for the page | 200,000 characters, cut at a whole line | `src/judge/diffs.ts` |
@@ -190,8 +197,9 @@ public demo costs at most about $5.50 a day in agent spend.
 
 What it does not do yet:
 
-- The judge scores diffs and test results, not how the preview looks, so in the `ui` demo the
-  look of the page does not change the score.
+- The look score sees screenshots, not behavior: a sort control that shows but does not sort
+  scores as well as one that works (the tests cover behavior). Look is judged only on the page at
+  `/` at two widths, and Clef's look scores for nearly identical pages differ by tenths of a level.
 - A task with one obvious answer makes the agents write the same fix. In both `bugs` races on Oct 5
   all three diffs were the same code (one differed only in the order of an import). The judge
   fingerprints each diff's changed lines and says so ("wrote the same fix; careful finished first"),
@@ -363,7 +371,16 @@ You do not call anything else. When the last agent ends, the TaskRoom starts the
 judge scores each fork, rating its diff for task fit and clarity with Cloudflare's Clef
 (`@cf/cloudflare/clef`) on Workers AI through the `AI` binding (so no extra API key is needed),
 picks a winner, and merges the winner's fork into the source repo's
-default branch. The merge commit holds the "why". Then it makes every fork read-only and saves
+default branch.
+
+**Look.** Clef first answers a yes/no question on the task text: does it ask for a change a person
+would see on the page? If yes, the judge waits until each fork's preview is built from the fork's
+final commit (up to 3 minutes), then uses the `BROWSER` binding to screenshot the "before" page and
+each fork's page at desktop (1280 px) and phone (390 px) width. Clef sees those screenshots and
+scores two things on 5 levels: how completely the page shows what the task asks (60%) and how
+clean and readable it is (40%). A fork whose preview is missing or does not load gets 0 look
+points, and the why says so. If the screenshots or Clef fail for every fork, the race is judged
+without look. The merge commit holds the "why". Then it makes every fork read-only and saves
 the verdict on the task.
 
 If the source moved on during the race (another race shipped first, or someone pushed), the
@@ -390,7 +407,7 @@ fork, with `revoked` (the write tokens it revoked) or `error`. Other `ship.statu
 `"conflict"` (the merge did not apply and no resolver passed every test; `ship.output` has git's
 output), `"no-winner"`, and
 `"error"` (`ship.error` says why). The verdict also has `scores` (per fork, in ranked order:
-`agent`, `total`, `eligible`, and `parts` with `tests`, `taskFit`, `clarity` and `claim`) and
+`agent`, `total`, `eligible`, and `parts` with `tests`, `taskFit`, `clarity`, `look` (only when the race was judged on look) and `claim`) and
 `decidedBy` (`"code"`, `"claims"`, `"close"`, or `"same"` when the winner and the runner-up wrote the
 same fix; missing with no winner or no eligible runner-up).
 After a conflict, `ship.resolve` has `files` (what conflicted), `attempts` (per resolver: `status`
@@ -518,7 +535,8 @@ If git fails with 401, see open item 1 in [docs/api-notes.md](docs/api-notes.md)
 | `src/agents/runner.ts` | The Claude Code command line and the time limit |
 | `src/agents/events.ts` | Turns Claude Code output into steps for the log |
 | `src/room/claims.ts` | Claim board rules (unit tested) |
-| `src/judge/JudgeWorkflow.ts` | Workflow: judge each fork, save its diff, decide, ship, save the verdict |
+| `src/judge/JudgeWorkflow.ts` | Workflow: judge each fork, save its diff, judge the look, decide, ship, save the verdict |
+| `src/judge/look.ts` | The look: is the task visual, which previews are final, and Clef's score of each fork's screenshots (unit tested) |
 | `src/judge/diffs.ts` | Clips a fork diff before it is saved (unit tested) |
 | `src/ship/ship.ts` | Merges the winner into the source repo and locks every fork (unit tested) |
 | `src/ship/resolve.ts` | The conflict race: resolvers in git worktrees, checked and tested; the first green resolution ships (unit tested) |

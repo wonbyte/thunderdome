@@ -18,10 +18,23 @@ const STEP_PAGE = 500;
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 10000];
 const SCORE_TRIES = 5;
 const SCORE_WAIT_MS = 2000;
-const PARTS = ["tests", "taskFit", "clarity", "claim"] as const;
+// Look is a part only in races judged on the look of each preview; it scores 0 and stays hidden otherwise.
+const PARTS = ["tests", "taskFit", "clarity", "look", "claim"] as const;
 type Part = (typeof PARTS)[number];
-const PART_MAX: Record<Part, number> = { tests: 50, taskFit: 25, clarity: 15, claim: 10 };
-const PART_LABEL: Record<Part, string> = { tests: "tests", taskFit: "task fit", clarity: "clarity", claim: "claims" };
+const PART_MAX: Record<Part, number> = { tests: 50, taskFit: 25, clarity: 15, look: 0, claim: 10 };
+const LOOK_MAX: Record<Part, number> = { tests: 45, taskFit: 20, clarity: 10, look: 15, claim: 10 };
+const PART_LABEL: Record<Part, string> = { tests: "tests", taskFit: "task fit", clarity: "clarity", look: "look", claim: "claims" };
+
+// A part's points, 0 for a part the race does not have.
+function partPoints(parts: { look?: number } & Record<Exclude<Part, "look">, number>, part: Part): number {
+  return parts[part] ?? 0;
+}
+
+// The parts a score shows and their maximums: look only when the race was judged on look.
+function scoreParts(parts: { look?: number }): { shown: Part[]; max: Record<Part, number> } {
+  const looked = parts.look !== undefined;
+  return { shown: PARTS.filter((p) => looked || p !== "look"), max: looked ? LOOK_MAX : PART_MAX };
+}
 const MOTES = 28;
 const SPARKS = 6;
 const CONFETTI = 14;
@@ -33,7 +46,15 @@ const SPEEDS = [1, 2, 4, 8];
 // The judging reveal: one part of the score per beat, then the winner.
 const REVEAL_LEAD_MS = 600;
 const REVEAL_PART_MS = 1100;
-const REVEAL_WINNER_MS = REVEAL_LEAD_MS + PARTS.length * REVEAL_PART_MS + 300;
+// When the winner shows: after every part the race has has filled.
+function revealWinnerMs(parts: readonly Part[]): number {
+  return REVEAL_LEAD_MS + parts.length * REVEAL_PART_MS + 300;
+}
+
+// The parts the reveal steps through: look only when the race was judged on look.
+function revealParts(b: Board): Part[] {
+  return b.fighters.some((f) => f.score?.parts.look !== undefined) ? [...PARTS] : PARTS.filter((p) => p !== "look");
+}
 const WHY_TYPE_MS = 2200;
 
 const LABELS: Record<Action, string> = {
@@ -574,10 +595,10 @@ function stopReveal(): void {
 }
 
 // 0..1 per part at `elapsed` ms into the reveal; all 1 when no reveal runs.
-function revealFractions(elapsed: number | undefined): Record<Part, number> {
-  const out = { tests: 1, taskFit: 1, clarity: 1, claim: 1 };
+function revealFractions(parts: readonly Part[], elapsed: number | undefined): Record<Part, number> {
+  const out = { tests: 1, taskFit: 1, clarity: 1, look: 1, claim: 1 };
   if (elapsed === undefined) return out;
-  PARTS.forEach((part, i) => {
+  parts.forEach((part, i) => {
     const start = REVEAL_LEAD_MS + i * REVEAL_PART_MS;
     out[part] = Math.min(1, Math.max(0, (elapsed - start) / (REVEAL_PART_MS * 0.8)));
   });
@@ -589,9 +610,10 @@ function revealTick(): void {
   const elapsed = performance.now() - revealStart;
   renderMeters(board, elapsed);
   const stage = byId("stage");
-  const part = PARTS[Math.min(PARTS.length - 1, Math.floor((elapsed - REVEAL_LEAD_MS) / REVEAL_PART_MS))];
+  const parts = revealParts(board);
+  const part = parts[Math.min(parts.length - 1, Math.floor((elapsed - REVEAL_LEAD_MS) / REVEAL_PART_MS))];
   stage.dataset.part = elapsed < REVEAL_LEAD_MS || part === undefined ? "" : part;
-  if (elapsed >= REVEAL_WINNER_MS) {
+  if (elapsed >= revealWinnerMs(parts)) {
     revealStart = undefined;
     stage.classList.remove("revealing");
     stage.classList.add("revealed");
@@ -839,7 +861,7 @@ function updateBot(b: Board, f: Fighter, index: number): void {
 }
 
 function renderMeters(b: Board, elapsed: number | undefined): void {
-  const fractions = revealFractions(elapsed);
+  const fractions = revealFractions(revealParts(b), elapsed);
   for (const f of b.fighters) {
     const view = bots.get(f.agent);
     if (view === undefined) continue;
@@ -847,7 +869,7 @@ function renderMeters(b: Board, elapsed: number | undefined): void {
     if (f.score === undefined) continue;
     let total = 0;
     for (const part of PARTS) {
-      const points = f.score.parts[part] * fractions[part];
+      const points = partPoints(f.score.parts, part) * fractions[part];
       total += points;
       view.segs[part].style.height = `${points}%`;
     }
@@ -1260,12 +1282,14 @@ function scoreRow(f: Scored): HTMLElement {
   name.append(el("b", undefined, String(f.score.place)), document.createTextNode(` ${displayName(f.agent)}`));
   const bar = el("span", "bar");
   bar.setAttribute("role", "img");
-  bar.setAttribute("aria-label", PARTS.map((part) => `${PART_LABEL[part]} ${f.score.parts[part]} of ${PART_MAX[part]}`).join(", "));
-  PARTS.forEach((part, i) => {
+  const { shown, max } = scoreParts(f.score.parts);
+  bar.setAttribute("aria-label", shown.map((part) => `${PART_LABEL[part]} ${partPoints(f.score.parts, part)} of ${max[part]}`).join(", "));
+  shown.forEach((part, i) => {
     const seg = el("span", `seg part-${part}`);
-    seg.style.width = `${Math.max(0, Math.min(100, f.score.parts[part]))}%`;
+    const points = partPoints(f.score.parts, part);
+    seg.style.width = `${Math.max(0, Math.min(100, points))}%`;
     seg.style.animationDelay = `${0.15 * i}s`;
-    seg.title = `${PART_LABEL[part]}: ${f.score.parts[part]} / ${PART_MAX[part]}`;
+    seg.title = `${PART_LABEL[part]}: ${points} / ${max[part]}`;
     bar.append(seg);
   });
   const total = el("span", "score-total", f.score.total.toFixed(2));
