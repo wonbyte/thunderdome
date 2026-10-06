@@ -57,7 +57,7 @@ export interface FuseScoreView {
   delta: number;
   testsBefore: string; // "20/20"
   testsAfter: string;
-  /** True when the fused head scored at least the winner alone, so the fusion was kept. */
+  /** True when the fusion was kept: it scored at least the winner alone, or it added only tests. */
   kept: boolean;
   /** "Testy alone 91.9 → fused 94.6 · tests 20 → 26". */
   headline: string;
@@ -94,15 +94,19 @@ const finite = (s: WireFuseScore | undefined): s is WireFuseScore =>
 function scoreOf(fusion: WireFusion, winner: string): FuseScoreView | undefined {
   const s = fusion.score;
   if (s === undefined || !finite(s.before) || !finite(s.after)) return undefined;
-  const kept = s.after.total >= s.before.total;
+  const higher = s.after.total >= s.before.total;
+  // Kept: pushed. A tests-only fusion is kept even when it scores lower (tests cannot raise it).
+  const kept = fusion.commit !== undefined;
   // A fusion that scored well but was not pushed (the push failed) has nothing to show.
-  if (kept && fusion.commit === undefined) return undefined;
+  if (higher && !kept) return undefined;
   const before = round1(s.before.total);
   const after = round1(s.after.total);
   const tests = `tests ${s.before.tests.passed} → ${s.after.tests.passed}`;
-  const headline = kept
-    ? `${displayName(winner)} alone ${before.toFixed(1)} → fused ${after.toFixed(1)} · ${tests}`
-    : `Fused ${after.toFixed(1)} < ${displayName(winner)} alone ${before.toFixed(1)}: the fusion was dropped`;
+  const headline = !kept
+    ? `Fused ${after.toFixed(1)} < ${displayName(winner)} alone ${before.toFixed(1)}: the fusion was dropped`
+    : higher
+      ? `${displayName(winner)} alone ${before.toFixed(1)} → fused ${after.toFixed(1)} · ${tests}`
+      : `${displayName(winner)} alone ${before.toFixed(1)} → fused ${after.toFixed(1)} · ${tests} · tests only, kept`;
   return {
     before,
     after,

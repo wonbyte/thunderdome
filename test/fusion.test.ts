@@ -556,14 +556,15 @@ describe("the fused score", () => {
     expect(scoreLine("Ponder", score)).toBe(`Ponder alone ${winner.total.toFixed(1)} -> fused 95.0 (tests 20/20 -> 26/26)`);
   });
 
-  async function scored(taskFit: number, scorer?: Scorer) {
+  async function scored(taskFit: number, scorer?: Scorer, agent: "testy" | "snip" = "testy") {
     const { forks } = await setup();
     const deps = fuseDeps();
+    const files = agent === "testy" ? ["test-cart.txt"] : ["test-snip.test.txt"];
     const fused = await runFusion(deps, {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
-      candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
+      candidates: [{ agent, remote: forks[agent]!, branch: "main", files }],
     });
     const forkBase = await git(forks.ponder!, "rev-parse", "HEAD^");
     const rate: Scorer = scorer ?? { score: async () => ({ taskFit, clarity: 0.8, raw: {} as never }) };
@@ -583,6 +584,14 @@ describe("the fused score", () => {
     expect(result.score?.after.total).toBeLessThan(result.score!.before.total);
     expect(result.tried[0]).toMatchObject({ status: "rejected", note: `the fused change scored ${result.score!.after.total.toFixed(1)}, below ${winner.total.toFixed(1)} for the winner alone` });
     expect(fusionWhy(result, "ponder")).toContain("so the fusion is dropped.");
+  });
+
+  it("scoreFusion keeps a tests-only fusion that scores lower, since tests cannot raise the score", async () => {
+    const { fused, result } = await scored(0.2, undefined, "snip");
+    expect(result.commit).toBe(fused.commit);
+    expect(result.score!.after.total).toBeLessThan(result.score!.before.total);
+    expect(result.tried[0]).toMatchObject({ status: "added" });
+    expect(fusionWhy(result, "ponder")).toContain("so the fusion is kept anyway: it adds only tests, which cannot raise the score.");
   });
 
   it("scoreFusion keeps the fusion unscored when the scorer fails", async () => {

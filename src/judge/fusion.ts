@@ -622,9 +622,18 @@ export function fusedScore(winner: ForkScore, weights: Weights, after: { tests: 
 }
 
 /**
- * Scores the fused head (HEAD of the fusion clone) like a fork and keeps the fusion only when it
- * scores at least the winner alone. Best effort: a scorer or git failure keeps the fusion on its
- * gates alone and says why in scoreNote. Never throws.
+ * True when a kept try added code, not only tests. Only then must the fused head score at least
+ * the winner alone: added tests cannot raise the tests part (it is passed/total), and the bigger
+ * diff only costs clarity, so a tests-only fusion is kept on its gates, its score shown as is.
+ */
+export function fusedCode(fusion: FusionResult): boolean {
+  return fusion.tried.some((t) => t.status === "added" && !t.files.every(isTestFile));
+}
+
+/**
+ * Scores the fused head (HEAD of the fusion clone) like a fork. A fusion that added code is kept
+ * only when it scores at least the winner alone (see fusedCode). Best effort: a scorer or git
+ * failure keeps the fusion on its gates alone and says why in scoreNote. Never throws.
  */
 export async function scoreFusion(deps: Pick<FuseDeps, "exec"> & { scorer: Scorer }, fusion: FusionResult, input: FusionScoreInput): Promise<FusionResult> {
   const kept = fusion.tried.filter((t) => t.status === "added");
@@ -642,7 +651,7 @@ export async function scoreFusion(deps: Pick<FuseDeps, "exec"> & { scorer: Score
   } catch (err) {
     return { ...fusion, scoreNote: `the fused change could not be scored: ${clip(err instanceof Error ? err.message : String(err), NOTE_CHARS)}` };
   }
-  if (score.after.total >= score.before.total) return { ...fusion, score };
+  if (score.after.total >= score.before.total || !fusedCode(fusion)) return { ...fusion, score };
   return dropFusion({ ...fusion, score }, `the fused change scored ${score.after.total.toFixed(1)}, below ${score.before.total.toFixed(1)} for the winner alone`);
 }
 
@@ -678,7 +687,8 @@ export function fusionWhy(result: FusionResult, winner = "the winner"): string {
   const scored: string[] = [];
   if (result.score !== undefined) {
     const { before, after } = result.score;
-    const verdict = after.total >= before.total ? "the fusion is kept" : "the fusion is dropped";
+    const kept = result.commit !== undefined || after.total >= before.total;
+    const verdict = after.total >= before.total ? "the fusion is kept" : kept ? "the fusion is kept anyway: it adds only tests, which cannot raise the score" : "the fusion is dropped";
     scored.push(`Scored the same way as the forks: ${scoreLine(winner, result.score)}, so ${verdict}.`);
   } else if (result.scoreNote !== undefined) scored.push(`Not scored: ${result.scoreNote}; the fusion is kept on its gates.`);
   return ["", "", "Fusion (the losers' files the winner did not change, and their hunks in files it did, tried on top of its fix):", ...lines, ...scored].join("\n");

@@ -1658,19 +1658,26 @@ function throwFile(stage: HTMLElement, row: FuseRow, winner: BotView): void {
   const label = row.kind === "hunk" ? row.what.split(" in ")[0] ?? row.what : ((row.files[0] ?? "").split("/").at(-1) ?? "");
   card.append(el("b", undefined, row.kind === "hunk" ? "@@" : "{ }"), el("span", undefined, label));
   stage.append(card);
-  // An arc: up and over to the winner, or up and short of it for a left-out file.
-  const end = kept ? to : { x: from.x + (to.x - from.x) * 0.62, y: to.y + 70 };
-  const peak = { x: (from.x + end.x) / 2, y: Math.min(from.y, to.y) - 90 };
+  // An arc up and over onto the winner's body. A kept card lands; a left-out one hits the winner
+  // and bounces back off, away from it.
+  const peak = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 90 };
+  const back = Math.sign(from.x - to.x) || -1;
   const flight = card.animate(
     kept
       ? [flyFrame(from, 0.4, 0), flyFrame(from, 1, 1), flyFrame(peak, 1.15, 1), flyFrame(to, 0.6, 1)]
-      : [flyFrame(from, 0.4, 0), flyFrame(from, 1, 1), flyFrame(peak, 1.05, 1), { ...flyFrame(end, 0.9, 0.9), offset: 0.85 }, flyFrame({ x: end.x, y: end.y + 40 }, 0.8, 0)],
+      : [
+          flyFrame(from, 0.4, 0),
+          flyFrame(from, 1, 1),
+          flyFrame(peak, 1.05, 1),
+          { ...flyFrame(to, 0.9, 1), offset: 0.75 },
+          flyFrame({ x: to.x + back * 46, y: to.y + 56 }, 0.7, 0),
+        ],
     { duration: FUSE_FLIGHT_MS, easing: "cubic-bezier(.3, .7, .4, 1)", fill: "forwards" },
   );
   flight.onfinish = () => {
     card.remove();
     loser.root.classList.remove("assisting");
-    stamp(stage, kept ? to : end, kept, kept ? "fused!" : (row.clef === undefined ? "left out" : `Clef ${row.clef.toFixed(2)} < ${FUSE_BAR.toFixed(2)}`));
+    stamp(stage, to, kept, kept ? "fused!" : leftOutLabel(row));
     if (kept) {
       kick(winner.root, "fused");
       fireBeam(row.agent);
@@ -1678,11 +1685,20 @@ function throwFile(stage: HTMLElement, row: FuseRow, winner: BotView): void {
   };
 }
 
+/** Why a try was left out, in a stamp's few words: the gate that said no. */
+function leftOutLabel(row: FuseRow): string {
+  if (row.outcome === "failed") return "could not try";
+  if (row.green === false) return `tests ${row.tests ?? "failed"}`;
+  if (row.clef !== undefined && row.clef < FUSE_BAR) return `Clef ${row.clef.toFixed(2)} < ${FUSE_BAR.toFixed(2)}`;
+  if (row.note?.includes("scored") === true) return "scored lower";
+  return "left out";
+}
+
 function stamp(stage: HTMLElement, at: { x: number; y: number }, kept: boolean, label: string): void {
   const node = el("div", `fuse-stamp ${kept ? "kept" : "dropped"}`);
-  // Above the winner's crown and bubble, or above the spot a left-out file fell.
+  // Above the winner's crown and bubble: every card lands on the winner.
   node.style.left = `${at.x}px`;
-  node.style.top = `${at.y - (kept ? 170 : 110)}px`;
+  node.style.top = `${at.y - 170}px`;
   if (kept) node.append(mascot());
   node.append(el("b", undefined, kept ? "✓" : "✗"), el("span", undefined, label));
   stage.append(node);
@@ -1787,7 +1803,7 @@ function renderFuseScore(view: FusionView): void {
     box.replaceChildren(...(view.scoreNote === undefined ? [] : [el("p", "fuse-score-note", `Not scored: ${view.scoreNote}. The fusion was kept on its gates.`)]));
     return;
   }
-  box.classList.toggle("lower", !view.score.kept);
+  box.classList.toggle("lower", view.score.delta < 0);
   const chart = el("div", "fuse-bars");
   chart.setAttribute("role", "img");
   chart.setAttribute("aria-label", bars.label);

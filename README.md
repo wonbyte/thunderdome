@@ -458,10 +458,12 @@ Each addition is its own try, and three gates must pass:
 **The fused score.** When something was kept, the fused head is scored the same way as the forks:
 the tests (from the last kept try's run), task fit and clarity (Clef, on the diff from the fork
 point). Look and claims carry over from the winner: the fused head has no preview of its own, and
-the added work came through the gates, not through a claim. The fusion is pushed only when the
-fused score is **at least** the winner's score alone; otherwise every kept try is turned down with
-the two numbers ("the fused change scored 90.1, below 91.9 for the winner alone"), and the winner
-ships as judged. Scoring is best effort and time-boxed (90 seconds): if Clef fails, the fusion
+the added work came through the gates, not through a claim. A fusion that adds code is pushed
+only when the fused score is **at least** the winner's score alone; otherwise every kept try is
+turned down with the two numbers ("the fused change scored 90.1, below 91.9 for the winner alone"),
+and the winner ships as judged. A fusion that adds only tests is kept on its gates even when it
+scores lower, and the panel says so: added tests cannot raise the tests part (it is passed/total,
+so 13/13 and 20/20 both score full), while the bigger diff costs clarity. Scoring is best effort and time-boxed (90 seconds): if Clef fails, the fusion
 is kept on its gates and the verdict says it was not scored. The result is saved as
 `verdict.fusion.score = { before: { total, tests }, after: { total, tests } }` and is
 written into the why ("ponder alone 91.9 -> fused 94.6 (tests 20/20 -> 26/26)"). Only races judged
@@ -485,9 +487,9 @@ or left out. The code is `src/judge/fusion.ts`; `demo/fusion` is a demo app buil
 
 The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the shared model):
 
-- **Stage.** After the winner is revealed, each loser throws its file (`{ }`) or hunk (`@@`) at
-  the winner. A kept one lands and the mascot stamps it "fused!"; a left-out one falls short with
-  Clef's answer (e.g. "Clef 0.18 < 0.60"). The last stamp is the score: "team 94.6 vs 91.9 alone
+- **Stage.** After the winner is revealed, each loser throws its file (`{ }`) or hunk (`@@`) onto
+  the winner. A kept one lands and the mascot stamps it "fused!"; a left-out one bounces off the
+  winner with the gate that said no ("Clef 0.18 < 0.60", "tests 5/6" or "scored lower"). The last stamp is the score: "team 94.6 vs 91.9 alone
   (+2.7)". The loser then wears an "⚡ assist" tag.
 - **Fusion round panel.** The score headline ("Testy alone 91.9 → fused 94.6 · tests 20 → 26")
   over two bars, winner alone and fused. A fusion dropped for scoring lower says so. Then one row

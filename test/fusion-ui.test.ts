@@ -103,6 +103,8 @@ describe("the fused score and hunks", () => {
     expect(low.score).toMatchObject({ kept: false, delta: -1.8, headline: "Fused 90.1 < Testy alone 91.9: the fusion was dropped" });
     expect(scoreBars(low)?.label).toContain("(-1.8)");
     expect(fusionView(scored(95, false))?.score).toBeUndefined();
+    // A tests-only fusion that scored lower was still pushed: kept, and the headline says why.
+    expect(fusionView(scored(90.1))?.score).toMatchObject({ kept: true, delta: -1.8, headline: "Testy alone 91.9 → fused 90.1 · tests 20 → 26 · tests only, kept" });
     expect(fusionView(verdict())?.score).toBeUndefined();
     expect(scoreBars(fusionView(verdict())!)).toBeUndefined();
     expect(fusionView({ ...verdict(), fusion: { ...verdict().fusion!, scoreNote: "Clef is down" } })?.scoreNote).toBe("Clef is down");
