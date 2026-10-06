@@ -137,7 +137,7 @@ Options, set at deploy with `--var`:
 - `AGENT_MODEL:<model id>`: the model the robots and conflict resolvers run (default `claude-opus-5-5`; empty means Claude Code's default).
 - `AGENT_MODEL:<model id>`: the agents' model (empty means Claude Code's default).
 - `PLAY_INVITE:<code>`: require an invite code on `/play` (empty means none).
-- `PLAY_DAILY_LIMIT:<n>`: races `/play` may start per UTC day (default 10, at most 2 per IP).
+- `PLAY_DAILY_LIMIT:<n>`: races `/play` may start per UTC day (default 10, at most 3 per IP).
 
 For example: `npm run deploy -- --var PLAY_INVITE:letmein`.
 
@@ -210,7 +210,7 @@ public demo costs at most about $5.50 a day in agent spend.
 | Agent run time | 8 minutes each; what it pushed by then still counts | `src/agents/runner.ts` |
 | Race watchdog | 12 minutes after the start, any agent that never reported back (its sandbox lost track, e.g. a deploy reset it) is ended as failed, so the judge still runs on what the forks hold | `src/room/task.ts`, `src/room/TaskRoom.ts` |
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
-| Public races (`/play`) | 10 per UTC day, 2 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
+| Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; 15 minutes per fork step | `src/judge/judge.ts` |
 | Look | waits up to 3 minutes for final previews; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
@@ -602,7 +602,7 @@ is `404`, and an Artifacts failure is `503` (not cached).
 
 Anyone can start a 3-agent race on a demo template, without `ADMIN_TOKEN`. A daily quota (the
 `PlayQuota` Durable Object, one instance `"daily"`) guards it: at most `PLAY_DAILY_LIMIT` races
-per UTC day, and at most 2 per IP.
+per UTC day, and at most 3 per IP.
 
 - `https://thunderdome.<your-subdomain>.workers.dev/play` is the play form page (`public/play.html`). No auth.
 - `POST /play` with `{ template, prompt, invite? }`. `template` is one of `thunderdome-bugs`, `thunderdome-ui`,

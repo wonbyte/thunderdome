@@ -9,7 +9,7 @@ export const PLAY_PROMPT_MAX = 600;
 /** Robots in a public play race. */
 export const PLAY_AGENTS = 3;
 /** Plays per IP per day. */
-export const PLAY_PER_IP = 2;
+export const PLAY_PER_IP = 3;
 /** Plays per day when PLAY_DAILY_LIMIT is missing or bad. */
 export const PLAY_DAILY_DEFAULT = 10;
 

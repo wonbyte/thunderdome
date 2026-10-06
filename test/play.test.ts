@@ -20,7 +20,7 @@ const prompt = "Fix the off-by-one bug in the list";
 describe("parsePlay", () => {
   it("X5: parsePlay accepts a demo template and trims the prompt; rejects other templates, short/long prompts and non-objects with 400; and a wrong or missing invite with 403 only when an invite is set", () => {
     expect(PLAY_TEMPLATES).toEqual(["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
-    expect([PLAY_PROMPT_MIN, PLAY_PROMPT_MAX, PLAY_AGENTS, PLAY_PER_IP]).toEqual([10, 600, 3, 2]);
+    expect([PLAY_PROMPT_MIN, PLAY_PROMPT_MAX, PLAY_AGENTS, PLAY_PER_IP]).toEqual([10, 600, 3, 3]);
 
     for (const template of PLAY_TEMPLATES) {
       expect(parsePlay({ template, prompt: `  ${prompt}\n` }, "")).toEqual({ template, prompt });
@@ -72,8 +72,10 @@ describe("takeQuota", () => {
     if (!second.ok) throw new Error("unreachable");
     expect(second.state).not.toBe(frozen);
 
-    // The IP is at its limit (default PLAY_PER_IP = 2); another IP may still play.
-    expect(takeQuota(second.state, day, "1.1.1.1", 3)).toEqual({ ok: false, reason: "ip", state: second.state });
+    // With a limit of 2 the IP is at it; another IP may still play. The default (PLAY_PER_IP = 3) allows a third.
+    expect(takeQuota(second.state, day, "1.1.1.1", 3, 2)).toEqual({ ok: false, reason: "ip", state: second.state });
+    expect(takeQuota(second.state, day, "1.1.1.1", 10)).toMatchObject({ ok: true, state: { byIp: { "1.1.1.1": 3 } } });
+    expect(takeQuota({ day, used: 3, byIp: { "1.1.1.1": 3 } }, day, "1.1.1.1", 10)).toMatchObject({ ok: false, reason: "ip" });
     const third = takeQuota(second.state, day, "2.2.2.2", 3);
     expect(third).toEqual({ ok: true, state: { day, used: 3, byIp: { "1.1.1.1": 2, "2.2.2.2": 1 } }, remaining: 0 });
     if (!third.ok) throw new Error("unreachable");

@@ -1,4 +1,5 @@
-// Live race check: node --env-file=.env scripts/race.mjs <prompt>   (bugs, ui, clash, clash-full; prompts in demo/README.md)
+// Live race check: node --env-file=.env scripts/race.mjs <prompt>   (bugs, ui, clash, clash-full, fusion; prompts in demo/README.md)
+// AGENTS=5 races 5 robots instead of 3.
 // Creates a task from template thunderdome-<app> (the prompt name up to its first "-") with the prompt in demo/README.md, watches
 // /tasks/:id/live until the verdict, then fetches the base and agent previews. Prints no tokens.
 import { readFileSync } from "node:fs";
@@ -18,7 +19,7 @@ const short = (e) => JSON.stringify(e, (k, v) => (k === "why" || k === "text" ||
 const created = await (await fetch(`${B}/tasks`, {
   method: "POST",
   headers: { ...auth, "content-type": "application/json" },
-  body: JSON.stringify({ template: `thunderdome-${app.split("-")[0]}`, prompt, agents: 3 }),
+  body: JSON.stringify({ template: `thunderdome-${app.split("-")[0]}`, prompt, agents: Number(process.env.AGENTS ?? 3) }),
 })).json();
 const id = created.id;
 console.log(at(), "task", id, created.status, "source", created.repo, created.error ?? "");
