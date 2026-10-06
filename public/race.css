@@ -309,7 +309,7 @@ h2 {
 .act-charge .fx-ring-2 { animation-delay: .55s; }
 .act-charge .sprite { animation: charge 1.1s ease-in-out infinite; }
 .act-work .sprite { animation: jitter .35s steps(2) infinite; }
-.act-flag .fx-mascot, .act-push .fx-mascot { opacity: 1; animation: perch 1.1s ease-in-out infinite; }
+.act-flag .fx-mascot, .act-push .fx-mascot { opacity: 1; animation: perch 1.6s linear infinite; }
 /* The bubble steps up while the mascot sits on the robot's head. */
 .bubble { transition: margin-bottom .3s var(--ease); }
 .act-flag .bubble, .act-push .bubble { margin-bottom: 64px; }
@@ -548,7 +548,20 @@ h2 {
 @keyframes ring { from { transform: translate(-50%, -50%) scale(.45); opacity: .9; } to { transform: translate(-50%, -50%) scale(1.35); opacity: 0; } }
 @keyframes charge { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.45) drop-shadow(0 0 10px var(--color)); } }
 @keyframes jitter { 0% { transform: translate(-1px, 0); } 100% { transform: translate(1px, 0); } }
-@keyframes perch { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-6px) rotate(4deg); } }
+/* The mascot paces across the robot's head: a hop left, turn, a hop right, turn. Starts in the
+   middle, so even a short claim or push shows it going both ways. */
+@keyframes perch {
+  0%, 100% { transform: translateX(0) translateY(0) scaleX(1) rotate(0deg); }
+  12.5% { transform: translateX(-9px) translateY(-6px) scaleX(1) rotate(-5deg); }
+  25% { transform: translateX(-18px) translateY(0) scaleX(1) rotate(0deg); }
+  27% { transform: translateX(-18px) translateY(0) scaleX(-1) rotate(0deg); }
+  37.5% { transform: translateX(-9px) translateY(-6px) scaleX(-1) rotate(5deg); }
+  50% { transform: translateX(0) translateY(0) scaleX(-1) rotate(0deg); }
+  62.5% { transform: translateX(9px) translateY(-6px) scaleX(-1) rotate(5deg); }
+  75% { transform: translateX(18px) translateY(0) scaleX(-1) rotate(0deg); }
+  77% { transform: translateX(18px) translateY(0) scaleX(1) rotate(0deg); }
+  87.5% { transform: translateX(9px) translateY(-6px) scaleX(1) rotate(-5deg); }
+}
 @keyframes rattle { 0% { transform: translate(-2px, 1px); } 50% { transform: translate(2px, -1px); } 100% { transform: translate(-2px, 1px); } }
 @keyframes lunge { 0% { transform: none; } 40% { transform: translateX(calc(var(--lunge) * 46px)) rotate(calc(var(--lunge) * 10deg)); } 100% { transform: none; } }
 @keyframes dash { 0% { transform: none; } 35% { transform: translateY(-46px) scale(.88); } 100% { transform: none; } }
