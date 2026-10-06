@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { BETTER_QUESTION, FUSE_THRESHOLD, fusionCandidates, fusionWhy, runFusion, type CommandResult, type FuseDeps } from "../src/judge/fusion";
+import { BETTER_QUESTION, COVERAGE_QUESTION, FUSE_THRESHOLD, fusionCandidates, fusionWhy, isTestFile, runFusion, type CommandResult, type FuseDeps } from "../src/judge/fusion";
 import type { JudgedFork } from "../src/judge/judge";
 import { scoreForks, type ForkInput } from "../src/judge/score";
 
@@ -56,9 +56,11 @@ function fuseDeps(yes: Record<string, number> = {}): FuseDeps & { asked: unknown
     ai: {
       async run(_model, body) {
         asked.push(body);
-        const additions = (body as { state: { additions: string } }).state.additions;
+        const state = (body as { state: { additions?: string; added_tests?: string } }).state;
+        const additions = state.additions ?? state.added_tests ?? "";
         const agent = Object.keys(yes).find((a) => additions.includes(`by ${a}`)) ?? "";
-        return { answers: { better: { type: "noul", noul: yes[agent] ?? 0.9 } } };
+        const noul = { type: "noul", noul: yes[agent] ?? 0.9 };
+        return { answers: { better: noul, covers: noul } };
       },
     },
   };
@@ -76,7 +78,11 @@ async function setup(): Promise<{ forks: Record<string, string> }> {
   await git(source, "commit", "-q", "-m", "base");
   const forks: Record<string, string> = {};
   const edits: Record<string, (dir: string) => void> = {
-    ponder: (d) => writeFileSync(join(d, "app.txt"), "fixed by ponder\n"),
+    ponder: (d) => {
+      writeFileSync(join(d, "app.txt"), "fixed by ponder\n");
+      writeFileSync(join(d, "test-ponder.test.txt"), "ponder's own test\n");
+    },
+    snip: (d) => writeFileSync(join(d, "test-snip.test.txt"), "an edge case test by snip\n"),
     testy: (d) => {
       writeFileSync(join(d, "app.txt"), "fixed by testy\n");
       writeFileSync(join(d, "test-cart.txt"), "a new test by testy\n");
@@ -114,15 +120,15 @@ describe("runFusion", () => {
     const result = await runFusion(deps, {
       task: "Fix the app",
       winner: "ponder",
-      testsPassed: 1,
+      testsPassed: 2,
       candidates: [
         { agent: "zippy", remote: forks.zippy!, branch: "main", files: ["broken.txt"] },
         { agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt", "old.txt"] },
       ],
     });
     expect(result.tried).toEqual([
-      { agent: "zippy", files: ["broken.txt"], status: "rejected", tests: { passed: 0, total: 1 }, note: "not every test passed (0/1)" },
-      { agent: "testy", files: ["test-cart.txt", "old.txt"], status: "added", tests: { passed: 2, total: 2 }, better: 0.9 },
+      { agent: "zippy", files: ["broken.txt"], status: "rejected", tests: { passed: 0, total: 2 }, note: "not every test passed (0/2)" },
+      { agent: "testy", files: ["test-cart.txt", "old.txt"], status: "added", tests: { passed: 3, total: 3 }, better: 0.9, question: "better" },
     ]);
     // One fusion commit on the winner, authored by testy: its new test is in, the file it removed is gone,
     // the winner's own fix is kept, and the rejected file left nothing behind.
@@ -130,7 +136,7 @@ describe("runFusion", () => {
     expect(await git(repo, "rev-parse", "HEAD^")).toBe(before);
     expect(await git(repo, "log", "-1", "--format=%an|%cn|%s")).toBe("Thunderdome testy|Thunderdome|Thunderdome fusion: add testy's test-cart.txt, old.txt to ponder's fix");
     expect(await git(repo, "show", "HEAD:app.txt")).toBe("fixed by ponder");
-    expect(await git(repo, "ls-files")).toBe("app.txt\ntest-app.txt\ntest-cart.txt");
+    expect(await git(repo, "ls-files")).toBe("app.txt\ntest-app.txt\ntest-cart.txt\ntest-ponder.test.txt");
     expect(await git(repo, "status", "--porcelain")).toBe("");
     expect(existsSync(join(repo, "broken.txt"))).toBe(false);
     // The judge saw the winner's change and only the additions.
@@ -141,6 +147,38 @@ describe("runFusion", () => {
     expect(asked.state.additions).not.toContain("fixed by testy");
   });
 
+  it("asks the coverage question for test files, with the winner's code and tests apart, and says so in the commit", async () => {
+    const { forks } = await setup();
+    const deps = fuseDeps();
+    const repo = join(root, "workspace/repo");
+    const result = await runFusion(deps, {
+      task: "Fix the app",
+      winner: "ponder",
+      testsPassed: 2,
+      candidates: [{ agent: "snip", remote: forks.snip!, branch: "main", files: ["test-snip.test.txt"] }],
+    });
+    expect(result.tried[0]).toMatchObject({ status: "added", question: "coverage", tests: { passed: 3, total: 3 } });
+    const asked = deps.asked[0] as { state: Record<string, string>; questions: unknown };
+    expect(asked.questions).toBe(COVERAGE_QUESTION);
+    expect(asked.state.winner_code).toContain("+fixed by ponder");
+    expect(asked.state.winner_code).not.toContain("ponder's own test");
+    expect(asked.state.winner_tests).toContain("+ponder's own test");
+    expect(asked.state.added_tests).toContain("+an edge case test by snip");
+    expect(await git(repo, "log", "-1", "--format=%b")).toContain("the judge says they check something the task asks that ponder's tests do not (yes 0.9)");
+  });
+
+  it("says when the judge finds nothing new in the added tests", async () => {
+    const { forks } = await setup();
+    const result = await runFusion(fuseDeps({ snip: 0.3 }), {
+      task: "Fix the app",
+      winner: "ponder",
+      testsPassed: 2,
+      candidates: [{ agent: "snip", remote: forks.snip!, branch: "main", files: ["test-snip.test.txt"] }],
+    });
+    expect(result.tried[0]).toMatchObject({ status: "rejected", question: "coverage", note: "the judge found nothing new that the task asks for (yes 0.3)" });
+    expect(result.commit).toBeUndefined();
+  });
+
   it("adds nothing when the judge does not find the additions better", async () => {
     const { forks } = await setup();
     const repo = join(root, "workspace/repo");
@@ -148,7 +186,7 @@ describe("runFusion", () => {
     const result = await runFusion(fuseDeps({ testy: FUSE_THRESHOLD - 0.1 }), {
       task: "Fix the app",
       winner: "ponder",
-      testsPassed: 1,
+      testsPassed: 2,
       candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
     });
     expect(result.commit).toBeUndefined();
@@ -162,7 +200,7 @@ describe("runFusion", () => {
     const result = await runFusion(fuseDeps(), {
       task: "Fix the app",
       winner: "ponder",
-      testsPassed: 1,
+      testsPassed: 2,
       candidates: [
         { agent: "snip", remote: join(root, "missing"), branch: "main", files: ["x.txt"] },
         { agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] },
@@ -227,5 +265,12 @@ describe("fusionWhy", () => {
         "- Added testy's test/a.test.ts: every test passes (8/8) and the judge says it makes the change better (yes 0.83).\n" +
         "- Left out zippy's src/b.ts: not every test passed (6/8).",
     );
+  });
+});
+
+describe("isTestFile", () => {
+  it("knows test files by folder or name", () => {
+    for (const f of ["test/a.ts", "src/test/a.ts", "tests/x.py", "__tests__/a.js", "src/a.test.ts", "a.spec.js", "test/zippy.test.ts"]) expect(isTestFile(f), f).toBe(true);
+    for (const f of ["src/a.ts", "testing.md", "src/latest/a.ts", "contest/a.ts", "README.md"]) expect(isTestFile(f), f).toBe(false);
   });
 });
