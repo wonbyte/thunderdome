@@ -302,6 +302,9 @@ describe("U9 names: the why uses the names and keeps the table aligned", () => {
     expect(out[4]).toBe("Testy    6/6 (50)  89.49");
     expect(out[7]).toBe("Why Ponder won:");
     expect(out[8]).toBe("- A carefully kept claim; Zippy was faster.");
+
+    // Ids in paths stay, and an id at the end of a sentence still changes.
+    expect(whyWithNames("- Added ponder's test/ponder.test.ts, after zippy.", ["ponder", "zippy"])).toBe("- Added Ponder's test/ponder.test.ts, after Zippy.");
   });
 });
 

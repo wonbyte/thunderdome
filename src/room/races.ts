@@ -44,6 +44,7 @@ export interface RaceSummary {
   headline?: string; // the judge's one-line reason, only when the verdict has it
   lesson?: string; // the winner's strongest point, only when the verdict has it
   commit?: string; // the merge commit, only when the winner merged
+  fused?: string[]; // agents whose files the fusion round added and the winner merged: the race's assists
   clash: boolean;
 }
 
@@ -66,8 +67,17 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     ...(v?.headline === undefined ? {} : { headline: v.headline }),
     ...(v?.lesson === undefined ? {} : { lesson: v.lesson }),
     ...(v?.ship.status === "merged" && v.ship.commit !== undefined ? { commit: v.ship.commit } : {}),
+    ...fusedOf(task),
     clash: hasClash(history),
   };
+}
+
+/** `{ fused }` when the fusion round added a loser's files and the winner merged them, else nothing. */
+function fusedOf(task: Task): { fused?: string[] } {
+  const v = task.verdict;
+  if (v?.ship.status !== "merged" || v.fusion === undefined) return {};
+  const fused = [...new Set(v.fusion.tried.filter((t) => t.status === "added").map((t) => t.agent))];
+  return fused.length === 0 ? {} : { fused };
 }
 
 /** True when some file was claimed by two or more different agents. */

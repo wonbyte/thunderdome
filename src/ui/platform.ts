@@ -2,9 +2,10 @@
 // Pure, like board.ts. Latencies come from the server's own timestamps where it sends them.
 import { displayName } from "./board";
 import type { BoardEvent } from "./board";
+import { fusionView, type FusionView } from "./fusion";
 
 /** The Cloudflare products a race goes through, in pipeline order. */
-export const STAGES = ["fork", "containers", "claims", "events", "workflows", "previews", "ai", "merge"] as const;
+export const STAGES = ["fork", "containers", "claims", "events", "workflows", "previews", "ai", "fusion", "merge"] as const;
 /** One stage of the pipeline. */
 export type Stage = (typeof STAGES)[number];
 
@@ -17,6 +18,7 @@ export const STAGE_INFO: Record<Stage, { product: string; role: string }> = {
   workflows: { product: "Workflows", role: "preview builds + judge" },
   previews: { product: "Workers Previews", role: "a live URL per push" },
   ai: { product: "Workers AI · Clef", role: "scores each diff" },
+  fusion: { product: "Containers × 2", role: "losers' tests: run read-only, push apart" },
   merge: { product: "Artifacts", role: "the winner merges" },
 };
 
@@ -44,7 +46,7 @@ export interface PlatformState {
 
 /** A pipeline with nothing done yet. */
 export function emptyPlatform(): PlatformState {
-  return { counts: { fork: 0, containers: 0, claims: 0, events: 0, workflows: 0, previews: 0, ai: 0, merge: 0 }, last: {}, pushAt: {}, forked: false, agents: 0 };
+  return { counts: { fork: 0, containers: 0, claims: 0, events: 0, workflows: 0, previews: 0, ai: 0, fusion: 0, merge: 0 }, last: {}, pushAt: {}, forked: false, agents: 0 };
 }
 
 const ms = (iso: string | undefined): number | undefined => {
@@ -118,6 +120,8 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
     case "verdict": {
       const judgedAt = ms(event.verdict.judgedAt) ?? at;
       hits.push(hit("ai", `Clef scored ${next.agents || "every"} diffs`, { ms: since(next.finishedAt, judgedAt) }));
+      const fusion = fusionView(event.verdict);
+      if (fusion !== undefined) hits.push(hit("fusion", fusionLine(fusion), fusion.shipped ? { agent: fusion.winner } : {}));
       const ship = event.verdict.ship;
       if (ship?.status === "merged" && event.verdict.winner !== null) {
         const commit = ship.commit === undefined ? "" : ` (${ship.commit.slice(0, 7)})`;
@@ -135,6 +139,14 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
     next.last[h.stage] = h;
   }
   return { state: next, hits };
+}
+
+/** The fusion unit's line: what was added, or how many tries were left out. */
+function fusionLine(view: FusionView): string {
+  if (view.error !== undefined && view.rows.length === 0) return "fusion round could not run";
+  const added = view.rows.filter((r) => r.outcome === "added").map((r) => displayName(r.agent));
+  if (added.length === 0) return `tried ${view.rows.length} ${view.rows.length === 1 ? "loser's" : "losers'"} tests, kept none`;
+  return `fused ${added.join(" & ")}'s tests into ${displayName(view.winner)}'s fix${view.commit === undefined ? "" : ` (${view.commit})`}`;
 }
 
 /** "6.1 s", "820 ms", "1 m 05 s". */

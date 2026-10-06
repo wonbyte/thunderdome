@@ -95,8 +95,8 @@ describe("leaderboard", () => {
   });
 
   it("U18 raceStats counts judged races, clashes, what decided them and the average time", () => {
-    expect(raceStats(races)).toEqual({ judged: 3, clashRate: 2 / 3, decided: { code: 1, claims: 1, close: 0, same: 0 }, avgSeconds: 150 });
-    expect(raceStats([])).toEqual({ judged: 0, clashRate: 0, decided: { code: 0, claims: 0, close: 0, same: 0 } });
+    expect(raceStats(races)).toEqual({ judged: 3, clashRate: 2 / 3, decided: { code: 1, claims: 1, close: 0, same: 0 }, fusedRate: 0, avgSeconds: 150 });
+    expect(raceStats([])).toEqual({ judged: 0, clashRate: 0, decided: { code: 0, claims: 0, close: 0, same: 0 }, fusedRate: 0 });
   });
 });
 

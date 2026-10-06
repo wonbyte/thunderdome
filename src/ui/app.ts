@@ -7,7 +7,8 @@ import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./pl
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
 import { openDiff } from "./diffdialog";
-import { gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
+import { assistsOf, FUSE_BAR, fusionView, type FuseOutcome, type FuseRow } from "./fusion";
+import { fusionOf, gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
 import { drawGraph } from "./graphview";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
 import type { TimedEvent, Timeline } from "./timeline";
@@ -85,6 +86,9 @@ interface BotView {
   meter: HTMLElement;
   segs: Record<Part, HTMLElement>;
   meterValue: HTMLElement;
+  body: HTMLElement;
+  /** "⚡ assist" on the nameplate of a loser whose files the fusion round shipped. */
+  assist: HTMLElement;
   action?: Action;
   actionAt?: number;
   bubbleKey?: string;
@@ -585,6 +589,7 @@ function startReveal(): void {
 }
 
 function stopReveal(): void {
+  stopFusionAct();
   revealArmed = false;
   revealStart = undefined;
   byId("stage").classList.remove("revealing", "revealed");
@@ -617,6 +622,8 @@ function revealTick(): void {
     stage.classList.remove("revealing");
     stage.classList.add("revealed");
     byId("result-panel").classList.remove("revealing");
+    // Started before the render, so the assist tags wait for the act.
+    playFusionAct(board);
     render(board);
     if (board.winner) fireBeam(board.winner);
     typeWhy();
@@ -652,6 +659,7 @@ function render(b: Board): void {
   renderPreviews(b);
   renderWipe(b);
   renderResult(b);
+  renderFusion(b);
   renderLog(b);
   renderTimer();
 }
@@ -686,7 +694,8 @@ function renderGraph(b: Board): void {
   if (replay !== undefined && recorded !== undefined) {
     for (const slot of recorded.agents) ends[slot.name] = msOf(slot.endedAt);
     const merge = mergeOf(recorded);
-    input = { agents, start, ends, dots: pushDots(recorded), t: replay.t, domainEnd: Math.max(replay.timeline.end, merge?.at ?? 0), ...(merge ? { merge } : {}) };
+    const fusion = fusionOf(recorded);
+    input = { agents, start, ends, dots: pushDots(recorded), t: replay.t, domainEnd: Math.max(replay.timeline.end, merge?.at ?? 0), ...(merge ? { merge } : {}), ...(fusion ? { fusion } : {}) };
   } else {
     const now = Date.now();
     for (const f of b.fighters) {
@@ -699,7 +708,8 @@ function renderGraph(b: Board): void {
     const merge = mergeOf(task);
     // Once judged, the graph stops at the merge instead of stretching with the clock.
     const t = b.ended ? (merge?.at ?? msOf(task.verdict?.judgedAt) ?? now) : now;
-    input = { agents, start, ends, dots: liveDots, t, domainEnd: t, ...(merge ? { merge } : {}) };
+    const fusion = fusionOf(task);
+    input = { agents, start, ends, dots: liveDots, t, domainEnd: t, ...(merge ? { merge } : {}), ...(fusion ? { fusion } : {}) };
   }
   const graph = gitGraph(input);
   const key = JSON.stringify(graph, (_k, v: unknown) => (typeof v === "number" ? Math.round(v * 400) : v));
@@ -707,7 +717,8 @@ function renderGraph(b: Board): void {
   graphKey = key;
   drawGraph(byId("graph"), graph, replay === undefined && !b.ended, (agent) => void openDiff(taskId, agent));
   const pushes = graph.lanes.reduce((n, l) => n + l.dots.length, 0);
-  byId("graph-stat").textContent = `${graph.lanes.length} forks · ${pushes} push${pushes === 1 ? "" : "es"}${graph.merge ? " · 1 merge" : ""}`;
+  const fused = graph.fusion?.tries.filter((t) => t.added).length ?? 0;
+  byId("graph-stat").textContent = `${graph.lanes.length} forks · ${pushes} push${pushes === 1 ? "" : "es"}${fused > 0 ? ` · ${fused} fused` : ""}${graph.merge ? " · 1 merge" : ""}`;
 }
 
 /** What the robots were told about earlier races on this app. Rebuilt only when it changes. */
@@ -866,7 +877,10 @@ function botView(f: Fighter, index: number): BotView {
   if (style !== undefined) plate.append(el("span", "style", style));
   const tag = el("span", "mem-tag");
   setMemoryTag(tag, f.agent);
-  plate.append(tag);
+  const assist = el("span", "assist-tag", "⚡ assist");
+  assist.title = `${displayName(f.agent)}'s tests were fused into the winning change`;
+  assist.hidden = true;
+  plate.append(tag, assist);
   const pips = el("span", "pips");
   const state = el("span", "state");
   const meta = el("div", "meta");
@@ -883,7 +897,7 @@ function botView(f: Fighter, index: number): BotView {
       void openDiff(taskId, f.agent);
     }
   });
-  const view: BotView = { root, bubble, bubbleText, pips, state, meter, segs, meterValue };
+  const view: BotView = { root, bubble, bubbleText, pips, state, meter, segs, meterValue, body, assist };
   bots.set(f.agent, view);
   return view;
 }
@@ -904,6 +918,8 @@ function updateBot(b: Board, f: Fighter, index: number): void {
     if (ONE_SHOT.has(f.action)) kick(root, "kick");
   }
   root.dataset.status = f.status;
+  // Held back while the fusion act plays, so the tag lands with the file.
+  view.assist.hidden = !(b.ended && fusionActDone && b.task !== undefined && assistsOf(b.task).includes(f.agent));
   root.classList.toggle("clashing", f.clashFile !== undefined && !b.ended);
   const bubble = bubbleOf(b, f);
   if (bubble !== view.bubbleKey) {
@@ -1517,6 +1533,177 @@ function scoreRow(f: Scored): HTMLElement {
   row.append(name, bar, total, code);
   if (!f.score.eligible) row.append(el("span", "tag", "not eligible"));
   return row;
+}
+
+// ---- the fusion round ----
+
+/** False while the stage act runs; the assist tags show once it is done. */
+let fusionActDone = true;
+let fusionActTimers: ReturnType<typeof setTimeout>[] = [];
+const FUSE_ACT_LEAD_MS = 900;
+const FUSE_ACT_STEP_MS = 1_900;
+const FUSE_FLIGHT_MS = 1_100;
+const FUSE_STAMP_MS = 1_500;
+
+/** Centre of a bot's body in the stage's coordinates. */
+function bodyCentre(view: BotView, stage: DOMRect): { x: number; y: number } {
+  const r = view.body.getBoundingClientRect();
+  return { x: r.left - stage.left + r.width / 2, y: r.top - stage.top + r.height * 0.35 };
+}
+
+/**
+ * The fusion round on the stage, after the winner is revealed: each loser in turn throws its test
+ * file at the winner. A kept file lands and the mascot stamps it; a left-out file falls short with
+ * Clef's answer. Skipped for reduced motion; the panel and the graph show the same thing.
+ */
+function playFusionAct(b: Board): void {
+  stopFusionAct();
+  const view = fusionView(b.task?.verdict);
+  const winner = view === undefined ? undefined : bots.get(view.winner);
+  if (view === undefined || winner === undefined || view.rows.length === 0 || reducedMotion()) return;
+  fusionActDone = false;
+  const stage = byId("stage");
+  view.rows.forEach((row, i) => {
+    fusionActTimers.push(setTimeout(() => throwFile(stage, row, winner), FUSE_ACT_LEAD_MS + i * FUSE_ACT_STEP_MS));
+  });
+  fusionActTimers.push(
+    setTimeout(() => {
+      fusionActDone = true;
+      if (board !== undefined) renderBots(board);
+    }, FUSE_ACT_LEAD_MS + view.rows.length * FUSE_ACT_STEP_MS),
+  );
+}
+
+function stopFusionAct(): void {
+  for (const timer of fusionActTimers) clearTimeout(timer);
+  fusionActTimers = [];
+  fusionActDone = true;
+  for (const node of document.querySelectorAll(".fuse-card, .fuse-stamp")) node.remove();
+  for (const view of bots.values()) view.root.classList.remove("assisting");
+}
+
+/** One keyframe of a flying file card: centred on `p`. */
+function flyFrame(p: { x: number; y: number }, scale: number, opacity: number): Keyframe {
+  return { transform: `translate(${p.x}px, ${p.y}px) translate(-50%, -50%) scale(${scale})`, opacity };
+}
+
+function throwFile(stage: HTMLElement, row: FuseRow, winner: BotView): void {
+  const loser = bots.get(row.agent);
+  if (loser === undefined) return;
+  const box = stage.getBoundingClientRect();
+  const from = bodyCentre(loser, box);
+  const to = bodyCentre(winner, box);
+  const kept = row.outcome === "added";
+  loser.root.classList.add("assisting");
+  const card = el("div", `fuse-card ${kept ? "kept" : "dropped"}`);
+  card.style.setProperty("--color", colorFor(row.agent));
+  card.append(el("b", undefined, "{ }"), el("span", undefined, (row.files[0] ?? "").split("/").at(-1) ?? ""));
+  stage.append(card);
+  // An arc: up and over to the winner, or up and short of it for a left-out file.
+  const end = kept ? to : { x: from.x + (to.x - from.x) * 0.62, y: to.y + 70 };
+  const peak = { x: (from.x + end.x) / 2, y: Math.min(from.y, to.y) - 90 };
+  const flight = card.animate(
+    kept
+      ? [flyFrame(from, 0.4, 0), flyFrame(from, 1, 1), flyFrame(peak, 1.15, 1), flyFrame(to, 0.6, 1)]
+      : [flyFrame(from, 0.4, 0), flyFrame(from, 1, 1), flyFrame(peak, 1.05, 1), { ...flyFrame(end, 0.9, 0.9), offset: 0.85 }, flyFrame({ x: end.x, y: end.y + 40 }, 0.8, 0)],
+    { duration: FUSE_FLIGHT_MS, easing: "cubic-bezier(.3, .7, .4, 1)", fill: "forwards" },
+  );
+  flight.onfinish = () => {
+    card.remove();
+    loser.root.classList.remove("assisting");
+    stamp(stage, kept ? to : end, kept, kept ? "fused!" : (row.clef === undefined ? "left out" : `Clef ${row.clef.toFixed(2)} < ${FUSE_BAR.toFixed(2)}`));
+    if (kept) {
+      kick(winner.root, "fused");
+      fireBeam(row.agent);
+    }
+  };
+}
+
+function stamp(stage: HTMLElement, at: { x: number; y: number }, kept: boolean, label: string): void {
+  const node = el("div", `fuse-stamp ${kept ? "kept" : "dropped"}`);
+  // Above the winner's crown and bubble, or above the spot a left-out file fell.
+  node.style.left = `${at.x}px`;
+  node.style.top = `${at.y - (kept ? 170 : 110)}px`;
+  if (kept) node.append(mascot());
+  node.append(el("b", undefined, kept ? "✓" : "✗"), el("span", undefined, label));
+  stage.append(node);
+  const anim = node.animate(
+    [
+      { transform: "translate(-50%, -50%) scale(.3) rotate(-14deg)", opacity: 0 },
+      { transform: "translate(-50%, -50%) scale(1.15) rotate(-6deg)", opacity: 1, offset: 0.18 },
+      { transform: "translate(-50%, -50%) scale(1) rotate(-6deg)", opacity: 1, offset: 0.8 },
+      { transform: "translate(-50%, -80%) scale(1) rotate(-6deg)", opacity: 0 },
+    ],
+    { duration: FUSE_STAMP_MS, easing: "ease-out", fill: "forwards" },
+  );
+  anim.onfinish = () => node.remove();
+}
+
+let fusionKey = "";
+
+const FUSE_BADGE: Record<FuseOutcome, string> = { added: "⚡ fused", rejected: "left out", failed: "could not try" };
+
+/** The fusion panel: one row per loser's try, with each gate it passed or failed. */
+function renderFusion(b: Board): void {
+  const view = b.ended ? fusionView(b.task?.verdict) : undefined;
+  const key = JSON.stringify(view ?? null);
+  if (key === fusionKey) return;
+  fusionKey = key;
+  const panel = byId("fusion-panel");
+  panel.hidden = view === undefined;
+  if (view === undefined) return;
+  const kept = view.rows.filter((r) => r.outcome === "added");
+  byId("fusion-stat").textContent = `${kept.length} of ${view.rows.length} kept`;
+  const result = byId("fusion-result");
+  result.classList.toggle("kept", kept.length > 0);
+  const winner = displayName(view.winner);
+  result.textContent =
+    view.error !== undefined && view.rows.length === 0
+      ? `The fusion round could not run: ${view.error}`
+      : kept.length === 0
+        ? `Nothing was added: ${winner}'s fix shipped as it was.`
+        : `${kept.map((r) => `${displayName(r.agent)}'s ${r.files.join(", ")}`).join(" and ")} ${view.shipped ? "shipped" : "joined"} with ${winner}'s fix${view.commit === undefined ? "" : ` in fusion commit ${view.commit}`}: the losing fork${kept.length === 1 ? "" : "s"} still made the code better.`;
+  byId("fusion-rows").replaceChildren(...view.rows.map((row, i) => fuseRow(row, i)));
+}
+
+function fuseRow(row: FuseRow, index: number): HTMLElement {
+  const color = colorFor(row.agent);
+  const item = el("li", `fuse-row ${row.outcome}`);
+  item.style.setProperty("--color", color);
+  item.style.setProperty("--i", String(index));
+  const who = el("div", "fuse-who");
+  who.append(art("mini", robotSvg(color)), el("b", undefined, displayName(row.agent)));
+  const files = el("div", "fuse-files");
+  for (const file of row.files) files.append(el("code", undefined, file));
+  const gates = el("div", "fuse-gates");
+  if (row.tests !== undefined) {
+    const gate = el("span", `gate ${row.green === true ? "pass" : "fail"}`, `${row.green === true ? "✓" : "✗"} tests ${row.tests}`);
+    gate.title = "Gate 1: every test passes with these files on top of the winner's fix";
+    gates.append(gate);
+  }
+  if (row.clef !== undefined) gates.append(clefGate(row));
+  const badge = el("span", "fuse-badge", FUSE_BADGE[row.outcome]);
+  item.append(who, files, gates, badge);
+  if (row.note !== undefined) item.append(el("p", "fuse-note", row.note));
+  return item;
+}
+
+/** Gate 2: Clef's yes as a bar, with the bar it had to clear. */
+function clefGate(row: FuseRow): HTMLElement {
+  const clef = row.clef ?? 0;
+  const pass = clef >= FUSE_BAR;
+  const gate = el("span", `gate clef ${pass ? "pass" : "fail"}`);
+  gate.title = `Gate 2: Clef (Workers AI) was asked whether it ${row.asked ?? "makes the change better?"} Yes ${clef.toFixed(2)}; it needs ${FUSE_BAR.toFixed(2)}.`;
+  const meter = el("span", "clef-meter");
+  meter.setAttribute("role", "img");
+  meter.setAttribute("aria-label", `Clef yes ${clef.toFixed(2)} of a needed ${FUSE_BAR.toFixed(2)}`);
+  const fill = el("i");
+  fill.style.width = `${Math.round(clef * 100)}%`;
+  const mark = el("b");
+  mark.style.left = `${FUSE_BAR * 100}%`;
+  meter.append(fill, mark);
+  gate.append(el("span", undefined, `${pass ? "✓" : "✗"} Clef`), meter, el("span", "clef-val", clef.toFixed(2)));
+  return gate;
 }
 
 /** Newest first. Each line is the step's short label; the raw step is its tooltip. */

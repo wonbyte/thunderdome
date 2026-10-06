@@ -11,6 +11,7 @@
   --red: #ff5b5f;
   --green: #3ddc97;
   --cyan: #7fe3ff;
+  --fuse: #ffb02e; /* the fusion round: a loser's work joining the winner's */
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
   --sans: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --px: 7px; /* one robot pixel */
@@ -639,7 +640,7 @@ h2 {
 .pipe h2 { color: #f6821f; }
 .pipeline {
   position: relative; list-style: none; margin: 0; padding: 0 0 18px; display: grid; gap: 10px;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
+  grid-template-columns: repeat(9, minmax(0, 1fr));
 }
 /* The bus under the units; packets ride along it. */
 .pipeline::after {
@@ -821,7 +822,7 @@ h2 {
 @keyframes laser { from { left: -140px; } to { left: 100%; } }
 
 @media (max-width: 1100px) {
-  .pipeline { grid-template-columns: repeat(4, minmax(0, 1fr)); padding-bottom: 0; }
+  .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-bottom: 0; }
   .pipeline::after { display: none; }
   .unit::after { display: none; }
   .packet { display: none; }
@@ -871,6 +872,11 @@ h2 {
 .mini-crown { position: absolute; left: 25%; top: -34%; width: 50%; }
 .mini-crown svg { width: 100%; display: block; }
 .fighter.lost { opacity: .55; filter: grayscale(.6); }
+/* A loser whose tests shipped stays lit: it lost the race, but its work is in main. */
+.fighter { position: relative; }
+.fighter.lost.assisted { opacity: .9; filter: none; }
+.fighter .assist-tag { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 2px; white-space: nowrap; }
+.lineup:has(.assisted) { padding-bottom: 24px; }
 .race-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--dim); }
 .cta { font-weight: 800; color: var(--cyan); }
 .race.running .cta, .race.live .cta { color: var(--green); }
@@ -904,6 +910,20 @@ h2 {
 .judge-bridge { stroke-width: 2; stroke-dasharray: 4 6; opacity: .55; }
 .bridge-tag { fill: var(--faint); }
 .merge-path { fill: none; stroke-width: 3.5; stroke-linecap: round; }
+/* The fusion round: losers' lanes feeding the winner's, just before the merge. */
+.fuse-path { fill: none; stroke-linecap: round; }
+.fuse-path.kept { stroke-width: 3; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--fuse) 60%, transparent)); }
+.fuse-path.dropped { stroke-width: 1.5; stroke-dasharray: 3 5; opacity: .45; }
+.fusion.pop .fuse-path { stroke-dasharray: 200; stroke-dashoffset: 200; animation: fuse-draw .9s calc(var(--k, 0) * 250ms) var(--ease) forwards; }
+.fusion.pop .fuse-path.dropped { animation-name: fuse-draw-dash; }
+@keyframes fuse-draw { to { stroke-dashoffset: 0; } }
+@keyframes fuse-draw-dash { from { stroke-dasharray: 200; stroke-dashoffset: 200; } 99% { stroke-dasharray: 200; stroke-dashoffset: 0; } to { stroke-dasharray: 3 5; stroke-dashoffset: 0; } }
+.fuse-x { fill: var(--faint); font: 700 11px var(--mono); }
+.fuse-dot { fill: var(--panel); stroke: var(--faint); stroke-width: 2; }
+.fuse-dot.kept { fill: var(--fuse); stroke: #fff6; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 0 6px var(--fuse)); }
+.fusion.pop .fuse-dot.kept { animation: dot-pop .7s .7s var(--ease) both; }
+.fuse-tag { fill: var(--faint); font: 700 10.5px var(--mono); }
+.fuse-tag.kept { fill: var(--fuse); }
 .merge-path.pop { stroke-dasharray: 120; animation: merge-draw 1s var(--ease) both; }
 .merge-dot { fill: var(--accent); stroke-width: 3; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 0 6px rgba(255, 210, 63, .7)); }
 .merge-dot.pop { animation: dot-pop .8s .5s var(--ease) both; }
@@ -954,7 +974,9 @@ h2 {
 .dl.hunk { color: var(--cyan); background: rgba(127, 227, 255, .06); margin: 4px 0; }
 .dl.meta { color: var(--faint); font-style: italic; }
 @media (prefers-reduced-motion: reduce) {
-  .push-dot.pop, .merge-dot.pop, .merge-path.pop, .lane-head, .diff-dialog[open] { animation: none; }
+  .push-dot.pop, .merge-dot.pop, .merge-path.pop, .lane-head, .diff-dialog[open], .fusion.pop .fuse-path, .fusion.pop .fuse-dot.kept { animation: none; }
+  .fusion.pop .fuse-path.kept { stroke-dasharray: none; stroke-dashoffset: 0; }
+  .fusion.pop .fuse-path.dropped { stroke-dasharray: 3 5; stroke-dashoffset: 0; }
 }
 
 /* ---------- leaderboard ---------- */
@@ -981,7 +1003,7 @@ h2 {
 .decided-legend span { background: none; font: 700 11.5px var(--mono); }
 .standings { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .standing {
-  display: grid; grid-template-columns: 22px 40px minmax(90px, 160px) minmax(0, 1fr) 64px 76px 64px;
+  display: grid; grid-template-columns: 22px 40px minmax(90px, 160px) minmax(0, 1fr) 64px 76px 64px 64px;
   align-items: center; gap: 12px; padding: 6px 12px; border-radius: 10px; background: var(--panel-2);
   border-left: 3px solid var(--color, transparent); animation: lb-rise .5s calc(var(--i, 0) * 80ms) var(--ease) both;
 }
@@ -997,6 +1019,10 @@ h2 {
 .standing .wins { font: 800 13px var(--mono); }
 .standing .rate, .standing .avg { font: 600 12.5px var(--mono); color: var(--dim); }
 .standing .avg { color: var(--text); }
+.standing .assists { font: 700 12.5px var(--mono); color: var(--faint); }
+.standing .assists.some { color: var(--fuse); text-shadow: 0 0 10px color-mix(in srgb, var(--fuse) 45%, transparent); }
+.pill.fused { color: var(--fuse); border-color: color-mix(in srgb, var(--fuse) 45%, transparent); }
+.assist-tag { font: 700 10px var(--mono); color: var(--fuse); letter-spacing: .02em; }
 .pill.decided-code { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
 .pill.decided-claims { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
 .pill.decided-close { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -1004,7 +1030,7 @@ h2 {
 @keyframes grow-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
 @keyframes lb-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 @media (max-width: 640px) {
-  .standing { grid-template-columns: 18px 32px minmax(0, 1fr) 56px 52px; }
+  .standing { grid-template-columns: 18px 32px minmax(0, 1fr) 52px 40px 44px; gap: 8px; }
   .standing .col-bar, .standing .col-rate { display: none; }
   .stat.wide { grid-column: 1 / -1; }
 }
@@ -1043,3 +1069,69 @@ h2 {
 .cta-btn.go:disabled { opacity: .5; cursor: not-allowed; animation: none; }
 .cta-btn.go.busy { animation: cta-glow .9s ease-in-out infinite; }
 @media (max-width: 640px) { .hero-bots { display: none; } }
+
+/* ---------- the fusion round panel ---------- */
+.fusion-panel { border-color: color-mix(in srgb, var(--fuse) 35%, var(--line)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fuse) 10%, transparent), 0 0 40px color-mix(in srgb, var(--fuse) 8%, transparent); }
+.fusion-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.fusion-head h2 { color: var(--fuse); margin-bottom: 8px; }
+.fuse-bolt { display: inline-block; filter: drop-shadow(0 0 6px var(--fuse)); }
+.fusion-result { margin: 4px 0 14px; font-size: 14px; color: var(--dim); }
+.fusion-result.kept { color: var(--text); }
+.fusion-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.fuse-row {
+  display: grid; grid-template-columns: minmax(110px, 150px) minmax(0, 1fr) auto auto; align-items: center; gap: 6px 14px;
+  padding: 10px 14px; border-radius: 10px; background: var(--panel-2); border-left: 3px solid var(--color);
+  animation: lb-rise .5s calc(var(--i, 0) * 120ms) var(--ease) both;
+}
+.fuse-row.added { background: linear-gradient(90deg, color-mix(in srgb, var(--fuse) 14%, var(--panel-2)), var(--panel-2) 70%); }
+.fuse-who { display: flex; align-items: center; gap: 8px; }
+.fuse-who .mini { width: 30px; }
+.fuse-who b { color: var(--color); }
+.fuse-files { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.fuse-files code { font: 600 12px var(--mono); color: var(--text); background: #0b0e17; border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; overflow-wrap: anywhere; }
+.fuse-gates { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font: 700 12px var(--mono); }
+.gate.pass { color: var(--green); }
+.gate.fail { color: var(--red); }
+.gate.clef { display: inline-flex; align-items: center; gap: 7px; }
+.clef-meter { position: relative; width: 96px; height: 8px; border-radius: 99px; background: #1b2031; }
+.clef-meter i { position: absolute; inset: 0 auto 0 0; border-radius: 99px; background: currentColor; animation: grow-x .9s .3s var(--ease) both; transform-origin: left; }
+.clef-meter b { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--text); border-radius: 1px; }
+.clef-val { color: var(--text); }
+.fuse-badge { font: 800 11px var(--mono); letter-spacing: .08em; text-transform: uppercase; padding: 4px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--faint); white-space: nowrap; }
+.fuse-row.added .fuse-badge { color: #1a1204; background: var(--fuse); border-color: var(--fuse); box-shadow: 0 0 16px color-mix(in srgb, var(--fuse) 55%, transparent); }
+.fuse-note { grid-column: 2 / -1; margin: 0; font-size: 12.5px; color: var(--faint); }
+@media (max-width: 760px) {
+  .fuse-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .fuse-files, .fuse-gates, .fuse-note { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { .fuse-row, .clef-meter i { animation: none; } }
+
+/* ---------- the fusion act on the stage ---------- */
+.fuse-card {
+  position: absolute; left: 0; top: 0; z-index: 6; pointer-events: none;
+  display: flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px;
+  background: #0b0e17; border: 2px solid var(--color); color: var(--text); font: 700 12px var(--mono); white-space: nowrap;
+  box-shadow: 0 0 18px color-mix(in srgb, var(--color) 50%, transparent);
+}
+.fuse-card b { color: var(--color); }
+.fuse-card.kept { border-color: var(--fuse); box-shadow: 0 0 22px color-mix(in srgb, var(--fuse) 65%, transparent); }
+.fuse-stamp {
+  position: absolute; z-index: 7; pointer-events: none; display: flex; align-items: center; gap: 6px;
+  padding: 8px 14px 8px 10px; border-radius: 12px; font: 800 15px var(--mono); white-space: nowrap;
+  border: 2px solid currentColor; background: #0b0e17e6;
+}
+.fuse-stamp.kept { color: var(--fuse); box-shadow: 0 0 26px color-mix(in srgb, var(--fuse) 55%, transparent); }
+.fuse-stamp.dropped { color: var(--dim); }
+.fuse-stamp.dropped b { color: var(--red); }
+.fuse-stamp b { font-size: 18px; }
+.fuse-stamp .fx-mascot { position: static; width: 40px; height: auto; display: block; animation: none; opacity: 1; }
+.bot.assisting .body { animation: assist-hop .6s var(--ease) 2; }
+@keyframes assist-hop { 50% { transform: translateY(-18px) rotate(calc(var(--lunge, 1) * 6deg)); } }
+.bot.fused .aura::after {
+  content: ""; position: absolute; inset: 0; border-radius: 50%; pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--fuse) 85%, transparent), transparent);
+  animation: fused-flash 1s ease-out both;
+}
+@keyframes fused-flash { 0% { opacity: 0; transform: scale(.6); } 25% { opacity: 1; } 100% { opacity: 0; transform: scale(1.5); } }
+.plate .assist-tag { white-space: nowrap; margin-left: 6px; padding: 1px 6px; border-radius: 99px; border: 1px solid color-mix(in srgb, var(--fuse) 50%, transparent); animation: dot-pop .6s var(--ease) both; }
+@media (prefers-reduced-motion: reduce) { .bot.assisting .body, .bot.fused .aura::after, .plate .assist-tag { animation: none; } }

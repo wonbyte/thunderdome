@@ -70,7 +70,7 @@
 
     <section id="graph-panel" class="card graph-panel" aria-labelledby="graph-title" hidden>
       <div class="graph-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></div>
-      <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Click a lane or a robot to see its code.</p>
+      <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Arrows into the winner's lane are the fusion round: a loser's tests, kept (solid) or left out (✗). Click a lane or a robot to see its code.</p>
       <div id="graph" class="graph"></div>
     </section>
 
@@ -133,6 +133,16 @@
         <summary>Why the judge picked <span id="winner"></span></summary>
         <pre id="why" class="why"></pre>
       </details>
+    </section>
+
+    <section id="fusion-panel" class="card fusion-panel" aria-labelledby="fusion-title" hidden>
+      <div class="fusion-head">
+        <h2 id="fusion-title"><span class="fuse-bolt" aria-hidden="true">⚡</span> Fusion round</h2>
+        <span id="fusion-stat" class="count-pill"></span>
+      </div>
+      <p class="hint">The losers' work is not thrown away. Each loser's own test file is tried on top of the winning fix: every test must pass, then Clef must say it checks something the task asks that the winner's tests do not. The tests run in a sandbox with read-only tokens; a second sandbox pushes only what passed.</p>
+      <p id="fusion-result" class="fusion-result"></p>
+      <ol id="fusion-rows" class="fusion-rows"></ol>
     </section>
   </main>
 </body>

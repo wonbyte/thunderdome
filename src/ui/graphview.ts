@@ -1,6 +1,6 @@
 // Draws gitgraph.ts's model as SVG: main on top, a lane per fork, push dots, the merge.
 // Built with createElementNS and textContent only, so commit messages stay text.
-import type { GitGraph, Lane } from "./gitgraph";
+import type { GitGraph, GraphFusion, Lane } from "./gitgraph";
 
 const NS = "http://www.w3.org/2000/svg";
 const W = 1000;
@@ -9,6 +9,8 @@ const RIGHT = 56; // room for the merge label
 const TOP = 26;
 const LANE_H = 38;
 const MAIN_COLOR = "#8b8d98";
+/** How far before the merge the fusion commit sits on the winner's lane. */
+const FUSE_GAP = 72;
 
 const px = (x: number): number => Math.round(LEFT + x * (W - LEFT - RIGHT));
 
@@ -51,6 +53,8 @@ export function drawGraph(host: Element, graph: GitGraph, live: boolean, onLane:
   root.append(titled(svg("circle", { cx: px(0), cy: mainY, r: 5 }, "base-dot"), "base: the commit every fork started from"));
 
   graph.lanes.forEach((lane, i) => drawLane(root, lane, mainY + (i + 1) * LANE_H, mainY, live, isNew, onLane));
+
+  if (graph.fusion !== undefined) drawFusion(root, graph, graph.fusion, mainY, isNew);
 
   if (graph.merge !== undefined) {
     const lane = graph.lanes.findIndex((l) => l.agent === graph.merge?.agent);
@@ -111,5 +115,42 @@ function drawLane(
     g.append(titled(svg("rect", { x: x1 + 4, y: y - 4, width: 8, height: 8, rx: 2 }, "lane-end"), "fork kept as a record"));
   }
   if (!lane.won) g.append(text(x1 + (lane.ended ? 18 : 10), y + 4, lane.ended ? "kept" : "", "lane-tag"));
+  root.append(g);
+}
+
+/**
+ * The fusion round: an arrow from each loser's lane into the winner's lane, just before the merge.
+ * A kept try is a solid arrow in the loser's color into a fusion commit; a left-out try is a faint
+ * dashed arrow that stops short with a cross.
+ */
+function drawFusion(root: SVGSVGElement, graph: GitGraph, fusion: GraphFusion, mainY: number, isNew: (key: string) => boolean): void {
+  const wi = graph.lanes.findIndex((l) => l.agent === fusion.winner);
+  const winner = graph.lanes[wi];
+  if (winner === undefined) return;
+  const wy = mainY + (wi + 1) * LANE_H;
+  // Between the winner's last push and where the merge leaves its lane; at the merge's start when there is no room.
+  const mergeStart = graph.merge === undefined ? Infinity : px(graph.merge.x) - 34;
+  const fx = Math.min(mergeStart, Math.max(px(winner.endX) + 18, px(fusion.x) - FUSE_GAP));
+  const fresh = isNew("fusion") ? " pop" : "";
+  const g = svg("g", {}, `fusion${fresh}`);
+  let added = 0;
+  fusion.tries.forEach((t, k) => {
+    const li = graph.lanes.findIndex((l) => l.agent === t.agent);
+    const lane = graph.lanes[li];
+    if (lane === undefined) return;
+    const ly = mainY + (li + 1) * LANE_H;
+    const sx = Math.min(px(lane.endX) + 6, fx - 36);
+    // A left-out try stops short of the winner's lane.
+    const ex = t.added ? fx - 7 : fx - 16;
+    const ey = t.added ? wy : wy + (ly - wy) * 0.3;
+    const path = svg("path", { d: `M ${sx} ${ly} C ${sx + 24} ${ly}, ${ex - 26} ${ey}, ${ex} ${ey}`, stroke: lane.color, style: `--k:${k}` }, `fuse-path ${t.added ? "kept" : "dropped"}`);
+    g.append(titled(path, t.label));
+    if (t.added) added += 1;
+    else g.append(titled(text(ex + 2, ey + 4, "✗", "fuse-x"), t.label));
+  });
+  const dot = svg("circle", { cx: fx, cy: wy, r: added > 0 ? 7 : 4 }, `fuse-dot${added > 0 ? " kept" : ""}`);
+  const kept = fusion.tries.filter((t) => t.added).map((t) => t.label);
+  g.append(titled(dot, added > 0 ? `fusion commit${fusion.commit === undefined ? "" : ` ${fusion.commit}`}: ${kept.join("; ")}` : "fusion round: every try was left out"));
+  g.append(text(fx, wy + 20, added > 0 ? "⚡ fused" : "fusion: none kept", `fuse-tag${added > 0 ? " kept" : ""}`, "middle"));
   root.append(g);
 }

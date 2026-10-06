@@ -443,8 +443,9 @@ on a clone of the winner's fork, it checks out the loser's version of those file
 winner's fix, then three gates must pass:
 
 1. Every test passes, and no fewer pass than for the winner alone.
-2. Clef answers a yes/no question: do these additions make the change better for the task, or do
-   they repeat it, stray from it, or only make it bigger?
+2. Clef answers a yes/no question. When the additions are all tests: do they check something the
+   task asks that the winner's own tests do not? Otherwise: do they make the change better for
+   the task, or do they repeat it, stray from it, or only make it bigger?
 3. That yes is at least 0.6.
 
 The sandbox that runs the losers' tests (agent-written code) holds read tokens only. The kept
@@ -455,9 +456,22 @@ pushes after its step has given up. An addition that passes becomes its own comm
 fork, authored by the robot that wrote it ("Thunderdome fusion: add testy's test/cart.test.ts to ponder's fix"), so `git log` and
 `git blame` credit each robot. The ship then merges the fused fork as usual, the fused commit gets
 its own preview, and the why gains a "Fusion" section listing every try and why it was kept or
-left out. The race page shows what was fused in the winner's banner. Only whole files the winner
+left out. Only whole files the winner
 did not touch are tried, so a fusion never conflicts with the winning fix. The code is
 `src/judge/fusion.ts`.
+
+The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the shared model):
+
+- **Stage.** After the winner is revealed, each loser throws its test file at the winner. A kept
+  file lands and the mascot stamps it "fused!"; a left-out file falls short with Clef's answer
+  (e.g. "Clef 0.18 < 0.60"). The loser then wears an "⚡ assist" tag.
+- **Fusion round panel.** One row per try: the files, gate 1 (tests 20/20), gate 2 (Clef's yes as a
+  bar with the 0.6 line on it), and the outcome, with the reason for a left-out try.
+- **Git graph.** An arrow from each loser's lane into the winner's lane just before the merge:
+  solid into the fusion commit when kept, dashed and stopping at ✗ when left out.
+- **Pipeline.** A "Containers × 2" unit between Clef and the merge, for the two fusion sandboxes.
+- **Gallery.** A race that shipped a loser's tests gets a "⚡ fused" pill, and the leaderboard
+  counts each robot's **assists**: races it lost whose tests still shipped.
 
 If the source moved on during the race (another race shipped first, or someone pushed), the
 winner's merge can conflict. Then the ship starts a **conflict race**: a second sandbox clones

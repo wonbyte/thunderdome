@@ -2,6 +2,7 @@
 // merge back into main. Pure, like board.ts: times in, positions (0..1) out.
 import { colorFor, displayName } from "./board";
 import type { WireTask } from "./board";
+import { fusionView } from "./fusion";
 
 /** One push to a fork, as a dot on its lane. */
 export interface PushDot {
@@ -23,6 +24,7 @@ export interface GraphInput {
   ends: Record<string, number | undefined>; // when each agent ended, if it has
   dots: PushDot[];
   merge?: { agent: string; at: number; commit?: string };
+  fusion?: FusionInput;
   t: number; // now (live) or the replay time
   domainEnd: number; // the time at the right edge
 }
@@ -56,6 +58,23 @@ export interface GitGraph {
   nowX: number;
   lanes: Lane[];
   merge?: { agent: string; x: number; commit?: string };
+  fusion?: GraphFusion;
+}
+
+/** The fusion round, at the time the judge finished: each loser's try on the winner's fork. */
+export interface FusionInput {
+  at: number; // ms
+  winner: string;
+  commit?: string;
+  tries: { agent: string; added: boolean; files: string[]; note?: string }[];
+}
+
+/** The fusion round placed on the graph: arrows from losers' lanes into the winner's lane at x. */
+export interface GraphFusion {
+  x: number;
+  winner: string;
+  commit?: string;
+  tries: { agent: string; added: boolean; label: string }[];
 }
 
 const ms = (iso: string | undefined): number | undefined => {
@@ -105,6 +124,19 @@ export function mergeOf(task: WireTask): GraphInput["merge"] {
   return { agent: v.winner, at, ...(v.ship.commit === undefined ? {} : { commit: v.ship.commit }) };
 }
 
+/** The fusion round of a judged race, or undefined when there was none. */
+export function fusionOf(task: WireTask): FusionInput | undefined {
+  const view = fusionView(task.verdict);
+  const at = ms(task.verdict?.judgedAt) ?? ms(task.finishedAt);
+  if (view === undefined || at === undefined || view.rows.length === 0) return undefined;
+  return {
+    at,
+    winner: view.winner,
+    ...(view.commit === undefined ? {} : { commit: view.commit }),
+    tries: view.rows.map((r) => ({ agent: r.agent, added: r.outcome === "added", files: r.files, ...(r.note === undefined ? {} : { note: r.note }) })),
+  };
+}
+
 const clamp01 = (x: number): number => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : 0);
 
 function shortSha(commit: string | undefined): string | undefined {
@@ -138,5 +170,21 @@ export function gitGraph(input: GraphInput): GitGraph {
     nowX: x(t),
     lanes,
     ...(merge === undefined ? {} : { merge: { agent: merge.agent, x: x(merge.at), ...(merge.commit === undefined ? {} : { commit: shortSha(merge.commit) }) } }),
+    ...(input.fusion === undefined || input.fusion.at > t ? {} : { fusion: placeFusion(input.fusion, x) }),
+  };
+}
+
+function placeFusion(fusion: FusionInput, x: (at: number) => number): GraphFusion {
+  return {
+    x: x(fusion.at),
+    winner: fusion.winner,
+    ...(fusion.commit === undefined ? {} : { commit: fusion.commit }),
+    tries: fusion.tries.map((t) => {
+      const files = t.files.join(", ");
+      const label = t.added
+        ? `${displayName(t.agent)}'s ${files}: fused into ${displayName(fusion.winner)}'s fork`
+        : `${displayName(t.agent)}'s ${files}: left out${t.note === undefined ? "" : ` (${t.note})`}`;
+      return { agent: t.agent, added: t.added, label };
+    }),
   };
 }

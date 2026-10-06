@@ -34,8 +34,20 @@ export interface WireVerdict {
   why: string;
   judgedAt?: string;
   ship?: { status: string; commit?: string; resolve?: { chosen?: string } };
-  fusion?: { tried: { agent: string; files: string[]; status: string }[]; commit?: string };
+  fusion?: WireFusion;
 }
+/** One loser's try in the fusion round (src/judge/fusion.ts FuseTry). */
+export interface WireFuseTry {
+  agent: string;
+  files: string[];
+  status: string;
+  tests?: { passed: number; total: number };
+  better?: number;
+  question?: string;
+  note?: string;
+}
+/** The fusion round (src/judge/fusion.ts FusionResult). */
+export interface WireFusion { tried: WireFuseTry[]; base?: string; commit?: string; error?: string }
 /** A race as GET /tasks/:id returns it (src/room/task.ts Task). */
 export interface WireTask {
   id: string;
@@ -124,14 +136,15 @@ export function displayName(agent: string): string {
 
 /**
  * The judge's why with each agent id swapped for its name. In the score table (an id followed
- * by 2+ spaces) the padding changes so the columns stay aligned.
+ * by 2+ spaces) the padding changes so the columns stay aligned. Ids inside paths, such as
+ * `test/ponder.test.ts`, stay as they are.
  */
 export function whyWithNames(why: string, agents: readonly string[]): string {
   let text = why;
   for (const agent of agents) {
     const name = displayName(agent);
     if (name === agent || !/^[a-z]+$/.test(agent)) continue;
-    text = text.replace(new RegExp(`\\b${agent}\\b( {2,})?`, "g"), (_match, pad: string | undefined) =>
+    text = text.replace(new RegExp(`(?<![/\\w.-])${agent}(?![\\w-]|\\.\\w)( {2,})?`, "g"), (_match, pad: string | undefined) =>
       pad === undefined ? name : name + " ".repeat(Math.max(2, agent.length + pad.length - name.length)),
     );
   }
@@ -365,7 +378,7 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
     case "agent-end":
       return applyAgentEnd(board, event.agent, event.outcome.end, event.status, now);
     case "verdict": {
-      const { winner, why, judgedAt, ship } = event.verdict;
+      const { winner, why, judgedAt, ship, fusion } = event.verdict;
       const verdict: WireVerdict = {
         winner,
         why,
@@ -377,6 +390,8 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
                 ...(ship.resolve?.chosen === undefined ? {} : { resolve: { chosen: ship.resolve.chosen } }),
               },
             }),
+        // The fusion round rides along, so the live page and a replay draw it without a reload.
+        ...(fusion === undefined ? {} : { fusion }),
       };
       const next = board.task === undefined ? board : { ...board, task: { ...board.task, verdict } };
       return applyVerdict(next, verdict, now);

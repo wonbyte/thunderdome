@@ -18,6 +18,7 @@ interface RaceSummary {
   scores?: { agent: string; total: number }[];
   decidedBy?: DecidedBy;
   headline?: string;
+  fused?: string[];
 }
 
 const ID = /^t-[0-9a-f]{8}$/;
@@ -67,6 +68,7 @@ function card(r: RaceSummary): HTMLElement {
   top.append(el("span", `pill state-${state.replace(" ", "-")}`, state));
   if (r.clash === true) top.append(el("span", "pill clash", "clash"));
   if (r.decidedBy !== undefined) top.append(el("span", `pill decided-${r.decidedBy}`, decidedLabel(r.decidedBy)));
+  if ((r.fused?.length ?? 0) > 0) top.append(el("span", "pill fused", "⚡ fused"));
   if (r.template !== undefined) top.append(el("span", "pill tpl", `demo: ${r.template.replace(/^thunderdome-/, "")}`));
   top.append(el("span", "when", ago(r.createdAt)));
   const prompt = el("p", "race-prompt", r.prompt);
@@ -78,6 +80,13 @@ function card(r: RaceSummary): HTMLElement {
     const bot = art("mini", robotSvg(colorFor(agent)));
     if (agent === r.winner) bot.append(art("mini-crown", crownSvg()));
     fighter.append(bot, el("span", undefined, displayName(agent)));
+    // A loser whose files the fusion round shipped: it lost the race but its work is in main.
+    if (r.fused?.includes(agent) === true) {
+      fighter.classList.add("assisted");
+      const assist = el("span", "assist-tag", "⚡ assist");
+      assist.title = `${displayName(agent)}'s tests were fused into the winning change`;
+      fighter.append(assist);
+    }
     lineup.append(fighter);
   }
   const foot = el("div", "race-foot");
@@ -141,7 +150,9 @@ function standingRow(s: Standing, i: number, top: number): HTMLElement {
   const rate = el("span", "rate col-rate", `${Math.round(s.winRate * 100)}% of ${s.races}`);
   const avg = el("span", "avg", s.avgScore === undefined ? "–" : s.avgScore.toFixed(1));
   avg.title = "average judge score";
-  row.append(el("span", "rank", String(i + 1)), bot, who, bar, wins, rate, avg);
+  const assists = el("span", `assists${s.assists > 0 ? " some" : ""}`, s.assists > 0 ? `⚡ ${s.assists}` : "–");
+  assists.title = "assists: races it lost, but its tests were fused into the winner's change and shipped";
+  row.append(el("span", "rank", String(i + 1)), bot, who, bar, wins, rate, assists, avg);
   return row;
 }
 
@@ -151,13 +162,14 @@ function renderBoard(races: RaceSummary[]): void {
   if (panel === null || rows.length === 0) return;
   const stats = raceStats(races);
   const tiles = [tile(String(stats.judged), stats.judged === 1 ? "race judged" : "races judged"), tile(`${Math.round(stats.clashRate * 100)}%`, "had a claim clash")];
+  tiles.push(tile(`${Math.round(stats.fusedRate * 100)}%`, "shipped a loser's tests too"));
   if (stats.avgSeconds !== undefined) tiles.push(tile(mmss(stats.avgSeconds), "average race"));
   const decided = decidedBar(stats);
   if (decided !== undefined) tiles.push(decided);
   document.getElementById("stats")?.replaceChildren(...tiles);
   const top = Math.max(...rows.map((r) => r.wins));
   const head = el("li", "standing head");
-  head.append(el("span"), el("span"), el("span", undefined, "agent"), el("span", "col-bar"), el("span", undefined, "wins"), el("span", "col-rate", "win rate"), el("span", undefined, "avg"));
+  head.append(el("span"), el("span"), el("span", undefined, "agent"), el("span", "col-bar"), el("span", undefined, "wins"), el("span", "col-rate", "win rate"), el("span", undefined, "assists"), el("span", undefined, "avg"));
   document.getElementById("standings")?.replaceChildren(head, ...rows.map((r, i) => standingRow(r, i, top)));
   panel.hidden = false;
 }
