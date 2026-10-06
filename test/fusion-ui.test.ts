@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { FUSE_THRESHOLD } from "../src/judge/fusion";
+import { FUSE_THRESHOLD, hunkLabel } from "../src/judge/fusion";
 import { summaryOf } from "../src/room/races";
 import type { Task, Verdict } from "../src/room/task";
 import { applyEvent, emptyBoard, type WireTask, type WireVerdict } from "../src/ui/board";
-import { assistsOf, FUSE_BAR, fusionView } from "../src/ui/fusion";
+import { assistsOf, FUSE_BAR, fusionView, hunkWhat, scoreBars } from "../src/ui/fusion";
 import { fusionOf, gitGraph } from "../src/ui/gitgraph";
 import { gitLog, LOG_PUSHES_MAX } from "../src/ui/gitlog";
-import { raceStats, standings, type RaceRow } from "../src/ui/leaderboard";
+import { raceStats, standings, teamPill, type RaceRow } from "../src/ui/leaderboard";
+import { blameView, wholePercents } from "../src/ui/blame";
 import { applyPlatform, emptyPlatform, STAGES } from "../src/ui/platform";
 
 const JUDGED = "2026-10-06T05:40:00.000Z";
@@ -55,8 +56,8 @@ describe("fusion view", () => {
       author: "ponder",
       shipped: true,
       rows: [
-        { agent: "ponder", files: ["test/ponder.test.ts"], outcome: "added", tests: "20/20", green: true, clef: 0.6098, asked: "tests something new the task asks?" },
-        { agent: "zippy", files: ["test/zippy.test.ts"], outcome: "rejected", tests: "22/22", green: true, clef: 0.1753, asked: "tests something new the task asks?", note: "the judge found nothing new" },
+        { agent: "ponder", files: ["test/ponder.test.ts"], kind: "file", what: "test/ponder.test.ts", outcome: "added", tests: "20/20", green: true, clef: 0.6098, asked: "tests something new the task asks?" },
+        { agent: "zippy", files: ["test/zippy.test.ts"], kind: "file", what: "test/zippy.test.ts", outcome: "rejected", tests: "22/22", green: true, clef: 0.1753, asked: "tests something new the task asks?", note: "the judge found nothing new" },
       ],
     });
   });
@@ -78,6 +79,49 @@ describe("fusion view", () => {
     expect(assistsOf(task(verdict()))).toEqual(["ponder"]);
     expect(assistsOf(task(verdict("conflict")))).toEqual([]);
     expect(fusionView(verdict("conflict"))?.shipped).toBe(false);
+  });
+});
+
+describe("the fused score and hunks", () => {
+  const scored = (after: number, commit = true): WireVerdict => {
+    const v = verdict();
+    const fusion = { ...v.fusion!, score: { before: { total: 91.92, tests: { passed: 20, total: 20 } }, after: { total: after, tests: { passed: 26, total: 26 } } } };
+    if (!commit) delete fusion.commit;
+    return { ...v, fusion };
+  };
+
+  it("F11 a kept fusion shows the winner alone vs fused, with both bars and an aria-label", () => {
+    const view = fusionView(scored(94.63))!;
+    expect(view.score).toEqual({ before: 91.9, after: 94.6, delta: 2.7, testsBefore: "20/20", testsAfter: "26/26", kept: true, headline: "Testy alone 91.9 → fused 94.6 · tests 20 → 26" });
+    const bars = scoreBars(view)!;
+    expect(bars.bars.map((b) => [b.name, b.width, b.tests])).toEqual([["Testy alone", 91.9, "20/20"], ["Fused", 94.6, "26/26"]]);
+    expect(bars.label).toBe("Testy alone scored 91.9 with tests 20/20; fused scored 94.6 with tests 26/26 (+2.7)");
+  });
+
+  it("F12 a fusion dropped for scoring lower says so; a pushed-out fusion or no score shows none", () => {
+    const low = fusionView(scored(90.1, false))!;
+    expect(low.score).toMatchObject({ kept: false, delta: -1.8, headline: "Fused 90.1 < Testy alone 91.9: the fusion was dropped" });
+    expect(scoreBars(low)?.label).toContain("(-1.8)");
+    expect(fusionView(scored(95, false))?.score).toBeUndefined();
+    expect(fusionView(verdict())?.score).toBeUndefined();
+    expect(scoreBars(fusionView(verdict())!)).toBeUndefined();
+    expect(fusionView({ ...verdict(), fusion: { ...verdict().fusion!, scoreNote: "Clef is down" } })?.scoreNote).toBe("Clef is down");
+  });
+
+  it("F13 a hunk try is labelled by its name and file in the panel, the graph, the log and the pipeline", () => {
+    const hunk = { agent: "ponder", files: ["src/cart.ts"], kind: "hunk", hunk: { file: "src/cart.ts", header: "@@ -9,3 +9,6 @@", name: "cartMessage" }, status: "added", tests: { passed: 21, total: 21 }, better: 0.8, question: "better" };
+    const v: WireVerdict = { ...verdict(), fusion: { ...verdict().fusion!, tried: [hunk] } };
+    expect(fusionView(v)?.rows[0]).toMatchObject({ kind: "hunk", what: "cartMessage in src/cart.ts" });
+    const graph = gitGraph({ agents: ["ponder", "zippy", "testy"], start: 0, ends: {}, dots: [], domainEnd: Date.parse(JUDGED), t: Date.parse(JUDGED), fusion: fusionOf(task(v))! });
+    expect(graph.fusion?.tries[0]?.label).toBe("Ponder's cartMessage in src/cart.ts: fused into Testy's fork");
+    const t = { ...task(v), baseCommit: "f".repeat(40) };
+    expect(gitLog(t)?.find((l) => l.sha === "660ef87")?.message).toBe("fusion: add Ponder's cartMessage in src/cart.ts");
+    const { hits } = applyPlatform(emptyPlatform(), { kind: "verdict", taskId: "t", verdict: v }, 0);
+    expect(hits.find((h) => h.stage === "fusion")?.text).toBe("fused Ponder's work into Testy's fix (660ef87)");
+  });
+
+  it("F14 the page's hunk label is the judge's", () => {
+    for (const h of [{ file: "a.ts", header: "@@ -1 +12,7 @@" }, { file: "a.ts", header: "@@ -1,2 +3 @@", name: "x" }, { file: "b.ts", header: "@@ -4,0 +5 @@" }]) expect(hunkWhat(h)).toBe(hunkLabel(h));
   });
 });
 
@@ -189,5 +233,71 @@ describe("assists", () => {
     const byAgent = Object.fromEntries(standings(races).map((s) => [s.agent, s.assists]));
     expect(byAgent).toEqual({ ponder: 2, zippy: 0, testy: 1 });
     expect(raceStats(races).fusedRate).toBeCloseTo(2 / 3);
+  });
+});
+
+describe("who wrote main", () => {
+  const blamed = (blame: Record<string, number> | undefined, status = "merged"): WireVerdict => ({ ...verdict(), ship: { status, commit: "33d07d7", ...(blame === undefined ? {} : { blame }) } });
+
+  it("B1 the winner comes first, then robots by lines, then Thunderdome; whole percents add to 100", () => {
+    const view = blameView(blamed({ thunderdome: 2, ponder: 30, testy: 120, zippy: 0, snip: 31 }))!;
+    expect(view.shares.map((s) => [s.key, s.name, s.lines, s.pct, s.winner])).toEqual([
+      ["testy", "Testy", 120, 66, true],
+      ["snip", "Snip", 31, 17, false],
+      ["ponder", "Ponder", 30, 16, false],
+      ["thunderdome", "Thunderdome", 2, 1, false],
+    ]);
+    expect(view.total).toBe(183);
+    expect(view.losers).toBe(61);
+    expect(view.shares[0]?.color).toBe("#3e8ed0");
+    expect(view.label).toBe("Who wrote main: Testy 66% (120 lines), Snip 17% (31 lines), Ponder 16% (30 lines), Thunderdome 1% (2 lines)");
+  });
+
+  it("B2 no bar for older races, unmerged races or an empty blame", () => {
+    expect(blameView(blamed(undefined))).toBeUndefined();
+    expect(blameView(blamed({ testy: 3 }, "conflict"))).toBeUndefined();
+    expect(blameView(blamed({ testy: 0 }))).toBeUndefined();
+    expect(blameView(undefined)).toBeUndefined();
+  });
+
+  it("B3 wholePercents gives the leftover points to the largest remainders", () => {
+    expect(wholePercents([1, 1, 1])).toEqual([34, 33, 33]);
+    expect(wholePercents([0, 0])).toEqual([0, 0]);
+    expect(wholePercents([5])).toEqual([100]);
+  });
+});
+
+describe("fusion in the gallery and leaderboard", () => {
+  const base: Task = { id: "t-0123abcd", repo: "demo", prompt: "p", status: "finished", createdAt: "2026-10-06T05:00:00.000Z", agents: [] };
+  const slots = ["ponder", "zippy", "testy"].map((name) => ({ name, status: "done" })) as unknown as Task["agents"];
+  const scored = (): Verdict => {
+    const v = verdict() as unknown as Verdict;
+    return {
+      ...v,
+      ship: { status: "merged", winner: "testy", commit: "c", locks: [], blame: { testy: 90, ponder: 12, thunderdome: 1, other: 4 } },
+      fusion: { ...v.fusion!, score: { before: { total: 91.92, tests: { passed: 20, total: 20 } }, after: { total: 94.63, tests: { passed: 26, total: 26 } } } },
+    };
+  };
+
+  it("F15 summaryOf records the losers' shipped lines and the team's lead over the winner", () => {
+    const summary = summaryOf({ ...base, agents: slots, verdict: scored() }, []);
+    expect(summary.losing).toEqual({ ponder: 12 });
+    expect(summary.team).toBe(2.7);
+    const old = summaryOf({ ...base, agents: slots, verdict: verdict() as unknown as Verdict }, []);
+    expect(Object.hasOwn(old, "losing") || Object.hasOwn(old, "team")).toBe(false);
+    const { commit: _c, ...unpushed } = scored().fusion!;
+    expect(Object.hasOwn(summaryOf({ ...base, agents: slots, verdict: { ...scored(), fusion: unpushed } }, []), "team")).toBe(false);
+  });
+
+  it("F16 the leaderboard adds up lines shipped while losing and the races the team beat the winner", () => {
+    const races: RaceRow[] = [
+      { id: "a", agents: ["ponder", "zippy", "testy"], winner: "testy", fused: ["ponder"], losing: { ponder: 12 }, team: 2.7 },
+      { id: "b", agents: ["ponder", "zippy", "testy"], winner: "ponder", losing: { zippy: 5, ponder: 99 }, team: 0 },
+      { id: "c", agents: ["ponder", "zippy", "testy"], winner: "zippy" },
+      { id: "d", agents: ["ponder", "zippy", "testy"], losing: { zippy: 50 }, team: 9 }, // not judged: ignored
+    ];
+    expect(Object.fromEntries(standings(races).map((s) => [s.agent, s.losingLines]))).toEqual({ ponder: 12, zippy: 5, testy: 0 });
+    expect(raceStats(races)).toMatchObject({ losingLines: 17, teamBeat: 1, scoredFusions: 2 });
+    expect([teamPill(2.7), teamPill(0), teamPill(-1.25), teamPill(undefined), teamPill(Number.NaN)]).toEqual(["team +2.7", "team ±0.0", "team −1.3", undefined, undefined]);
   });
 });

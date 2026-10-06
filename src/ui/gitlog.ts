@@ -33,7 +33,7 @@ export function gitLog(task: WireTask): LogLine[] | undefined {
   const kept = (fusion?.rows ?? []).filter((r) => r.outcome === "added").toReversed();
   kept.forEach((row, i) => {
     const head = i === 0 && fusion?.hash !== undefined ? commit(fusion.hash) : {};
-    lines.push({ graph: "| * ", ...head, message: `fusion: add ${displayName(row.agent)}'s ${row.files.join(", ")}`, who: displayName(row.agent), color: colorFor(row.agent) });
+    lines.push({ graph: "| * ", ...head, message: `fusion: add ${displayName(row.agent)}'s ${row.what}`, who: displayName(row.agent), color: colorFor(row.agent) });
   });
   // The fusion push lands in the winner's push log too; it is already the fusion line.
   const pushes = (task.agents.find((a) => a.name === winner)?.push?.log ?? []).filter((p) => p.commit !== v.fusion?.commit).toReversed();

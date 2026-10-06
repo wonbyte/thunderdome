@@ -1,7 +1,7 @@
 // The race gallery: every race from GET /tasks, newest first, each a link to watch or replay it.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
 import { AGENT_IDS, colorFor, displayName, styleLabel, whyWithNames } from "./board";
-import { raceStats, standings, type DecidedBy, type RaceStats, type Standing } from "./leaderboard";
+import { raceStats, standings, teamPill, type DecidedBy, type RaceStats, type Standing } from "./leaderboard";
 import { coreSvg, crownSvg, robotSvg } from "./sprites";
 
 interface RaceSummary {
@@ -19,6 +19,8 @@ interface RaceSummary {
   decidedBy?: DecidedBy;
   headline?: string;
   fused?: string[];
+  losing?: Record<string, number>;
+  team?: number;
 }
 
 const ID = /^t-[0-9a-f]{8}$/;
@@ -69,6 +71,12 @@ function card(r: RaceSummary): HTMLElement {
   if (r.clash === true) top.append(el("span", "pill clash", "clash"));
   if (r.decidedBy !== undefined) top.append(el("span", `pill decided-${r.decidedBy}`, decidedLabel(r.decidedBy)));
   if ((r.fused?.length ?? 0) > 0) top.append(el("span", "pill fused", "⚡ fused"));
+  const team = teamPill(r.team);
+  if (team !== undefined) {
+    const pill = el("span", "pill fused team", team);
+    pill.title = "the fused change's judge score minus the winner's alone";
+    top.append(pill);
+  }
   if (r.template !== undefined) top.append(el("span", "pill tpl", `demo: ${r.template.replace(/^thunderdome-/, "")}`));
   top.append(el("span", "when", ago(r.createdAt)));
   const prompt = el("p", "race-prompt", r.prompt);
@@ -151,7 +159,7 @@ function standingRow(s: Standing, i: number, top: number): HTMLElement {
   const avg = el("span", "avg", s.avgScore === undefined ? "–" : s.avgScore.toFixed(1));
   avg.title = "average judge score";
   const assists = el("span", `assists${s.assists > 0 ? " some" : ""}`, s.assists > 0 ? `⚡ ${s.assists}` : "–");
-  assists.title = "assists: races it lost, but its tests were fused into the winner's change and shipped";
+  assists.title = `assists: races it lost, but its work was fused into the winner's change and shipped${s.losingLines > 0 ? ` (${s.losingLines} lines shipped while losing)` : ""}`;
   row.append(el("span", "rank", String(i + 1)), bot, who, bar, wins, rate, assists, avg);
   return row;
 }
@@ -162,7 +170,9 @@ function renderBoard(races: RaceSummary[]): void {
   if (panel === null || rows.length === 0) return;
   const stats = raceStats(races);
   const tiles = [tile(String(stats.judged), stats.judged === 1 ? "race judged" : "races judged"), tile(`${Math.round(stats.clashRate * 100)}%`, "had a claim clash")];
-  tiles.push(tile(`${Math.round(stats.fusedRate * 100)}%`, "shipped a loser's tests too"));
+  tiles.push(tile(`${Math.round(stats.fusedRate * 100)}%`, "shipped a loser's work too"));
+  if (stats.losingLines > 0) tiles.push(tile(String(stats.losingLines), "lines shipped while losing"));
+  if (stats.scoredFusions > 0) tiles.push(tile(`${stats.teamBeat} of ${stats.scoredFusions}`, "fusions beat the winner alone"));
   if (stats.avgSeconds !== undefined) tiles.push(tile(mmss(stats.avgSeconds), "average race"));
   const decided = decidedBar(stats);
   if (decided !== undefined) tiles.push(decided);

@@ -1091,6 +1091,22 @@ h2 {
 .fusion-head h2 { color: var(--fuse); margin-bottom: 8px; }
 .fuse-bolt { display: inline-block; filter: drop-shadow(0 0 6px var(--fuse)); }
 .fusion-result { margin: 4px 0 14px; font-size: 14px; color: var(--dim); }
+.fusion-score { margin: 6px 0 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--fuse) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--fuse) 6%, var(--panel-2)); }
+.fusion-score.lower { border-color: var(--line); background: var(--panel-2); }
+.fuse-headline { margin: 0 0 8px; font: 800 15px var(--mono); color: var(--fuse); overflow-wrap: anywhere; }
+.fusion-score.lower .fuse-headline { color: var(--text); }
+.fuse-score-note { margin: 0; font-size: 13px; color: var(--dim); }
+.fuse-bars { display: grid; gap: 6px; }
+.fuse-bar { display: grid; grid-template-columns: minmax(84px, max-content) minmax(0, 1fr) auto auto; align-items: center; gap: 10px; font: 700 12px var(--mono); }
+.fuse-bar .name { color: var(--dim); }
+.fuse-bar .track { height: 10px; border-radius: 99px; background: #0b0e17; border: 1px solid var(--line); overflow: hidden; }
+.fuse-bar .track i { display: block; height: 100%; background: var(--faint); border-radius: inherit; animation: fuse-grow .9s var(--ease) both; transform-origin: left; }
+.fuse-bar.after .track i { background: var(--fuse); box-shadow: 0 0 10px color-mix(in srgb, var(--fuse) 60%, transparent); }
+.fusion-score.lower .fuse-bar.after .track i { background: var(--faint); box-shadow: none; }
+.fuse-bar .total { color: var(--text); }
+.fuse-bar .tests { color: var(--faint); font-weight: 600; }
+@keyframes fuse-grow { from { transform: scaleX(0); } }
+.hunk-tag { font: 800 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fuse); border: 1px solid color-mix(in srgb, var(--fuse) 45%, transparent); border-radius: 99px; padding: 2px 7px; align-self: center; }
 .fusion-result.kept { color: var(--text); }
 .fusion-rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
 .fuse-row {
@@ -1119,7 +1135,20 @@ h2 {
   .fuse-row { grid-template-columns: minmax(0, 1fr) auto; }
   .fuse-files, .fuse-gates, .fuse-note { grid-column: 1 / -1; }
 }
-@media (prefers-reduced-motion: reduce) { .fuse-row, .clef-meter i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .fuse-row, .clef-meter i, .fuse-bar .track i { animation: none; } }
+
+/* ---------- who wrote main ---------- */
+.blame-bar { display: flex; height: 22px; gap: 2px; margin: 10px 0 12px; border-radius: 8px; overflow: hidden; background: #0b0e17; border: 1px solid var(--line); }
+.blame-seg { min-width: 4px; background: var(--color); transform-origin: left; animation: fuse-grow .9s calc(var(--i, 0) * 120ms) var(--ease) both; }
+.blame-seg.winner { box-shadow: inset 0 0 0 1px #fff3; }
+.blame-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 18px; font: 700 12.5px var(--mono); }
+.blame-legend li { display: flex; align-items: center; gap: 6px; }
+.blame-legend .swatch { width: 10px; height: 10px; border-radius: 3px; background: var(--color); }
+.blame-legend b { color: color-mix(in srgb, var(--color) 72%, #fff); }
+.blame-legend .pct { color: var(--text); }
+.blame-legend .lines { color: var(--faint); font-weight: 600; }
+.blame-legend .tag { font-size: 10px; }
+@media (prefers-reduced-motion: reduce) { .blame-seg { animation: none; } }
 
 /* ---------- the fusion act on the stage ---------- */
 .fuse-card {

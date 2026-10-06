@@ -45,6 +45,8 @@ export interface RaceSummary {
   lesson?: string; // the winner's strongest point, only when the verdict has it
   commit?: string; // the merge commit, only when the winner merged
   fused?: string[]; // agents whose files the fusion round added and the winner merged: the race's assists
+  losing?: Record<string, number>; // shipped lines by each robot that lost (git blame of the merge); only races with blame
+  team?: number; // fused score minus the winner's alone, 1 decimal, when a scored fusion shipped
   clash: boolean;
 }
 
@@ -68,8 +70,28 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     ...(v?.lesson === undefined ? {} : { lesson: v.lesson }),
     ...(v?.ship.status === "merged" && v.ship.commit !== undefined ? { commit: v.ship.commit } : {}),
     ...fusedOf(task),
+    ...losingOf(task),
+    ...teamOf(task),
     clash: hasClash(history),
   };
+}
+
+/** `{ losing }`: lines in the merge written by robots that lost, from the ship's blame; else nothing. */
+function losingOf(task: Task): { losing?: Record<string, number> } {
+  const v = task.verdict;
+  const blame = v?.ship.status === "merged" ? v.ship.blame : undefined;
+  if (blame === undefined || v === undefined) return {};
+  const robots = new Set(task.agents.map((slot) => slot.name as string));
+  const losing = Object.fromEntries(Object.entries(blame).filter(([agent, lines]) => agent !== v.winner && robots.has(agent) && lines > 0));
+  return Object.keys(losing).length === 0 ? {} : { losing };
+}
+
+/** `{ team }`: how much the shipped fusion beat the winner alone by, when it was scored; else nothing. */
+function teamOf(task: Task): { team?: number } {
+  const v = task.verdict;
+  const score = v?.fusion?.score;
+  if (v?.ship.status !== "merged" || v.fusion?.commit === undefined || score === undefined) return {};
+  return { team: Math.round((score.after.total - score.before.total) * 10) / 10 };
 }
 
 /** `{ fused }` when the fusion round added a loser's files and the winner merged them, else nothing. */

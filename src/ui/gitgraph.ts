@@ -68,7 +68,7 @@ export interface FusionInput {
   commit?: string; // short
   hash?: string; // full, to open the commit
   author?: string; // the agent who wrote the fusion commit
-  tries: { agent: string; added: boolean; files: string[]; note?: string }[];
+  tries: { agent: string; added: boolean; files: string[]; what?: string; note?: string }[]; // what: a hunk's label, else the files
 }
 
 /** The fusion round placed on the graph: arrows from losers' lanes into the winner's lane at x. */
@@ -139,7 +139,7 @@ export function fusionOf(task: WireTask): FusionInput | undefined {
     ...(view.commit === undefined ? {} : { commit: view.commit }),
     ...(view.hash === undefined ? {} : { hash: view.hash }),
     ...(view.author === undefined ? {} : { author: view.author }),
-    tries: view.rows.map((r) => ({ agent: r.agent, added: r.outcome === "added", files: r.files, ...(r.note === undefined ? {} : { note: r.note }) })),
+    tries: view.rows.map((r) => ({ agent: r.agent, added: r.outcome === "added", files: r.files, what: r.what, ...(r.note === undefined ? {} : { note: r.note }) })),
   };
 }
 
@@ -188,7 +188,7 @@ function placeFusion(fusion: FusionInput, x: (at: number) => number): GraphFusio
     ...(fusion.hash === undefined ? {} : { hash: fusion.hash }),
     ...(fusion.author === undefined ? {} : { author: fusion.author }),
     tries: fusion.tries.map((t) => {
-      const files = t.files.join(", ");
+      const files = t.what ?? t.files.join(", ");
       const label = t.added
         ? `${displayName(t.agent)}'s ${files}: fused into ${displayName(fusion.winner)}'s fork`
         : `${displayName(t.agent)}'s ${files}: left out${t.note === undefined ? "" : ` (${t.note})`}`;

@@ -19,7 +19,7 @@ const prompt = "Fix the off-by-one bug in the list";
 
 describe("parsePlay", () => {
   it("X5: parsePlay accepts a demo template and trims the prompt; rejects other templates, short/long prompts and non-objects with 400; and a wrong or missing invite with 403 only when an invite is set", () => {
-    expect(PLAY_TEMPLATES).toEqual(["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash"]);
+    expect(PLAY_TEMPLATES).toEqual(["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
     expect([PLAY_PROMPT_MIN, PLAY_PROMPT_MAX, PLAY_AGENTS, PLAY_PER_IP]).toEqual([10, 600, 3, 2]);
 
     for (const template of PLAY_TEMPLATES) {
@@ -34,7 +34,7 @@ describe("parsePlay", () => {
     const objectError = { error: "Body must be a JSON object", status: 400 };
     for (const body of [null, undefined, [], "text", 3]) expect(parsePlay(body, ""), JSON.stringify(body)).toEqual(objectError);
 
-    const templateError = { error: "template must be one of thunderdome-bugs, thunderdome-ui, thunderdome-clash", status: 400 };
+    const templateError = { error: "template must be one of thunderdome-bugs, thunderdome-ui, thunderdome-clash, thunderdome-fusion", status: 400 };
     for (const template of ["thunderdome-sample", "", undefined, 1, "THUNDERDOME-BUGS"]) {
       expect(parsePlay({ template, prompt }, ""), String(template)).toEqual(templateError);
     }

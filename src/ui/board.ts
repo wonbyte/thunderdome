@@ -33,7 +33,7 @@ export interface WireVerdict {
   winner: string | null;
   why: string;
   judgedAt?: string;
-  ship?: { status: string; commit?: string; resolve?: { chosen?: string } };
+  ship?: { status: string; commit?: string; resolve?: { chosen?: string }; blame?: Record<string, number> };
   fusion?: WireFusion;
 }
 /** One loser's try in the fusion round (src/judge/fusion.ts FuseTry). */
@@ -41,13 +41,24 @@ export interface WireFuseTry {
   agent: string;
   files: string[];
   status: string;
+  kind?: string; // "file" or "hunk"; missing on older verdicts (files)
+  hunk?: { file: string; header: string; name?: string };
   tests?: { passed: number; total: number };
   better?: number;
   question?: string;
   note?: string;
 }
+/** A total and a test run in the fusion score (src/judge/fusion.ts FuseScore). */
+export interface WireFuseScore { total: number; tests: { passed: number; total: number } }
 /** The fusion round (src/judge/fusion.ts FusionResult). */
-export interface WireFusion { tried: WireFuseTry[]; base?: string; commit?: string; error?: string }
+export interface WireFusion {
+  tried: WireFuseTry[];
+  base?: string;
+  commit?: string;
+  error?: string;
+  score?: { before: WireFuseScore; after: WireFuseScore }; // only on races judged since the fused score was added
+  scoreNote?: string;
+}
 /** A race as GET /tasks/:id returns it (src/room/task.ts Task). */
 export interface WireTask {
   id: string;

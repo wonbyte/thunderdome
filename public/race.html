@@ -70,7 +70,7 @@
 
     <section id="graph-panel" class="card graph-panel" aria-labelledby="graph-title" hidden>
       <div class="graph-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></div>
-      <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Arrows into the winner's lane are the fusion round: a loser's tests, kept (solid) or left out (✗). Click a lane or a robot to see its code, or the fusion commit to see it as git stores it.</p>
+      <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Arrows into the winner's lane are the fusion round: a loser's files or hunks, kept (solid) or left out (✗). Click a lane or a robot to see its code, or the fusion commit to see it as git stores it.</p>
       <div id="graph" class="graph"></div>
       <figure id="gitlog" class="gitlog" hidden>
         <figcaption><span class="gitlog-prompt" aria-hidden="true">$</span> git log --graph main</figcaption>
@@ -139,15 +139,26 @@
       </details>
     </section>
 
+    <section id="blame-panel" class="card blame-panel" aria-labelledby="blame-title" hidden>
+      <div class="fusion-head">
+        <h2 id="blame-title">Who wrote main</h2>
+        <span id="blame-stat" class="count-pill"></span>
+      </div>
+      <p class="hint">The shipped change's lines by the robot that wrote them: <code>git blame -w</code> over the merge, run by the ship's git-only sandbox. Lines from losing robots got in through the fusion round. Races shipped before this was added show no bar.</p>
+      <div id="blame-bar" class="blame-bar" role="img"></div>
+      <ul id="blame-legend" class="blame-legend"></ul>
+    </section>
+
     <section id="fusion-panel" class="card fusion-panel" aria-labelledby="fusion-title" hidden>
       <div class="fusion-head">
         <h2 id="fusion-title"><span class="fuse-bolt" aria-hidden="true">⚡</span> Fusion round</h2>
         <span id="fusion-stat" class="count-pill"></span>
       </div>
-      <p class="hint">The losers' work is not thrown away. Each loser's own test file is tried on top of the winning fix: every test must pass, then Clef must say it checks something the task asks that the winner's tests do not. The tests run in a sandbox with read-only tokens; a second sandbox pushes only what passed.</p>
+      <p class="hint">The losers' work is not thrown away. Each loser's files the winner never touched, and up to 3 of its hunks in files the winner did change, are tried on top of the winning fix. A hunk must apply cleanly (no conflicts), every test must pass, then Clef must say it makes the change better. Last, the fused code is scored the same way as the forks and kept only if it scores at least the winner alone. Races judged before the score was added show no score. The tests run in a sandbox with read-only tokens; a second sandbox pushes only what passed.</p>
+      <div id="fusion-score" class="fusion-score" hidden></div>
       <p id="fusion-result" class="fusion-result"></p>
       <ol class="handoff" aria-label="How the fusion reaches the winner's fork">
-        <li><b>read-only sandbox</b><span>runs the losers' tests</span></li>
+        <li><b>read-only sandbox</b><span>runs the tests, scores the fused code</span></li>
         <li><b>git bundle</b><span><code>refs/fusion/result</code></span></li>
         <li><b>write sandbox</b><span>checks it, then <code>git push</code></span></li>
       </ol>

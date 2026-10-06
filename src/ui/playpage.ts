@@ -32,6 +32,13 @@ const TEMPLATES: [Template, ...Template[]] = [
     prompt:
       "Add product reviews. `GET /api/products/:slug/reviews` returns `{ average, count, reviews }` (average to one decimal, `null` when there are none; 404 for an unknown product), and the shop page shows each product's star average and review count. Make the failing tests pass.",
   },
+  {
+    id: "thunderdome-fusion",
+    title: "Four parts, one fusion",
+    blurb: "Four separate parts, tests for two: losers' hunks can join the winner.",
+    prompt:
+      "The shop page in `src/shop.ts` has four parts; build all four. 1) Sale badge: a product on sale shows \"Sale -N%\" (the percent off, rounded). 2) Sort: `/?sort=price` lists the cheapest first (sale prices count), `/?sort=name` lists A to Z. 3) Cart line: `/?cart=0` says \"Your cart is empty\", 1 says \"1 item in your cart\", more says \"N items in your cart\". 4) Prices: round a fraction of a cent to the nearest cent and add a thousands comma (\"$1,299.00\"). The tests cover only parts 1 and 2.",
+  },
 ];
 const MIN = 10;
 const MAX = 600;

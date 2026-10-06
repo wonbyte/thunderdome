@@ -19,13 +19,25 @@ import {
   fusionCandidates,
   fusionProblem,
   fusionWhy,
+  dropFusion,
+  FUSE_HUNKS_PER_AGENT,
+  fusedScore,
+  hunkLabel,
+  hunkName,
   isTestFile,
+  isTrivialHunk,
   runFusion,
+  scoreFusion,
+  scoreLine,
+  splitHunks,
+  withoutPatches,
+  type FusionResult,
   type CommandResult,
   type FuseDeps,
 } from "../src/judge/fusion";
 import type { JudgedFork } from "../src/judge/judge";
-import { scoreForks, type ForkInput } from "../src/judge/score";
+import { scoreForks, WEIGHTS, type ForkInput } from "../src/judge/score";
+import type { Scorer } from "../src/judge/scorer";
 
 const run = promisify(execFile);
 const IDENTITY = { GIT_AUTHOR_NAME: "T", GIT_AUTHOR_EMAIL: "t@t", GIT_COMMITTER_NAME: "T", GIT_COMMITTER_EMAIL: "t@t" };
@@ -142,8 +154,8 @@ describe("runFusion", () => {
       ],
     });
     expect(result.tried).toEqual([
-      { agent: "zippy", files: ["broken.txt"], status: "rejected", tests: { passed: 0, total: 2 }, note: "not every test passed (0/2)" },
-      { agent: "testy", files: ["test-cart.txt", "old.txt"], status: "added", tests: { passed: 3, total: 3 }, better: 0.9, question: "better" },
+      { agent: "zippy", files: ["broken.txt"], kind: "file", status: "rejected", tests: { passed: 0, total: 2 }, note: "not every test passed (0/2)" },
+      { agent: "testy", files: ["test-cart.txt", "old.txt"], kind: "file", status: "added", tests: { passed: 3, total: 3 }, better: 0.9, question: "better" },
     ]);
     // One fusion commit on the winner, authored by testy: its new test is in, the file it removed is gone,
     // the winner's own fix is kept, and the rejected file left nothing behind.
@@ -242,19 +254,20 @@ function judged(input: ForkInput): JudgedFork {
 }
 
 describe("fusionCandidates", () => {
-  it("takes each eligible loser's files the winner did not change, best loser first", () => {
+  it("takes each eligible loser's files the winner did not change and the files both changed, best loser first", () => {
     const inputs = [
       fork({ agent: "ponder", taskFit: 1, filesChanged: ["src/a.ts"], fix: "f1" }),
       fork({ agent: "testy", filesChanged: ["src/a.ts", "test/a.test.ts"], filesClaimed: ["src/a.ts", "test/a.test.ts"], fix: "f2" }),
       fork({ agent: "zippy", taskFit: 0.5, filesChanged: ["src/a.ts", "src/b.ts"], filesClaimed: ["src/a.ts", "src/b.ts"], fix: "f3" }),
       fork({ agent: "snip", testsPassed: 0, filesChanged: ["src/c.ts"], filesClaimed: ["src/c.ts"] }), // not eligible
-      fork({ agent: "sparkle", taskFit: 0.9, filesChanged: ["src/a.ts"], fix: "f4" }), // nothing new
+      fork({ agent: "sparkle", taskFit: 0.9, filesChanged: ["src/a.ts"], fix: "f4" }), // only hunks in the winner's file
     ];
     const { ranked } = scoreForks(inputs);
     const remotes = Object.fromEntries(inputs.map((i) => [i.agent, { remote: `https://git.test/${i.agent}.git`, branch: "main" }]));
     expect(fusionCandidates(ranked, inputs.map(judged), "ponder", remotes)).toEqual([
-      { agent: "testy", remote: "https://git.test/testy.git", branch: "main", files: ["test/a.test.ts"] },
-      { agent: "zippy", remote: "https://git.test/zippy.git", branch: "main", files: ["src/b.ts"] },
+      { agent: "sparkle", remote: "https://git.test/sparkle.git", branch: "main", files: [], shared: ["src/a.ts"] },
+      { agent: "testy", remote: "https://git.test/testy.git", branch: "main", files: ["test/a.test.ts"], shared: ["src/a.ts"] },
+      { agent: "zippy", remote: "https://git.test/zippy.git", branch: "main", files: ["src/b.ts"], shared: ["src/a.ts"] },
     ]);
   });
 
@@ -288,7 +301,7 @@ describe("fusionWhy", () => {
         ],
       }),
     ).toBe(
-      "\n\nFusion (the losers' files the winner did not change, tried on top of its fix):\n" +
+      "\n\nFusion (the losers' files the winner did not change, and their hunks in files it did, tried on top of its fix):\n" +
         "- Added testy's test/a.test.ts: every test passes (8/8) and the judge says it makes the change better (yes 0.83).\n" +
         "- Left out zippy's src/b.ts: not every test passed (6/8).",
     );
@@ -361,5 +374,231 @@ describe("the fusion push", () => {
     });
     expect(result.tried).toEqual([{ agent: "testy", files: ["test-cart.txt"], status: "rejected", note: "the fusion round ran out of time" }]);
     expect(result.commit).toBeUndefined();
+  });
+});
+
+// A shop file with three functions far apart, so each edit is its own hunk.
+const FUNCS = ["badge", "sort", "cart", "round", "empty"];
+function shop(bodies: Record<string, string> = {}, note = ""): string {
+  const filler = Array.from({ length: 8 }, (_, i) => `// filler ${i}`).join("\n");
+  return `${note}${FUNCS.map((f) => `function ${f}() {\n  return ${bodies[f] ?? '""'};\n}\n${filler}`).join("\n")}\n`;
+}
+
+// The winner (ponder) writes badge; testy writes badge differently (conflicts), plus cart and a
+// comment; snip writes the exact badge ponder wrote, plus round.
+async function hunkSetup(): Promise<{ forks: Record<string, string> }> {
+  const source = join(root, "source");
+  mkdirSync(source);
+  await git(source, "init", "-q", "-b", "main");
+  writeFileSync(join(source, "shop.js"), shop());
+  writeFileSync(join(source, "test-app.txt"), "app test\n");
+  await git(source, "add", "-A");
+  await git(source, "commit", "-q", "-m", "base");
+  const edits: Record<string, string> = {
+    ponder: shop({ badge: '"Sale by ponder"' }),
+    testy: shop({ badge: '"SALE by testy"', cart: '"Your cart is empty, by testy"' }, "// A note by testy\n"),
+    snip: shop({ badge: '"Sale by ponder"', round: "Math.round(1) // by snip" }),
+    zippy: shop({ badge: '"z"', sort: '"s by zippy"', cart: '"c by zippy"', round: '"r by zippy"', empty: '"e by zippy"' }),
+  };
+  const forks: Record<string, string> = {};
+  for (const [agent, text] of Object.entries(edits)) {
+    const dir = join(root, `fork-${agent}`);
+    await git(root, "clone", "-q", source, dir);
+    writeFileSync(join(dir, "shop.js"), text);
+    await git(dir, "commit", "-qam", `${agent}'s work`);
+    forks[agent] = dir;
+  }
+  mkdirSync(join(root, "workspace"));
+  await git(root, "clone", "-q", forks.ponder!, join(root, "workspace/repo"));
+  return { forks };
+}
+
+const hunkInput = (forks: Record<string, string>, agents: string[]) => ({
+  task: "Finish the shop",
+  winner: "ponder",
+  testsPassed: 1,
+  candidates: agents.map((agent) => ({ agent, remote: forks[agent]!, branch: "main", files: [], shared: ["shop.js"] })),
+});
+
+describe("hunk fusion", () => {
+  it("adds a loser's hunk that applies cleanly, and skips its conflicting, comment-only and already-there hunks", async () => {
+    const { forks } = await hunkSetup();
+    const deps = fuseDeps();
+    const repo = join(root, "workspace/repo");
+    const result = await runFusion(deps, hunkInput(forks, ["testy", "snip"]));
+    expect(result.tried.map((t) => [t.agent, t.kind, t.status, t.hunk?.name])).toEqual([
+      ["testy", "hunk", "added", "cart"],
+      ["snip", "hunk", "added", "round"],
+    ]);
+    const shipped = await git(repo, "show", "HEAD:shop.js");
+    expect(shipped).toContain('"Sale by ponder"'); // the winner's badge stays
+    expect(shipped).toContain('"Your cart is empty, by testy"');
+    expect(shipped).toContain("Math.round(1) // by snip");
+    expect(shipped).not.toContain("A note by testy");
+    expect(await git(repo, "log", "-2", "--format=%an|%s")).toBe(
+      "Thunderdome snip|Thunderdome fusion: add snip's round in shop.js to ponder's fix\nThunderdome testy|Thunderdome fusion: add testy's cart in shop.js to ponder's fix",
+    );
+    expect(await git(repo, "status", "--porcelain")).toBe("");
+    // Clef saw only the hunk as the additions.
+    const asked = deps.asked[0] as { state: { additions: string } };
+    expect(asked.state.additions).toContain('+  return "Your cart is empty, by testy";');
+    expect(asked.state.additions).not.toContain("SALE by testy");
+    // Each kept hunk records the exact patch of its commit.
+    const kept = result.tried[0]!;
+    expect(kept.patch).toBe((await exec(["git", "diff", "--no-color", "--no-ext-diff", "--no-renames", "--full-index", "HEAD~2", "HEAD~1"], repo)).stdout);
+  });
+
+  it("tries at most FUSE_HUNKS_PER_AGENT hunks of one loser", async () => {
+    const { forks } = await hunkSetup();
+    const result = await runFusion(fuseDeps(), hunkInput(forks, ["zippy"]));
+    expect(result.tried).toHaveLength(FUSE_HUNKS_PER_AGENT);
+    expect(result.tried.map((t) => t.hunk?.name)).toEqual(["sort", "cart", "round"]);
+  });
+
+  it("a hunk that breaks the tests or that the judge turns down is left out, and the next hunk still runs", async () => {
+    const { forks } = await hunkSetup();
+    const deps = fuseDeps({ testy: 0.2 });
+    const result = await runFusion(deps, hunkInput(forks, ["testy", "snip"]));
+    expect(result.tried[0]).toMatchObject({ agent: "testy", kind: "hunk", status: "rejected", note: "the judge did not find it better (yes 0.2)" });
+    expect(result.tried[0]?.patch).toBeUndefined();
+    expect(result.tried[1]).toMatchObject({ agent: "snip", status: "added" });
+  });
+
+  it("the push check passes a hunk bundle as built, and refuses one whose hunk commit was changed", async () => {
+    const { forks } = await hunkSetup();
+    const deps = fuseDeps();
+    const fused = await runFusion(deps, hunkInput(forks, ["testy"]));
+    const repo = join(root, "workspace/repo");
+    // Reload the bundle into a fresh clone, as the push sandbox does.
+    const load = async (commit: string) => {
+      const bundle = await fusionBundle(deps, fused.base!, commit);
+      const saved = join(root, "saved.bundle");
+      writeFileSync(saved, Buffer.from(bundle, "base64"));
+      const fresh = join(root, "fresh");
+      rmSync(fresh, { recursive: true, force: true });
+      await git(root, "clone", "-q", forks.ponder!, fresh);
+      await git(fresh, "fetch", "-q", saved, `+${FUSE_REF}:${FUSE_REF}`);
+      const pushDeps = { exec: (argv: string[], _cwd: string) => exec(argv, fresh) };
+      return (r: FusionResult) => fusionProblem(pushDeps, r);
+    };
+    expect(await (await load(fused.commit!))(fused)).toBeUndefined();
+    // Same file, other content: the path check alone would pass it.
+    writeFileSync(join(repo, "shop.js"), (await git(repo, "show", "HEAD:shop.js")).replace("Your cart is empty", "Sneaky") + "\n");
+    await git(repo, "commit", "-q", "--amend", "-am", "amended");
+    const amended = await git(repo, "rev-parse", "HEAD");
+    expect(await (await load(amended))({ ...fused, commit: amended })).toMatch(/^the fusion commit [0-9a-f]{7} is not the hunk the gates passed$/);
+  });
+});
+
+describe("hunk parsing", () => {
+  const diff = [
+    "diff --git a/src/cart.ts b/src/cart.ts",
+    "index 1111111..2222222 100644",
+    "--- a/src/cart.ts",
+    "+++ b/src/cart.ts",
+    "@@ -1,3 +1,4 @@ export function total(items) {",
+    " const a = 1;",
+    "+export function cartMessage(items) {",
+    " const b = 2;",
+    "@@ -10,2 +11,2 @@ export function total(items) {",
+    "-  return 1;",
+    "+  return 2;",
+    "diff --git a/new.ts b/new.ts",
+    "new file mode 100644",
+    "index 0000000..3333333",
+    "--- /dev/null",
+    "+++ b/new.ts",
+    "@@ -0,0 +1 @@",
+    "+x",
+    "",
+  ].join("\n");
+
+  it("splits a diff into one patch per hunk with its file header, leaving out new files", () => {
+    const hunks = splitHunks(diff);
+    expect(hunks.map((h) => [h.file, h.header, h.name])).toEqual([
+      ["src/cart.ts", "@@ -1,3 +1,4 @@", "cartMessage"],
+      ["src/cart.ts", "@@ -10,2 +11,2 @@", "total"],
+    ]);
+    expect(hunks[1]?.patch).toBe("diff --git a/src/cart.ts b/src/cart.ts\nindex 1111111..2222222 100644\n--- a/src/cart.ts\n+++ b/src/cart.ts\n@@ -10,2 +11,2 @@ export function total(items) {\n-  return 1;\n+  return 2;\n");
+  });
+
+  it("names hunks by their declaration or test title, and labels them", () => {
+    expect(hunkName(['+  it("shows the empty cart", () => {'], "")).toBe("shows the empty cart");
+    expect(hunkName(["+const SALE = 0.2;"], "")).toBe("SALE");
+    expect(hunkName(["+  if (x) {", "+  return y;"], "function sortProducts(list) {")).toBe("sortProducts");
+    // The declaration just above the change inside the hunk beats git's @@ context.
+    expect(hunkName([" function cart() {", "-  return 1;", "+  return 2;"], "function sort() {")).toBe("cart");
+    // A hunk inside a function is named for the function, not a local it renames.
+    expect(hunkName([" export function formatPrice(cents) {", "-  const dollars = 1;", "+  const whole = 1;"], "")).toBe("formatPrice");
+    expect(hunkName(["+  return y;"], "")).toBeUndefined();
+    expect(hunkLabel({ file: "a.ts", header: "@@ -1 +12,7 @@" })).toBe("lines 12-18 of a.ts");
+    expect(hunkLabel({ file: "a.ts", header: "@@ -1 +3 @@", name: "x" })).toBe("x in a.ts");
+  });
+
+  it("knows a hunk that changes only whitespace or comments", () => {
+    expect(isTrivialHunk({ added: ["// new note", "  "], removed: [] })).toBe(true);
+    expect(isTrivialHunk({ added: ["return  1;"], removed: ["return 1;"] })).toBe(true);
+    expect(isTrivialHunk({ added: ["return 2;"], removed: ["return 1;"] })).toBe(false);
+  });
+});
+
+describe("the fused score", () => {
+  const ranked = scoreForks([
+    fork({ agent: "ponder", testsPassed: 20, testsTotal: 20, taskFit: 0.8, clarity: 0.8 }),
+    fork({ agent: "testy", taskFit: 0.5 }),
+  ]).ranked;
+  const winner = ranked[0]!;
+
+  it("fusedScore measures tests, task fit and clarity again, and keeps the winner's claim and look", () => {
+    const score = fusedScore({ ...winner, parts: { ...winner.parts, claim: 8 } }, WEIGHTS, { tests: { passed: 26, total: 26 }, taskFit: 1, clarity: 0.8, linesChanged: 30 });
+    expect(score.before).toMatchObject({ total: winner.total, tests: { passed: 20, total: 20 } });
+    expect(score.after).toEqual({ total: 50 + 25 + 12 + 8, tests: { passed: 26, total: 26 }, parts: { tests: 50, taskFit: 25, clarity: 12, claim: 8 } });
+    expect(scoreLine("Ponder", score)).toBe(`Ponder alone ${winner.total.toFixed(1)} -> fused 95.0 (tests 20/20 -> 26/26)`);
+  });
+
+  async function scored(taskFit: number, scorer?: Scorer) {
+    const { forks } = await setup();
+    const deps = fuseDeps();
+    const fused = await runFusion(deps, {
+      task: "Fix the app",
+      winner: "ponder",
+      testsPassed: 2,
+      candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
+    });
+    const forkBase = await git(forks.ponder!, "rev-parse", "HEAD^");
+    const rate: Scorer = scorer ?? { score: async () => ({ taskFit, clarity: 0.8, raw: {} as never }) };
+    return { fused, result: await scoreFusion({ ...deps, scorer: rate }, fused, { task: "Fix the app", winner, weights: WEIGHTS, forkBase }) };
+  }
+
+  it("scoreFusion keeps a fusion that scores at least the winner alone", async () => {
+    const { fused, result } = await scored(1);
+    expect(result.commit).toBe(fused.commit);
+    expect(result.score?.after).toMatchObject({ total: 97, tests: { passed: 3, total: 3 } });
+    expect(fusionWhy(result, "ponder")).toContain(`Scored the same way as the forks: ponder alone ${winner.total.toFixed(1)} -> fused 97.0 (tests 20/20 -> 3/3), so the fusion is kept.`);
+  });
+
+  it("scoreFusion drops a fusion that scores below the winner, and says why", async () => {
+    const { result } = await scored(0.2);
+    expect(result.commit).toBeUndefined();
+    expect(result.score?.after.total).toBeLessThan(result.score!.before.total);
+    expect(result.tried[0]).toMatchObject({ status: "rejected", note: `the fused change scored ${result.score!.after.total.toFixed(1)}, below ${winner.total.toFixed(1)} for the winner alone` });
+    expect(fusionWhy(result, "ponder")).toContain("so the fusion is dropped.");
+  });
+
+  it("scoreFusion keeps the fusion unscored when the scorer fails", async () => {
+    const { fused, result } = await scored(1, { score: () => Promise.reject(new Error("Clef is down")) });
+    expect(result.commit).toBe(fused.commit);
+    expect(result.score).toBeUndefined();
+    expect(result.scoreNote).toBe("the fused change could not be scored: Clef is down");
+    expect(fusionWhy(result)).toContain("Not scored: the fused change could not be scored: Clef is down; the fusion is kept on its gates.");
+  });
+
+  it("withoutPatches drops the hunk patches and keeps the rest", () => {
+    expect(withoutPatches({ tried: [{ agent: "a", files: ["x"], status: "added", kind: "hunk", patch: "diff" }], commit: "c" })).toEqual({ tried: [{ agent: "a", files: ["x"], status: "added", kind: "hunk" }], commit: "c" });
+  });
+
+  it("dropFusion turns every kept try down and removes the commit", () => {
+    const dropped = dropFusion({ tried: [{ agent: "a", files: ["x"], status: "added" }, { agent: "b", files: ["y"], status: "failed" }], commit: "c" }, "why");
+    expect(dropped).toEqual({ tried: [{ agent: "a", files: ["x"], status: "rejected", note: "why" }, { agent: "b", files: ["y"], status: "failed" }] });
   });
 });

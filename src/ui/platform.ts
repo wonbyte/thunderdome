@@ -18,7 +18,7 @@ export const STAGE_INFO: Record<Stage, { product: string; role: string }> = {
   workflows: { product: "Workflows", role: "preview builds + judge" },
   previews: { product: "Workers Previews", role: "a live URL per push" },
   ai: { product: "Workers AI · Clef", role: "scores each diff" },
-  fusion: { product: "Containers × 2", role: "losers' tests: run read-only, push apart" },
+  fusion: { product: "Containers × 2", role: "losers' work: run read-only, push apart" },
   merge: { product: "Artifacts", role: "the winner merges" },
 };
 
@@ -141,12 +141,21 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
   return { state: next, hits };
 }
 
+/** A test file by path; mirrors isTestFile in src/judge/fusion.ts. */
+function isTestPath(path: string): boolean {
+  return /(^|\/)(test|tests|__tests__)\//.test(path) || /\.(test|spec)\.[^/]+$/.test(path);
+}
+
 /** The fusion unit's line: what was added, or how many tries were left out. */
 function fusionLine(view: FusionView): string {
   if (view.error !== undefined && view.rows.length === 0) return "fusion round could not run";
-  const added = view.rows.filter((r) => r.outcome === "added").map((r) => displayName(r.agent));
-  if (added.length === 0) return `tried ${view.rows.length} ${view.rows.length === 1 ? "loser's" : "losers'"} tests, kept none`;
-  return `fused ${added.join(" & ")}'s tests into ${displayName(view.winner)}'s fix${view.commit === undefined ? "" : ` (${view.commit})`}`;
+  const kept = view.rows.filter((r) => r.outcome === "added");
+  const added = [...new Set(kept.map((r) => displayName(r.agent)))];
+  // "tests" while only test files were tried (the round before hunks), "work" once code joins.
+  const testsOnly = view.rows.every((r) => r.kind === "file" && r.files.every(isTestPath));
+  const work = testsOnly ? "tests" : "work";
+  if (added.length === 0) return `tried ${view.rows.length} ${view.rows.length === 1 ? "loser's" : "losers'"} ${work}, kept none`;
+  return `fused ${added.join(" & ")}'s ${work} into ${displayName(view.winner)}'s fix${view.commit === undefined ? "" : ` (${view.commit})`}`;
 }
 
 /** "6.1 s", "820 ms", "1 m 05 s". */

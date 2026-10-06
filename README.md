@@ -76,11 +76,12 @@ flowchart LR
    judge also screenshots each fork's preview with Browser Rendering and Clef scores how the page
    looks; then the score is tests 45, task fit 20, clarity 10, look 15 and claims 10. It writes a
    "why" that names what decided the race.
-5. **Fusion.** The losers' work on files the winner never touched (often a new test) is tried on
-   top of the winning fix. Each robot writes its tests in its own file, so the losers' tests usually
-   join the winner's fix. An addition is kept only when every test still passes and Clef says it makes the
-   change better (see [Fusion round](#fusion-round)). So the shipped change can hold the best of
-   several robots, each credited as the author of its part.
+5. **Fusion.** The losers' work is tried on top of the winning fix: files the winner never touched
+   (often a new test), and up to 3 hunks per loser in files the winner did change, when they apply
+   cleanly. An addition is kept only when every test still passes and Clef says it makes the
+   change better (see [Fusion round](#fusion-round)). Then the fused code is scored the same way
+   as the forks, and the fusion ships only if it scores at least the winner alone. So the shipped
+   change can hold the best of several robots, each credited as the author of its part.
 6. **Ship.** The winner's fork is merged into the source repo with the why as the merge commit
    body, and every fork is locked and kept as a record. There is no pull request: the race replaces it.
 
@@ -210,7 +211,7 @@ public demo costs at most about $5.50 a day in agent spend.
 | Race watchdog | 12 minutes after the start, any agent that never reported back (its sandbox lost track, e.g. a deploy reset it) is ended as failed, so the judge still runs on what the forks hold | `src/room/task.ts`, `src/room/TaskRoom.ts` |
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
 | Public races (`/play`) | 10 per UTC day, 2 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
-| Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash` | `src/play/play.ts` |
+| Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; 15 minutes per fork step | `src/judge/judge.ts` |
 | Look | waits up to 3 minutes for final previews; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
@@ -435,41 +436,69 @@ its 8-minute budget, the race is judged without look rather than give the forks 
 the verdict on the task.
 
 **Fusion round.** <a id="fusion-round"></a>Before the merge, the judge tries to add the losers' best
-work to the winner. For each losing fork that could have won, best first, it takes the files that
-fork changed and the winner did not. Every robot writes its tests in a file of its own
-(`test/<name>.test.ts`), so this is usually the loser's tests: the shipped fix ends up checked by
-every robot's tests that pass on it. In a sandbox
-on a clone of the winner's fork, it checks out the loser's version of those files on top of the
-winner's fix, then three gates must pass:
+work to the winner. For each losing fork that could have won, best first, it tries two kinds of
+addition on a clone of the winner's fork, in a sandbox:
 
-1. Every test passes, and no fewer pass than for the winner alone.
+- **Files** the loser changed and the winner did not. Every robot writes its tests in a file of its
+  own (`test/<name>.test.ts`), so this is often the loser's tests.
+- **Hunks** in files both changed. The loser's diff from the fork point is split into hunks, and
+  each one is applied alone with `git apply --3way`. A hunk that does not apply cleanly is dropped
+  (a fusion never creates a conflict), and so is one that only touches whitespace or comments or
+  that the winner's change already has. At most 3 hunks per loser are tried. Each hunk is named
+  for the function, constant or test it changes ("Ponder's cartMessage in src/shop.ts").
+
+Each addition is its own try, and three gates must pass:
+
+1. Every test passes, and no fewer pass than before it.
 2. Clef answers a yes/no question. When the additions are all tests: do they check something the
-   task asks that the winner's own tests do not? Otherwise: do they make the change better for
-   the task, or do they repeat it, stray from it, or only make it bigger?
+   task asks that the winner's own tests do not? Otherwise (code, or a hunk): do they make the
+   change better for the task, or do they repeat it, stray from it, or only make it bigger?
 3. That yes is at least 0.6.
+
+**The fused score.** When something was kept, the fused head is scored the same way as the forks:
+the tests (from the last kept try's run), task fit and clarity (Clef, on the diff from the fork
+point). Look and claims carry over from the winner: the fused head has no preview of its own, and
+the added work came through the gates, not through a claim. The fusion is pushed only when the
+fused score is **at least** the winner's score alone; otherwise every kept try is turned down with
+the two numbers ("the fused change scored 90.1, below 91.9 for the winner alone"), and the winner
+ships as judged. Scoring is best effort and time-boxed (90 seconds): if Clef fails, the fusion
+is kept on its gates and the verdict says it was not scored. The result is saved as
+`verdict.fusion.score = { before: { total, tests }, after: { total, tests } }` and is
+written into the why ("ponder alone 91.9 -> fused 94.6 (tests 20/20 -> 26/26)"). Only races judged
+since this was added have a score.
 
 The sandbox that runs the losers' tests (agent-written code) holds read tokens only. The kept
 commits leave it as a git bundle; a second sandbox with the winner fork's write token runs only
-git, checks that the bundle builds on the fork's current head and changes only the files that
-passed the gates, and pushes it. The round is time-boxed (no new try after 5 minutes), so it never
-pushes after its step has given up. An addition that passes becomes its own commit on the winner's
-fork, authored by the robot that wrote it ("Thunderdome fusion: add testy's test/cart.test.ts to ponder's fix"), so `git log` and
-`git blame` credit each robot. The merge commit on main credits them too: after the why it ends
-with one `Co-authored-by: Thunderdome testy <testy@thunderdome.local>` trailer for each robot
-whose files were fused and merged (the identity its own commits use), so GitHub shows them as
-co-authors. Merges from before this change have no trailers (commits never change). The ship then merges the fused fork as usual, the fused commit gets
-its own preview, and the why gains a "Fusion" section listing every try and why it was kept or
-left out. Only whole files the winner
-did not touch are tried, so a fusion never conflicts with the winning fix. The code is
-`src/judge/fusion.ts`.
+git and checks the bundle before it pushes. The bundle must build on the fork's current head with
+exactly one plain commit per kept try. Each file commit may change only its try's files, and
+each hunk commit must be byte for byte the patch the gates passed. The round is time-boxed (no new
+try after 5 minutes), so it never pushes after its step has given up. An addition that passes
+becomes its own commit on the winner's fork, authored by the robot that wrote it ("Thunderdome
+fusion: add testy's test/cart.test.ts to ponder's fix", or "add ponder's cartMessage in
+src/shop.ts"), so `git log` and `git blame` credit each robot. The merge commit on main credits
+them too: after the why it ends with one `Co-authored-by: Thunderdome testy
+<testy@thunderdome.local>` trailer for each robot whose work was fused and merged (the identity
+its own commits use), so GitHub shows them as co-authors. Merges from before this change have no
+trailers (commits never change). The ship then merges the fused fork as usual, the fused commit
+gets its own preview, and the why gains a "Fusion" section listing every try and why it was kept
+or left out. The code is `src/judge/fusion.ts`; `demo/fusion` is a demo app built for it.
 
 The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the shared model):
 
-- **Stage.** After the winner is revealed, each loser throws its test file at the winner. A kept
-  file lands and the mascot stamps it "fused!"; a left-out file falls short with Clef's answer
-  (e.g. "Clef 0.18 < 0.60"). The loser then wears an "⚡ assist" tag.
-- **Fusion round panel.** One row per try: the files, gate 1 (tests 20/20), gate 2 (Clef's yes as a
-  bar with the 0.6 line on it), and the outcome, with the reason for a left-out try.
+- **Stage.** After the winner is revealed, each loser throws its file (`{ }`) or hunk (`@@`) at
+  the winner. A kept one lands and the mascot stamps it "fused!"; a left-out one falls short with
+  Clef's answer (e.g. "Clef 0.18 < 0.60"). The last stamp is the score: "team 94.6 vs 91.9 alone
+  (+2.7)". The loser then wears an "⚡ assist" tag.
+- **Fusion round panel.** The score headline ("Testy alone 91.9 → fused 94.6 · tests 20 → 26")
+  over two bars, winner alone and fused. A fusion dropped for scoring lower says so. Then one row
+  per try: the files or the hunk, gate 1 (tests 20/20), gate 2 (Clef's yes as a bar with the 0.6
+  line on it), and the outcome, with the reason for a left-out try.
+- **Who wrote main.** A stacked bar of the shipped change's lines by robot, with a legend (name,
+  percent, lines). The ship computes it in its git-only sandbox right after the merge:
+  `git blame -w --line-porcelain <first parent>..<merge>` on each file the merge added or changed
+  (up to 40), counted by each robot's commit email, without blank lines. It is saved as
+  `verdict.ship.blame` (`{ testy: 90, ponder: 12, thunderdome: 1 }`); races shipped before it was
+  added show no bar.
 - **Git graph.** An arrow from each loser's lane into the winner's lane just before the merge:
   solid into the fusion commit when kept, dashed and stopping at ✗ when left out. The fusion
   commit is a real commit node: its author robot and "660ef87 · by Ponder". Click it (or the
@@ -480,11 +509,16 @@ The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the sh
 - **`git log --graph main`.** Under the graph, main's history after the race: the merge, then
   the winner's side (the fusion commit on top of its pushes), then the base, with the author
   column in each robot's color.
-- **The sandbox handoff.** The panel shows the round as git: read-only sandbox (runs the losers'
-  tests) → git bundle (`refs/fusion/result`) → write sandbox (checks it, `git push`).
+- **The sandbox handoff.** The panel shows the round as git: read-only sandbox (runs the tests,
+  scores the fused code) → git bundle (`refs/fusion/result`) → write sandbox (checks it, `git push`).
 - **Pipeline.** A "Containers × 2" unit between Clef and the merge, for the two fusion sandboxes.
-- **Gallery.** A race that shipped a loser's tests gets a "⚡ fused" pill, and the leaderboard
-  counts each robot's **assists**: races it lost whose tests still shipped.
+- **Gallery.** A race that shipped a loser's work gets a "⚡ fused" pill, and a scored one a
+  "team +2.7" pill (the fused score minus the winner's alone). The leaderboard counts each robot's
+  **assists** (races it lost whose work still shipped; the tooltip adds its lines shipped while
+  losing), and the stats strip adds "lines shipped while losing" and "fusions beat the winner
+  alone". These read `losing` and `team` in each race summary; races recorded before them have
+  neither (`POST /admin/races` re-records old summaries, which picks up only what their verdicts
+  hold).
 
 If the source moved on during the race (another race shipped first, or someone pushed), the
 winner's merge can conflict. Then the ship starts a **conflict race**: a second sandbox clones
@@ -571,8 +605,8 @@ Anyone can start a 3-agent race on a demo template, without `ADMIN_TOKEN`. A dai
 per UTC day, and at most 2 per IP.
 
 - `https://thunderdome.<your-subdomain>.workers.dev/play` is the play form page (`public/play.html`). No auth.
-- `POST /play` with `{ template, prompt, invite? }`. `template` is one of `thunderdome-bugs`, `thunderdome-ui`
-  or `thunderdome-clash`, and `prompt` is 10 to 600 characters (trimmed). `invite` is needed only when
+- `POST /play` with `{ template, prompt, invite? }`. `template` is one of `thunderdome-bugs`, `thunderdome-ui`,
+  `thunderdome-clash` or `thunderdome-fusion`, and `prompt` is 10 to 600 characters (trimmed). `invite` is needed only when
   `PLAY_INVITE` is set. It creates the task, starts it, and returns `202`
   `{ id, page: "/race/<id>", remaining }`. It never returns fork tokens. Errors: `400` for a bad
   body, `403` `{ "error": "invite code is wrong" }`, and `429` `{ error, reason }` when the quota is

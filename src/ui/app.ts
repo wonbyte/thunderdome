@@ -8,7 +8,8 @@ import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
 import { openCommit } from "./commitdialog";
 import { openDiff } from "./diffdialog";
-import { assistsOf, FUSE_BAR, fusionView, type FuseOutcome, type FuseRow } from "./fusion";
+import { blameView } from "./blame";
+import { assistsOf, FUSE_BAR, fusionView, scoreBars, type FuseOutcome, type FuseRow, type FusionView } from "./fusion";
 import { fusionOf, gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
 import { gitLog, type LogLine } from "./gitlog";
 import { drawGraph } from "./graphview";
@@ -662,6 +663,7 @@ function render(b: Board): void {
   renderWipe(b);
   renderResult(b);
   renderFusion(b);
+  renderBlame(b);
   renderLog(b);
   renderTimer();
 }
@@ -1608,11 +1610,25 @@ function playFusionAct(b: Board): void {
   view.rows.forEach((row, i) => {
     fusionActTimers.push(setTimeout(() => throwFile(stage, row, winner), FUSE_ACT_LEAD_MS + i * FUSE_ACT_STEP_MS));
   });
+  // The last stamp is the proof: the fused score next to the winner's alone.
+  const score = view.score;
+  const end = FUSE_ACT_LEAD_MS + view.rows.length * FUSE_ACT_STEP_MS;
+  // After the last try's own stamp is gone: its flight starts one step before the end.
+  const scoreAt = end - FUSE_ACT_STEP_MS + FUSE_FLIGHT_MS + FUSE_STAMP_MS;
+  if (score !== undefined) {
+    fusionActTimers.push(
+      setTimeout(() => {
+        const at = bodyCentre(winner, stage.getBoundingClientRect());
+        const sign = score.delta > 0 ? "+" : "";
+        stamp(stage, at, score.kept, score.kept ? `team ${score.after.toFixed(1)} vs ${score.before.toFixed(1)} alone (${sign}${score.delta.toFixed(1)})` : `fused ${score.after.toFixed(1)} < ${score.before.toFixed(1)}: dropped`);
+      }, scoreAt),
+    );
+  }
   fusionActTimers.push(
     setTimeout(() => {
       fusionActDone = true;
       if (board !== undefined) renderBots(board);
-    }, FUSE_ACT_LEAD_MS + view.rows.length * FUSE_ACT_STEP_MS),
+    }, score === undefined ? end : scoreAt + FUSE_STAMP_MS),
   );
 }
 
@@ -1639,7 +1655,8 @@ function throwFile(stage: HTMLElement, row: FuseRow, winner: BotView): void {
   loser.root.classList.add("assisting");
   const card = el("div", `fuse-card ${kept ? "kept" : "dropped"}`);
   card.style.setProperty("--color", colorFor(row.agent));
-  card.append(el("b", undefined, "{ }"), el("span", undefined, (row.files[0] ?? "").split("/").at(-1) ?? ""));
+  const label = row.kind === "hunk" ? row.what.split(" in ")[0] ?? row.what : ((row.files[0] ?? "").split("/").at(-1) ?? "");
+  card.append(el("b", undefined, row.kind === "hunk" ? "@@" : "{ }"), el("span", undefined, label));
   stage.append(card);
   // An arc: up and over to the winner, or up and short of it for a left-out file.
   const end = kept ? to : { x: from.x + (to.x - from.x) * 0.62, y: to.y + 70 };
@@ -1681,6 +1698,41 @@ function stamp(stage: HTMLElement, at: { x: number; y: number }, kept: boolean, 
   anim.onfinish = () => node.remove();
 }
 
+let blameKey = "";
+
+/** "Who wrote main": the merge's lines by robot, as one stacked bar and a legend. */
+function renderBlame(b: Board): void {
+  const view = b.ended ? blameView(b.task?.verdict) : undefined;
+  const key = JSON.stringify(view ?? null);
+  if (key === blameKey) return;
+  blameKey = key;
+  const panel = byId("blame-panel");
+  panel.hidden = view === undefined;
+  if (view === undefined) return;
+  byId("blame-stat").textContent = view.losers > 0 ? `${view.total} lines · ${view.losers} from losers` : `${view.total} lines`;
+  const bar = byId("blame-bar");
+  bar.setAttribute("aria-label", view.label);
+  bar.replaceChildren(
+    ...view.shares.map((share, i) => {
+      const seg = el("span", `blame-seg${share.winner ? " winner" : ""}`);
+      seg.style.setProperty("--color", share.color);
+      seg.style.setProperty("--i", String(i));
+      seg.style.flexGrow = String(share.lines);
+      seg.title = `${share.name}: ${share.lines} lines (${share.pct}%)`;
+      return seg;
+    }),
+  );
+  byId("blame-legend").replaceChildren(
+    ...view.shares.map((share) => {
+      const item = el("li");
+      item.style.setProperty("--color", share.color);
+      item.append(el("span", "swatch"), el("b", undefined, share.name), el("span", "pct", `${share.pct}%`), el("span", "lines", `${share.lines} ${share.lines === 1 ? "line" : "lines"}`));
+      if (share.winner) item.append(el("span", "tag", "winner"));
+      return item;
+    }),
+  );
+}
+
 let fusionKey = "";
 
 const FUSE_BADGE: Record<FuseOutcome, string> = { added: "⚡ fused", rejected: "left out", failed: "could not try" };
@@ -1699,10 +1751,14 @@ function renderFusion(b: Board): void {
   const result = byId("fusion-result");
   result.classList.toggle("kept", kept.length > 0);
   const winner = displayName(view.winner);
+  renderFuseScore(view);
   if (view.error !== undefined && view.rows.length === 0) result.textContent = `The fusion round could not run: ${view.error}`;
   else if (kept.length === 0) result.textContent = `Nothing was added: ${winner}'s fix shipped as it was.`;
   else {
-    const what = `${kept.map((r) => `${displayName(r.agent)}'s ${r.files.join(", ")}`).join(" and ")} ${view.shipped ? "shipped" : "joined"} with ${winner}'s fix`;
+    // One clause per robot: "Ponder's test/ponder.test.ts and cartMessage in src/shop.ts".
+    const byAgent = Map.groupBy(kept, (r) => r.agent);
+    const parts = [...byAgent].map(([agent, rows]) => `${displayName(agent)}'s ${rows.map((r) => r.what).join(" and ")}`);
+    const what = `${parts.join("; ")} ${view.shipped ? "shipped" : "joined"} with ${winner}'s fix`;
     const tail = `: the losing fork${kept.length === 1 ? "" : "s"} still made the code better.`;
     result.replaceChildren(document.createTextNode(what));
     if (view.hash !== undefined && view.commit !== undefined) {
@@ -1719,6 +1775,34 @@ function renderFusion(b: Board): void {
   byId("fusion-rows").replaceChildren(...view.rows.map((row, i) => fuseRow(row, i)));
 }
 
+/**
+ * The proof line: the winner alone vs the fused head, scored the same way, as a headline and two
+ * bars. Older verdicts have no score, and say so only through the hint.
+ */
+function renderFuseScore(view: FusionView): void {
+  const box = byId("fusion-score");
+  const bars = scoreBars(view);
+  box.hidden = bars === undefined && view.scoreNote === undefined;
+  if (bars === undefined || view.score === undefined) {
+    box.replaceChildren(...(view.scoreNote === undefined ? [] : [el("p", "fuse-score-note", `Not scored: ${view.scoreNote}. The fusion was kept on its gates.`)]));
+    return;
+  }
+  box.classList.toggle("lower", !view.score.kept);
+  const chart = el("div", "fuse-bars");
+  chart.setAttribute("role", "img");
+  chart.setAttribute("aria-label", bars.label);
+  for (const bar of bars.bars) {
+    const row = el("div", `fuse-bar ${bar.key}`);
+    const track = el("span", "track");
+    const fill = el("i");
+    fill.style.width = `${bar.width}%`;
+    track.append(fill);
+    row.append(el("span", "name", bar.name), track, el("b", "total", bar.total.toFixed(1)), el("span", "tests", bar.tests));
+    chart.append(row);
+  }
+  box.replaceChildren(el("p", "fuse-headline", view.score.headline), chart);
+}
+
 function fuseRow(row: FuseRow, index: number): HTMLElement {
   const color = colorFor(row.agent);
   const item = el("li", `fuse-row ${row.outcome}`);
@@ -1727,7 +1811,8 @@ function fuseRow(row: FuseRow, index: number): HTMLElement {
   const who = el("div", "fuse-who");
   who.append(art("mini", robotSvg(color)), el("b", undefined, displayName(row.agent)));
   const files = el("div", "fuse-files");
-  for (const file of row.files) files.append(el("code", undefined, file));
+  if (row.kind === "hunk") files.append(el("span", "hunk-tag", "hunk"), el("code", undefined, row.what));
+  else for (const file of row.files) files.append(el("code", undefined, file));
   const gates = el("div", "fuse-gates");
   if (row.tests !== undefined) {
     const gate = el("span", `gate ${row.green === true ? "pass" : "fail"}`, `${row.green === true ? "✓" : "✗"} tests ${row.tests}`);

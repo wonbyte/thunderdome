@@ -9,9 +9,9 @@ import { CommandError, REPO_DIR } from "../sandbox/ThunderdomeSandbox";
 import type { OutboundProps } from "../sandbox/outbound";
 import { gitRepoPath } from "../sandbox/policy";
 import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
-import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
+import { shipBlame, shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { clipDiff } from "./diffs";
-import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, type FusionResult } from "./fusion";
+import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, scoreFusion, withoutPatches, type FusionResult } from "./fusion";
 import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
@@ -53,6 +53,8 @@ const FUSE_STEP = {
 const FUSE_BUDGET_MS = 5 * 60 * 1_000;
 /** A push may not start later than this after the budget. */
 const FUSE_PUSH_MS = 2 * 60 * 1_000;
+/** Scoring the fused head (one Clef call with retries) is given up after this; the fusion is then kept unscored. */
+const FUSE_SCORE_MS = 90 * 1_000;
 /** Screenshots and Clef questions for every fork, after waiting for the final previews. */
 const LOOK_STEP = {
   retries: { limit: 1, delay: "10 seconds", backoff: "constant" },
@@ -111,12 +113,12 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
     // nothing new. A failed round is only noted; the winner ships as judged.
     let fusedText: string;
     try {
-      fusedText = await step.do("fuse", FUSE_STEP, async () => JSON.stringify(await fuseInSandbox(this.env, input, decided)));
+      fusedText = await step.do("fuse", FUSE_STEP, async () => JSON.stringify(withoutPatches(await fuseInSandbox(this.env, input, decided))));
     } catch (cause) {
       fusedText = JSON.stringify({ tried: [], error: `the fusion step failed: ${String(cause).slice(0, 300)}` } satisfies FusionResult);
     }
     const fusion = JSON.parse(fusedText) as FusionResult;
-    const result = { ...decided, why: `${decided.why}${fusionWhy(fusion)}`, fusion };
+    const result = { ...decided, why: `${decided.why}${fusionWhy(fusion, decided.winner ?? undefined)}`, fusion };
     // JSON text, like the fork steps: ShipResult has optional keys.
     const shipped = await step.do("ship", SHIP_STEP, async () => JSON.stringify(await shipInSandbox(this.env, input, result)));
     const ship = JSON.parse(shipped) as ShipResult;
@@ -263,7 +265,11 @@ async function shipInSandbox(env: Env, input: JudgeInput, result: Fused): Promis
   const git = shipGit(env, source, ship);
   const resolver: ShipResolver = { race: (req) => raceInSandbox(env, source, ship, req), importBundle: (bundle) => git.importBundle(bundle) };
   try {
-    return await shipTask(deps(git.run, resolver), ship);
+    const shipped = await shipTask(deps(git.run, resolver), ship);
+    // Who wrote main: git blame in the same sandbox, which runs only git. Best effort.
+    if (shipped.status !== "merged" || shipped.commit === undefined) return shipped;
+    const blame = await shipBlame(git.run, shipped.commit);
+    return blame === undefined ? shipped : { ...shipped, blame };
   } finally {
     await git.close();
   }
@@ -283,6 +289,11 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   const candidates = fusionCandidates(result.scores.ranked, result.forks, winner.agent, remotes);
   if (candidates.length === 0) return { tried: [] };
   const deadline = Date.now() + FUSE_BUDGET_MS;
+  // Where every fork started, for the fused head's diff when it is scored. A failure only skips the score.
+  const started = forkBase(env.ARTIFACTS, input.repo, winner.fork).then(
+    (base) => ({ base }),
+    (cause: unknown) => ({ error: String(cause).slice(0, 200) }),
+  );
   const winnerRead = await readToken(env.ARTIFACTS, winner.fork);
   const repoTokens: Record<string, string> = { [repoPath(winner.remote)]: winnerRead };
   for (const c of candidates) {
@@ -297,6 +308,8 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
     await retry(() => box.clone(props, winner.remote), { attempts: 10, delayMs: 2_000, shouldRetry: () => true });
     const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e), ai: env.AI, now: () => Date.now(), deadline };
     fused = await runFusion(deps, { task: input.task, winner: winner.agent, testsPassed: judged.tests.passed, candidates });
+    // Scoring must end before the push cutoff, or a kept fusion would be dropped for time.
+    if (fused.commit !== undefined) fused = await scoreInBox(env, deps, fused, input, result, await started, deadline + FUSE_PUSH_MS - Date.now());
     if (fused.commit !== undefined && fused.base !== undefined) bundle = await fusionBundle(deps, fused.base, fused.commit);
   } finally {
     await box.stop().catch((cause: unknown) => console.error({ event: "fuse.stop_failed", error: String(cause) }));
@@ -307,6 +320,36 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   // Nothing reached the fork, so nothing was added after all.
   const { commit: _commit, ...rest } = fused;
   return { ...rest, tried: fused.tried.map((t) => (t.status === "added" ? { ...t, status: "failed" as const, note: problem } : t)), error: problem };
+}
+
+/**
+ * Scores the fused head in the fusion sandbox and drops the fusion when it scores below the winner
+ * alone. Best effort and time-boxed: on any failure the fusion is kept on its gates, with a note.
+ */
+async function scoreInBox(
+  env: Env,
+  deps: { exec: (argv: string[], cwd: string, e?: Record<string, string>) => Promise<{ exitCode: number; stdout: string; stderr: string }> },
+  fused: FusionResult,
+  input: JudgeInput,
+  result: JudgeResult,
+  started: { base: string } | { error: string },
+  leftMs: number,
+): Promise<FusionResult> {
+  const winner = result.scores.ranked.find((s) => s.agent === result.winner);
+  if (winner === undefined) return { ...fused, scoreNote: "the winner has no score" };
+  if ("error" in started) return { ...fused, scoreNote: `the fork's starting point was not found: ${started.error}` };
+  const limit = Math.min(FUSE_SCORE_MS, leftMs);
+  if (limit <= 0) return { ...fused, scoreNote: "the fusion round had no time left to score it" };
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<FusionResult>((resolve) => {
+    timer = setTimeout(() => resolve({ ...fused, scoreNote: `scoring took longer than ${Math.round(limit / 1_000)} seconds` }), limit);
+  });
+  try {
+    const scoring = scoreFusion({ ...deps, scorer: clefScorer(env.AI) }, fused, { task: input.task, winner, weights: result.scores.weights, forkBase: started.base });
+    return await Promise.race([scoring, late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Pushes a checked fusion bundle to the winner's fork. Runs no agent code. Returns why it did not push. */

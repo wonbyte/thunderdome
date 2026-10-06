@@ -1,7 +1,7 @@
 // Pure: input checks and the daily quota for the public POST /play. No cloudflare:workers import.
 
 /** The demo apps a public play may race on. */
-export const PLAY_TEMPLATES = ["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash"] as const;
+export const PLAY_TEMPLATES = ["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"] as const;
 /** Shortest task a play accepts, in characters after trimming. */
 export const PLAY_PROMPT_MIN = 10;
 /** Longest task a play accepts, in characters after trimming. */

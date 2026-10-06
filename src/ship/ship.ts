@@ -65,7 +65,12 @@ export interface ShipResult {
   error?: string; // why status is "error"
   resolve?: ShipResolve; // set when the winner conflicted with the source and a resolver was given
   locks: ForkLock[]; // one per input fork, same order
+  blame?: ShipBlame; // who wrote the shipped change's lines; only on merges since blame was added
 }
+/** Lines of the shipped change by author: an agent name, "thunderdome" (merge fixes) or "other". */
+export type ShipBlame = Record<string, number>;
+/** Changed files blamed after a merge; more are left out of the count. */
+export const BLAME_MAX_FILES = 40;
 /** Characters of git output a ship result keeps. */
 export const SHIP_OUTPUT_LIMIT = 4_000;
 
@@ -259,4 +264,47 @@ function reasonText(reason: unknown): string {
 
 function errorText(err: unknown): string {
   return err instanceof Error ? err.message : reasonText(err);
+}
+
+/**
+ * Counts `git blame --line-porcelain` lines by author, skipping lines from outside the blamed range
+ * ("boundary") and blank lines. An agent is known by its gitIdentity email, Thunderdome by its own;
+ * anyone else is "other".
+ */
+export function parseBlame(porcelain: string, into: ShipBlame = {}): ShipBlame {
+  let mail = "";
+  let boundary = false;
+  for (const line of porcelain.split("\n")) {
+    if (line.startsWith("\t")) {
+      if (!boundary && line.trim() !== "") {
+        const who = /^<([a-z0-9-]+)@thunderdome\.local>$/.exec(mail)?.[1] ?? "other";
+        into[who] = (into[who] ?? 0) + 1;
+      }
+      [mail, boundary] = ["", false];
+    } else if (line.startsWith("author-mail ")) mail = line.slice("author-mail ".length).trim();
+    else if (line === "boundary") boundary = true;
+  }
+  return into;
+}
+
+/**
+ * Who wrote the shipped change: `git blame -w` over the merge's first parent..merge, on each file
+ * the merge added or changed. Runs only git (the ship sandbox). Best effort: undefined on any failure.
+ */
+export async function shipBlame(git: ShipDeps["git"], commit: string): Promise<ShipBlame | undefined> {
+  try {
+    const parent = `${commit}^1`;
+    const names = await git(["diff", "--name-only", "--no-renames", "--diff-filter=AM", parent, commit]);
+    if (names.exitCode !== 0) return undefined;
+    const files = names.stdout.split("\n").filter((f) => f !== "").slice(0, BLAME_MAX_FILES);
+    const blame: ShipBlame = {};
+    for (const file of files) {
+      const out = await git(["blame", "-w", "--line-porcelain", `${parent}..${commit}`, "--", file]);
+      if (out.exitCode !== 0) return undefined;
+      parseBlame(out.stdout, blame);
+    }
+    return blame;
+  } catch {
+    return undefined;
+  }
 }
