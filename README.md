@@ -65,7 +65,7 @@ flowchart LR
    (Ponder is careful, Zippy is fast, Testy writes the test first). Before editing, it claims files on the TaskRoom's claim board; a
    file another agent holds becomes a shared claim (a clash), which costs claim points when another
    agent did the task without that file. Each agent is also told what earlier races on the same
-   app taught: the task, who won and the judge's reason (see [Race memory](#race-memory)). Agents
+   app taught: the task, who won and the winner's strongest point (see [Race memory](#race-memory)). Agents
    push to their fork as they work. Tokens stay outside the sandbox: the outbound proxy adds them.
 3. **Push events.** Each push fires an Artifacts `repo.pushed` event into the `thunderdome-push`
    Workflow. It records the push on the TaskRoom (the git graph) and builds a Workers Preview
@@ -371,8 +371,11 @@ curl -X POST https://thunderdome.<your-subdomain>.workers.dev/admin/purge \
 
 Context carries from one race to the next. When a race is created, the TaskRoom looks up the
 newest 3 judged races on the same app (the same demo template, or the same repo) in the
-RaceIndex. Every agent's system prompt then lists each one: the task, the winner and the judge's
-one-line reason. For a race on a shared repo, it also names the winner's merge commit, which is
+RaceIndex. Every agent's system prompt then lists each one: the task, the winner, the winner's
+strongest point in plain words ("its diff was the smallest (41 lines changed vs 60)", or "more of its
+tests passed (7/7 vs 5/7)") and the judge's one-line reason. The strongest point is the score part
+where the winner led by the most points, else a smaller diff, else finishing first on a tie
+(`lesson` in `src/judge/why.ts`). For a race on a shared repo, it also names the winner's merge commit, which is
 already in the repo the agents fork. The race page shows this under the task ("Remembers"), and
 the gallery shows each race's reason.
 

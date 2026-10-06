@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { type ForkInput, scoreFork, scoreForks } from "../src/judge/score";
-import { buildWhy, CODE_TIE, decidedBy, duration, headline, loserLine, REASON_COUNT, scoresTable, winnerReasons } from "../src/judge/why";
+import { buildWhy, CODE_TIE, decidedBy, duration, headline, lesson, loserLine, REASON_COUNT, scoresTable, winnerReasons } from "../src/judge/why";
 
 function fork(overrides: Partial<ForkInput> = {}): ForkInput {
   return {
@@ -320,5 +320,33 @@ describe("decidedBy", () => {
       expect(headline(result)).toBeUndefined();
       expect(decidedBy(result)).toBeUndefined();
     }
+  });
+});
+
+describe("lesson", () => {
+  it("names the part where the winner led by the most points, in plain words", () => {
+    const tests = scoreForks([fork({ agent: "w", testsPassed: 10 }), fork({ agent: "l", testsPassed: 7, filesChanged: ["src/b.ts"], filesClaimed: ["src/b.ts"] })]);
+    expect(lesson(tests)).toBe("more of its tests passed (10/10 vs 7/10)");
+    const clarity = scoreForks([fork({ agent: "w", clarity: 0.9, taskFit: 0.95 }), fork({ agent: "l", clarity: 0.5, taskFit: 0.9 })]);
+    expect(lesson(clarity)).toBe("the judge rated its diff the most focused and easiest to review");
+    const fit = scoreForks([fork({ agent: "w", taskFit: 1, clarity: 0.6 }), fork({ agent: "l", taskFit: 0.6, clarity: 0.65 })]);
+    expect(lesson(fit)).toBe("the judge rated its change the closest fit to everything the task asked");
+    const look = scoreForks([fork({ agent: "w", look: 1 }), fork({ agent: "l", look: 0.4 })]);
+    expect(lesson(look)).toBe("its page looked best in the screenshots at desktop and phone width");
+    const claim = scoreForks([avoids(), fork({ agent: "l", filesShared: ["src/a.ts"] })]);
+    expect(lesson(claim)).toBe("it changed only files it had claimed, with no avoidable clash");
+  });
+
+  it("falls back to a smaller diff, then to finishing first, and says nothing when only agent order decided", () => {
+    const smaller = scoreForks([fork({ agent: "w", linesChanged: 41 }), fork({ agent: "l", linesChanged: 60 })]);
+    expect(lesson(smaller)).toBe("its diff was the smallest (41 lines changed vs 60)");
+    const first = scoreForks([fork({ agent: "w", endedAt: "2026-10-05T00:00:00Z" }), fork({ agent: "l", endedAt: "2026-10-05T00:01:00Z" })]);
+    expect(lesson(first)).toBe("the fixes tied on points and diff size, and it finished first");
+    expect(lesson(scoreForks([fork({ agent: "w" }), fork({ agent: "l" })]))).toBeUndefined();
+  });
+
+  it("says when the winner was the only eligible fork, and nothing with no winner", () => {
+    expect(lesson(scoreForks([fork({ agent: "w" }), fork({ agent: "l", testsPassed: 0 })]))).toBe("it was the only fork that changed files and passed tests");
+    expect(lesson(scoreForks([fork({ agent: "l", testsPassed: 0 })]))).toBeUndefined();
   });
 });

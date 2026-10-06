@@ -727,7 +727,9 @@ function renderMemory(memory: WireMemory[] | undefined): void {
       const what = el("span", "what", `“${m.prompt}”`);
       what.title = m.prompt;
       item.append(el("span", "who", `${displayName(m.winner)} won`), what);
-      if (m.headline !== undefined) item.append(el("span", "mem-why", whyWithNames(m.headline, [m.winner, ...AGENT_IDS])));
+      // The winner's strongest point says more than the scoring headline, so it comes first.
+      const why = m.lesson === undefined ? m.headline : `It won because ${m.lesson}.`;
+      if (why !== undefined) item.append(el("span", "mem-why", whyWithNames(why, [m.winner, ...AGENT_IDS])));
       return item;
     }),
   );

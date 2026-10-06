@@ -20,6 +20,7 @@ export interface RaceMemory {
   prompt: string; // clipped to MEMORY_PROMPT_MAX
   winner: string;
   headline?: string; // the judge's one-line reason
+  lesson?: string; // the winner's strongest point, as a clause
   commit?: string; // the winner's merge, only when it landed in the repo the new race forks
 }
 
@@ -37,6 +38,7 @@ export interface RaceSummary {
   scores?: RaceScore[]; // ranked order, only when the verdict has scores
   decidedBy?: DecidedBy; // only when the verdict has it
   headline?: string; // the judge's one-line reason, only when the verdict has it
+  lesson?: string; // the winner's strongest point, only when the verdict has it
   commit?: string; // the merge commit, only when the winner merged
   clash: boolean;
 }
@@ -58,6 +60,7 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     ...(v?.scores === undefined ? {} : { scores: v.scores.map(({ agent, total }) => ({ agent, total })) }),
     ...(v?.decidedBy === undefined ? {} : { decidedBy: v.decidedBy }),
     ...(v?.headline === undefined ? {} : { headline: v.headline }),
+    ...(v?.lesson === undefined ? {} : { lesson: v.lesson }),
     ...(v?.ship.status === "merged" && v.ship.commit !== undefined ? { commit: v.ship.commit } : {}),
     clash: hasClash(history),
   };
@@ -96,6 +99,7 @@ export function raceMemory(races: readonly RaceSummary[], app: { id: string; tem
       prompt: r.prompt.length <= MEMORY_PROMPT_MAX ? r.prompt : `${r.prompt.slice(0, MEMORY_PROMPT_MAX - 1)}…`,
       winner: r.winner as string,
       ...(r.headline === undefined ? {} : { headline: r.headline }),
+      ...(r.lesson === undefined ? {} : { lesson: r.lesson }),
       ...(app.template === undefined && r.commit !== undefined ? { commit: r.commit } : {}),
     }));
 }

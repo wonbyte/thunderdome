@@ -42,7 +42,7 @@ export interface WireTask {
   memory?: WireMemory[];
 }
 // One earlier race the robots were told about (src/room/races.ts RaceMemory).
-export interface WireMemory { id: string; prompt: string; winner: string; headline?: string; commit?: string }
+export interface WireMemory { id: string; prompt: string; winner: string; headline?: string; lesson?: string; commit?: string }
 export interface WireStep { seq: number; agent: string; at: string; kind: string; text: string }
 export interface WireClaim { agent: string; file: string; shared: boolean; at: string }
 export interface WireClaimBoard { active: WireClaim[]; history: WireClaim[] }

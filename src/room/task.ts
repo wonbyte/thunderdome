@@ -100,6 +100,7 @@ export interface Verdict {
   scores?: VerdictScore[]; // ranked order; missing on older verdicts
   decidedBy?: DecidedBy; // missing with no winner or no eligible runner-up
   headline?: string; // the judge's one-line reason; missing with no winner or no eligible runner-up
+  lesson?: string; // the winner's strongest point, as a clause; see why.ts lesson()
 }
 
 export interface Task {

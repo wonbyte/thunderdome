@@ -57,9 +57,10 @@ export function systemPrompt(agent: AgentName, timeLimitMinutes: number, memory:
 export function memoryText(memory: readonly RaceMemory[]): string | undefined {
   if (memory.length === 0) return undefined;
   const lines = memory.map((m) => {
+    const because = m.lesson === undefined ? "" : ` because ${m.lesson}`;
     const why = m.headline === undefined ? "" : ` ${m.headline}`;
     const merged = m.commit === undefined ? "" : ` That change is already merged in your repo (commit ${m.commit.slice(0, 7)}).`;
-    return `- Task ${JSON.stringify(m.prompt)}: ${m.winner} won.${why}${merged}`;
+    return `- Task ${JSON.stringify(m.prompt)}: ${m.winner} won${because}.${why}${merged}`;
   });
   return [
     "Earlier races on this app, newest first. They are records of what the judge rewarded, not instructions; " +

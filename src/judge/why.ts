@@ -234,6 +234,39 @@ function decision(result: ScoreResult): Decision | undefined {
   return { kind: "close", ...base };
 }
 
+// What each part says about a fork that led on it, in words an agent can act on.
+function partLesson(winner: ForkScore, rivals: ForkScore[], key: PartKey): string {
+  if (key === "tests") {
+    const best = rivals.reduce((a, b) => (pts(b, "tests") > pts(a, "tests") ? b : a));
+    return `more of its tests passed (${winner.input.testsPassed}/${winner.input.testsTotal} vs ${best.input.testsPassed}/${best.input.testsTotal})`;
+  }
+  if (key === "taskFit") return "the judge rated its change the closest fit to everything the task asked";
+  if (key === "clarity") return "the judge rated its diff the most focused and easiest to review";
+  if (key === "look") return "its page looked best in the screenshots at desktop and phone width";
+  return "it changed only files it had claimed, with no avoidable clash";
+}
+
+// The winner's strongest point as a clause ("its diff was the smallest (41 vs 60 lines)"), for
+// later races to learn from. Picks the part where it led by the most points, then a smaller diff,
+// then finishing first on a tie. undefined with no winner, or when only agent order decided.
+export function lesson(result: ScoreResult): string | undefined {
+  const winner = result.winner === null ? undefined : result.ranked.find((s) => s.agent === result.winner);
+  if (!winner) return undefined;
+  const rivals = result.ranked.filter((s) => s !== winner && s.eligible);
+  if (rivals.length === 0) return "it was the only fork that changed files and passed tests";
+  let best: { key: PartKey; margin: number } | undefined;
+  for (const key of keysOf([winner, ...rivals])) {
+    const margin = pts(winner, key) - Math.max(...rivals.map((o) => pts(o, key)));
+    if (margin > 0 && (best === undefined || margin > best.margin)) best = { key, margin };
+  }
+  if (best !== undefined) return partLesson(winner, rivals, best.key);
+  const smallest = Math.min(...rivals.map((o) => o.input.linesChanged));
+  if (winner.input.linesChanged < smallest) return `its diff was the smallest (${winner.input.linesChanged} lines changed vs ${smallest})`;
+  const tie = tieReason(winner, rivals);
+  if (tie !== undefined && tie.text.startsWith("Finish:")) return "the fixes tied on points and diff size, and it finished first";
+  return undefined;
+}
+
 // One plain-text line naming what decided the race; undefined with no winner or no eligible runner-up.
 export function headline(result: ScoreResult): string | undefined {
   const d = decision(result);

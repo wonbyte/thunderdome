@@ -158,9 +158,9 @@ describe("race memory", () => {
     const task: Task = {
       ...baseTask(),
       status: "finished",
-      verdict: { winner: "zippy", why: "w", headline: "Decided by code: zippy won.", judgedAt: "x", ship: { status: "merged", winner: "zippy", commit: "c0ffee1234", locks: [] } },
+      verdict: { winner: "zippy", why: "w", headline: "Decided by code: zippy won.", lesson: "its tests passed", judgedAt: "x", ship: { status: "merged", winner: "zippy", commit: "c0ffee1234", locks: [] } },
     };
-    expect(summaryOf(task, [])).toMatchObject({ headline: "Decided by code: zippy won.", commit: "c0ffee1234" });
+    expect(summaryOf(task, [])).toMatchObject({ headline: "Decided by code: zippy won.", lesson: "its tests passed", commit: "c0ffee1234" });
     const conflict: Task = { ...task, verdict: { ...task.verdict!, ship: { status: "conflict", winner: "zippy", locks: [] } } };
     expect(Object.hasOwn(summaryOf(conflict, []), "commit")).toBe(false);
   });
@@ -172,6 +172,7 @@ describe("race memory", () => {
     template: "thunderdome-ui",
     winner: "testy",
     headline: `why ${id}`,
+    lesson: `point ${id}`,
     commit: `commit-${id}`,
     ...over,
   });
@@ -188,7 +189,7 @@ describe("race memory", () => {
     ];
     const memory = raceMemory(races, { id: "t-0000000a", template: "thunderdome-ui", repo: "src-new" });
     expect(memory).toEqual(
-      ["t-0000000e", "t-0000000f", "t-00000010"].map((id) => ({ id, prompt: `task ${id}`, winner: "testy", headline: `why ${id}` })),
+      ["t-0000000e", "t-0000000f", "t-00000010"].map((id) => ({ id, prompt: `task ${id}`, winner: "testy", headline: `why ${id}`, lesson: `point ${id}` })),
     );
     expect(memory).toHaveLength(MEMORY_MAX);
   });
