@@ -929,24 +929,24 @@ h2 {
 .fuse-path { fill: none; stroke-linecap: round; }
 .fuse-path.kept { stroke-width: 3; filter: drop-shadow(0 0 5px color-mix(in srgb, var(--fuse) 60%, transparent)); }
 .fuse-path.dropped { stroke-width: 1.5; stroke-dasharray: 3 5; opacity: .45; }
-.fusion.pop .fuse-path { stroke-dasharray: 200; stroke-dashoffset: 200; animation: fuse-draw .9s calc(var(--k, 0) * 250ms) var(--ease) forwards; }
+.fusion.pop .fuse-path { stroke-dasharray: var(--len, 1000); stroke-dashoffset: var(--len, 1000); animation: fuse-draw .9s calc(var(--k, 0) * 250ms) var(--ease) forwards; }
 .fusion.pop .fuse-path.dropped { animation-name: fuse-draw-dash; }
 @keyframes fuse-draw { to { stroke-dashoffset: 0; } }
-@keyframes fuse-draw-dash { from { stroke-dasharray: 200; stroke-dashoffset: 200; } 99% { stroke-dasharray: 200; stroke-dashoffset: 0; } to { stroke-dasharray: 3 5; stroke-dashoffset: 0; } }
+@keyframes fuse-draw-dash { from { stroke-dasharray: var(--len, 1000); stroke-dashoffset: var(--len, 1000); } 99% { stroke-dasharray: var(--len, 1000); stroke-dashoffset: 0; } to { stroke-dasharray: 3 5; stroke-dashoffset: 0; } }
 .fuse-x { fill: var(--faint); font: 700 11px var(--mono); }
 .fuse-dot { fill: var(--panel); stroke: var(--faint); stroke-width: 2; }
 .fuse-dot.kept { fill: var(--fuse); stroke: #fff6; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 0 6px var(--fuse)); }
 .fusion.pop .fuse-dot.kept { animation: dot-pop .7s .7s var(--ease) both; }
 .fuse-tag { fill: var(--faint); font: 700 10.5px var(--mono); }
 .fuse-tag.kept { fill: var(--fuse); }
-.merge-path.pop { stroke-dasharray: 120; animation: merge-draw 1s var(--ease) both; }
+.merge-path.pop { stroke-dasharray: var(--len, 1000); animation: merge-draw 1s var(--ease) both; }
 .merge-dot { fill: var(--accent); stroke-width: 3; transform-box: fill-box; transform-origin: center; filter: drop-shadow(0 0 6px rgba(255, 210, 63, .7)); }
 .merge-dot.pop { animation: dot-pop .8s .5s var(--ease) both; }
 .merge-label { fill: var(--accent); font: 700 11px var(--mono); }
 .now-line { stroke: var(--cyan); stroke-width: 1.5; stroke-dasharray: 3 4; opacity: .5; }
 @keyframes dot-pop { 0% { transform: scale(0); } 60% { transform: scale(1.6); } 100% { transform: scale(1); } }
 @keyframes head-pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.8); opacity: .4; } }
-@keyframes merge-draw { from { stroke-dashoffset: 120; } to { stroke-dashoffset: 0; } }
+@keyframes merge-draw { from { stroke-dashoffset: var(--len, 1000); } to { stroke-dashoffset: 0; } }
 
 /* ---- code (diff) ---- */
 .bot { cursor: pointer; }
@@ -990,7 +990,7 @@ h2 {
 .dl.meta { color: var(--faint); font-style: italic; }
 @media (prefers-reduced-motion: reduce) {
   .push-dot.pop, .merge-dot.pop, .merge-path.pop, .lane-head, .diff-dialog[open], .fusion.pop .fuse-path, .fusion.pop .fuse-dot.kept { animation: none; }
-  .fusion.pop .fuse-path.kept { stroke-dasharray: none; stroke-dashoffset: 0; }
+  .fusion.pop .fuse-path.kept, .merge-path.pop { stroke-dasharray: none; stroke-dashoffset: 0; }
   .fusion.pop .fuse-path.dropped { stroke-dasharray: 3 5; stroke-dashoffset: 0; }
 }
 

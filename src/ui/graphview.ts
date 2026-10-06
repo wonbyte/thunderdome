@@ -36,6 +36,15 @@ function titled<T extends SVGElement>(node: T, title: string): T {
   return node;
 }
 
+/**
+ * A cubic Bézier's length, rounded up with room to spare: the draw-in animation dashes a path by
+ * its length, and a dash shorter than the path leaves the end undrawn. The curve is never longer
+ * than its control polygon, so that is a safe upper bound.
+ */
+function curveLength(x0: number, y0: number, x1: number, y1: number, x2: number, y2: number, x3: number, y3: number): number {
+  return Math.ceil(Math.hypot(x1 - x0, y1 - y0) + Math.hypot(x2 - x1, y2 - y1) + Math.hypot(x3 - x2, y3 - y2)) + 4;
+}
+
 let shown = new Set<string>();
 
 /**
@@ -73,7 +82,8 @@ export function drawGraph(host: Element, graph: GitGraph, live: boolean, onLane:
       root.append(svg("line", { x1: laneEnd + 6, y1: laneY, x2: mx - 34, y2: laneY, stroke: color }, "judge-bridge"));
       root.append(text((laneEnd + mx - 34) / 2, laneY - 8, "judged", "lane-tag bridge-tag", "middle"));
     }
-    const path = svg("path", { d: `M ${mx - 34} ${laneY} C ${mx - 10} ${laneY}, ${mx - 14} ${mainY}, ${mx} ${mainY}`, stroke: color }, `merge-path${fresh}`);
+    const len = curveLength(mx - 34, laneY, mx - 10, laneY, mx - 14, mainY, mx, mainY);
+    const path = svg("path", { d: `M ${mx - 34} ${laneY} C ${mx - 10} ${laneY}, ${mx - 14} ${mainY}, ${mx} ${mainY}`, stroke: color, style: `--len:${len}` }, `merge-path${fresh}`);
     root.append(path);
     const dot = svg("circle", { cx: mx, cy: mainY, r: 8, stroke: color }, `merge-dot${fresh}`);
     root.append(titled(dot, `merged into main${graph.merge.commit ? ` as ${graph.merge.commit}` : ""}`));
@@ -155,7 +165,8 @@ function drawFusion(
     // A left-out try stops short of the winner's lane.
     const ex = t.added ? fx - 7 : fx - 16;
     const ey = t.added ? wy : wy + (ly - wy) * 0.3;
-    const path = svg("path", { d: `M ${sx} ${ly} C ${sx + 24} ${ly}, ${ex - 26} ${ey}, ${ex} ${ey}`, stroke: lane.color, style: `--k:${k}` }, `fuse-path ${t.added ? "kept" : "dropped"}`);
+    const len = curveLength(sx, ly, sx + 24, ly, ex - 26, ey, ex, ey);
+    const path = svg("path", { d: `M ${sx} ${ly} C ${sx + 24} ${ly}, ${ex - 26} ${ey}, ${ex} ${ey}`, stroke: lane.color, style: `--k:${k};--len:${len}` }, `fuse-path ${t.added ? "kept" : "dropped"}`);
     g.append(titled(path, t.label));
     if (t.added) added += 1;
     else g.append(titled(text(ex + 2, ey + 4, "✗", "fuse-x"), t.label));
