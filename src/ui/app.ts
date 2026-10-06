@@ -719,18 +719,26 @@ function renderMemory(memory: WireMemory[] | undefined): void {
   memoryKey = key;
   const box = byId("memory");
   box.hidden = list.length === 0;
-  byId("memory-count").textContent = `${list.length} earlier race${list.length === 1 ? "" : "s"}, told to every robot`;
+  const races = list.length === 1 ? "1 earlier race" : `${list.length} earlier races`;
+  byId("memory-count").textContent = `Every robot started this race knowing what ${races} on this app taught.`;
   byId("memory-list").replaceChildren(
     ...list.map((m) => {
-      const item = el("li");
-      item.style.setProperty("--color", colorFor(m.winner));
-      const what = el("span", "what", `“${m.prompt}”`);
-      what.title = m.prompt;
-      item.append(el("span", "who", `${displayName(m.winner)} won`), what);
-      // The winner's strongest point says more than the scoring headline, so it comes first.
-      const why = m.lesson === undefined ? m.headline : `It won because ${m.lesson}.`;
-      if (why !== undefined) item.append(el("span", "mem-why", whyWithNames(why, [m.winner, ...AGENT_IDS])));
-      return item;
+      const card = el("li", "mem-card");
+      card.style.setProperty("--color", colorFor(m.winner));
+      const bot = art("mini", robotSvg(colorFor(m.winner)));
+      bot.append(art("mini-crown", crownSvg()));
+      const top = el("div", "mem-top");
+      const replay = el("a", undefined, "replay ›") as HTMLAnchorElement;
+      replay.href = `/race/${m.id}?replay`;
+      top.append(el("b", undefined, `${displayName(m.winner)} won`), replay);
+      const task = el("p", "mem-task", `“${m.prompt}”`);
+      task.title = m.prompt;
+      card.append(bot, top, task);
+      // The winner's strongest point says more than the scoring headline, so it leads; the headline is the hover text.
+      const why = m.lesson === undefined ? m.headline : `Won because ${m.lesson}.`;
+      if (why !== undefined) card.append(el("p", "mem-lesson", whyWithNames(why, [m.winner, ...AGENT_IDS])));
+      if (m.headline !== undefined) card.title = whyWithNames(m.headline, [m.winner, ...AGENT_IDS]);
+      return card;
     }),
   );
 }

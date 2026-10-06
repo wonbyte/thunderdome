@@ -88,14 +88,31 @@ h2 {
   margin: 0; font-size: 15px; line-height: 1.55; color: #cfd4e4;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.memory { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
-.memory h3 { margin: 0 0 6px; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
-.memory h3 span { color: var(--faint); letter-spacing: 0; text-transform: none; }
-.memory ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
-.memory li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; font-size: 13px; line-height: 1.45; }
-.memory .who { color: var(--color, var(--text)); font-weight: 700; }
-.memory .what { color: #c9cede; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memory .mem-why { grid-column: 2; color: var(--faint); font-size: 12px; }
+.memory { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.mem-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.mem-chip {
+  font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--cyan); padding: 3px 9px; border-radius: 999px;
+  border: 1px solid #7fe3ff44; background: #7fe3ff12;
+}
+.mem-note { font-size: 12.5px; color: var(--dim); }
+.mem-cards { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.mem-card {
+  --color: var(--text);
+  display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 12px; align-items: start;
+  padding: 12px 14px 12px 12px; border-radius: 12px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color) 10%, transparent), transparent 60%), var(--panel);
+  border: 1px solid color-mix(in srgb, var(--color) 28%, var(--line));
+  box-shadow: inset 3px 0 0 var(--color);
+}
+.mem-card .mini { width: 40px; height: 40px; margin-top: 8px; grid-row: span 3; }
+.mem-top { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.mem-top b { color: var(--color); font-size: 14px; }
+.mem-top a { margin-left: auto; font-size: 12px; color: var(--dim); text-decoration: none; white-space: nowrap; }
+.mem-top a:hover, .mem-top a:focus-visible { color: var(--cyan); }
+.mem-task { margin: 0; font-size: 12.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
+.mem-lesson { margin: 2px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--text); }
+.mem-lesson::before { content: "✦ "; color: var(--color); }
 .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .thunderdome > * { min-width: 0; }
 .empty { margin: 0; color: var(--faint); }
