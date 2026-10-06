@@ -1183,6 +1183,7 @@ h2 {
 .commit-who.agent { color: color-mix(in srgb, var(--who) 72%, #fff); font-weight: 700; }
 .commit-parent { margin-right: 8px; color: var(--accent); }
 .commit-msg { margin: 0 0 14px; padding: 10px 12px; border-left: 3px solid var(--color); border-radius: 0 8px 8px 0; background: var(--panel-2); font: 12.5px/1.55 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.diff-tag { margin-left: 10px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); font: 600 11px var(--mono); }
 .commit-files { margin: 0 0 8px; font-size: 11px; color: var(--dim); }
 
 .handoff { list-style: none; counter-reset: hop; display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 0 0 6px; padding: 0; }

@@ -1,5 +1,6 @@
 // Who may call a route. Pure, so the tests run it without the Workers runtime.
 import { isTaskId } from "../room/task";
+import { isCommitSha } from "./commits";
 
 /** public: no auth. page: a page served from assets. admin: Bearer ADMIN_TOKEN. */
 export type Access = "public" | "page" | "admin";
@@ -22,7 +23,7 @@ function isDiffPath(pathname: string): boolean {
 function isCommitPath(pathname: string): boolean {
   const parts = pathname.split("/");
   const [empty, root, id = "", commits, sha = ""] = parts;
-  return parts.length === 5 && empty === "" && root === "tasks" && isTaskId(id) && commits === "commits" && /^[0-9a-f]{40}$/.test(sha);
+  return parts.length === 5 && empty === "" && root === "tasks" && isTaskId(id) && commits === "commits" && isCommitSha(sha);
 }
 
 /**

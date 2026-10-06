@@ -475,7 +475,7 @@ The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the sh
   commit is a real commit node: its author robot and "660ef87 · by Ponder". Click it (or the
   commit in the panel) to open it as git stores it, read from Artifacts by
   `GET /tasks/:id/commits/:sha`: hash, author (the loser), committer (Thunderdome), parents,
-  message and the file it added. The route answers only for the fusion commit and the merge the
+  message and the files it changed, as a diff. The route answers only for the fusion commit and the merge the
   verdict names, never any other hash.
 - **`git log --graph main`.** Under the graph, main's history after the race: the merge, then
   the winner's side (the fusion commit on top of its pushes), then the base, with the author
@@ -557,9 +557,12 @@ curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/forks/ponder/di
 the two commits the verdict names: the fusion commit (read from the winner's fork) and the merge
 (read from the source repo). `<sha>` is the full 40-character lowercase hash; any other hash is
 `404`. It returns `{ kind, repo, hash, message, author, committer, parents, authoredAt,
-committedAt, files }`. For the fusion commit, `files` holds each file the round added
-(`{ path, content }`, cut at 64,000 characters with `clipped: true`; a binary file has
-`binary: true` and no content). A found commit is cached for good (`immutable`).
+committedAt, files }`. For the fusion commit, `files` holds each file the commit changed against
+its first parent: `{ path, change, content, before? }` with `change` one of `added`, `modified` or
+`deleted` (`before` is the parent's text of a modified file). Text is cut at 64,000 characters
+with `clipped: true`; a binary file has `binary: true` and no content. The page draws a line diff
+from it. A found commit is cached for good (`immutable`); a repo or commit Artifacts does not have
+is `404`, and an Artifacts failure is `503` (not cached).
 
 ### Run your own race
 

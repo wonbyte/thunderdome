@@ -1,9 +1,18 @@
 // A commit the verdict names (the fusion commit or the merge), as git shows it: hash, author,
-// committer, parents, message and the files it added. Server text only goes into textContent.
+// committer, parents, message and the files it changed. Server text only goes into textContent.
 import { colorFor, displayName } from "./board";
+import { closeButton, el, fileBlock, modal, showing } from "./dialog";
+import { fileDiff } from "./diffview";
 
-/** One file the commit added (src/routes/commits.ts CommitFile). */
-interface WireCommitFile { path: string; content?: string; clipped?: boolean; binary?: boolean }
+/** One file the commit changed (src/routes/commits.ts CommitFile). */
+interface WireCommitFile {
+  path: string;
+  change: "added" | "modified" | "deleted";
+  content?: string;
+  before?: string;
+  clipped?: boolean;
+  binary?: boolean;
+}
 /** GET /tasks/:id/commits/:sha (src/routes/commits.ts CommitView). */
 interface WireCommit {
   kind: "fusion" | "merge";
@@ -18,27 +27,7 @@ interface WireCommit {
 }
 
 const cache = new Map<string, WireCommit>();
-const LINE_LIMIT = 4000; // lines drawn per file
-
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (className !== undefined) node.className = className;
-  if (text !== undefined) node.textContent = text;
-  return node;
-}
-
-function dialog(): HTMLDialogElement {
-  const found = document.getElementById("commit-dialog");
-  if (found instanceof HTMLDialogElement) return found;
-  const d = el("dialog", "diff-dialog commit-dialog");
-  d.id = "commit-dialog";
-  d.setAttribute("aria-labelledby", "commit-title");
-  d.addEventListener("click", (e) => {
-    if (e.target === d) d.close();
-  });
-  document.body.append(d);
-  return d;
-}
+const CHANGE_LABEL: Record<WireCommitFile["change"], string> = { added: "new file", modified: "changed", deleted: "deleted" };
 
 async function fetchCommit(taskId: string, hash: string): Promise<WireCommit | number> {
   const key = `${taskId}/${hash}`;
@@ -66,11 +55,7 @@ function header(title: string, close: () => void): HTMLElement {
   const h = el("b", undefined, title);
   h.id = "commit-title";
   who.append(el("span", "diff-swatch"), h);
-  const x = el("button", "diff-close", "✕");
-  x.type = "button";
-  x.setAttribute("aria-label", "Close");
-  x.addEventListener("click", close);
-  head.append(who, x);
+  head.append(who, closeButton(close));
   return head;
 }
 
@@ -100,35 +85,34 @@ function meta(c: WireCommit): HTMLElement {
   return list;
 }
 
-function fileBlock(file: WireCommitFile): HTMLElement {
-  const block = el("section", "diff-file");
-  const lines = file.content?.split("\n") ?? [];
-  if (lines.at(-1) === "") lines.pop();
-  const title = el("h3", "diff-path");
-  title.append(el("span", undefined, file.path), el("span", "add", ` new file +${lines.length}`));
-  block.append(title);
-  if (file.content === undefined) {
-    block.append(el("p", "diff-note", file.binary === true ? "A binary file." : "This file is not in the commit."));
+function changedFile(file: WireCommitFile): HTMLElement {
+  const label = CHANGE_LABEL[file.change];
+  if (file.binary === true || file.content === undefined) {
+    const block = el("section", "diff-file");
+    const title = el("h3", "diff-path");
+    title.append(el("span", undefined, file.path), el("span", "diff-tag", label));
+    block.append(title, el("p", "diff-note", "A binary file."));
     return block;
   }
-  const pre = el("pre", "diff-code");
-  for (const line of lines.slice(0, LINE_LIMIT)) pre.append(el("span", "dl add", `+ ${line}`));
-  if (lines.length > LINE_LIMIT) pre.append(el("span", "dl meta", `… ${lines.length - LINE_LIMIT} more lines`));
-  if (file.clipped === true) pre.append(el("span", "dl meta", "… the file is longer; the rest is cut off"));
-  block.append(pre);
+  const diff =
+    file.change === "added" ? fileDiff(file.path, undefined, file.content) : file.change === "deleted" ? fileDiff(file.path, file.content, undefined) : fileDiff(file.path, file.before ?? "", file.content);
+  const block = fileBlock(diff, label);
+  if (file.clipped === true) block.append(el("p", "diff-note", "The file is long; only its start was read, so the diff may be incomplete."));
   return block;
 }
 
 /** Opens the dialog for one commit the verdict names and fills it when it arrives. */
 export async function openCommit(taskId: string, hash: string): Promise<void> {
-  const d = dialog();
+  const d = modal("commit-dialog", "diff-dialog commit-dialog");
+  d.setAttribute("aria-labelledby", "commit-title");
   const close = (): void => d.close();
   const sha = hash.slice(0, 7);
   d.style.setProperty("--color", "var(--fuse)");
   d.replaceChildren(header(`Commit ${sha}`, close), el("p", "diff-note", "Loading the commit from Artifacts…"));
   if (!d.open) d.showModal();
+  const current = showing(d, `commit:${taskId}/${hash}`);
   const c = await fetchCommit(taskId, hash);
-  if (!d.open) return;
+  if (!current()) return;
   if (typeof c === "number") {
     d.replaceChildren(header(`Commit ${sha}`, close), el("p", "diff-note", c === 404 ? "Artifacts has no such commit for this race." : "Could not load the commit. Try again in a moment."));
     return;
@@ -138,6 +122,6 @@ export async function openCommit(taskId: string, hash: string): Promise<void> {
   const title = c.kind === "fusion" ? `Fusion commit ${sha}${author === undefined ? "" : ` by ${displayName(author)}`}` : `Merge commit ${sha} on main`;
   const body = el("div", "diff-body");
   body.append(meta(c), el("pre", "commit-msg", c.message));
-  if (c.files.length > 0) body.append(el("h3", "commit-files", `Files added (${c.files.length})`), ...c.files.map(fileBlock));
+  if (c.files.length > 0) body.append(el("h3", "commit-files", `Files changed (${c.files.length})`), ...c.files.map(changedFile));
   d.replaceChildren(header(title, close), body);
 }

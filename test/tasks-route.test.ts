@@ -1,11 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { SavedDiff } from "../src/judge/diffs";
-import { COMMIT_FILE_MAX, fileView } from "../src/routes/commits";
+import { COMMIT_FILE_MAX, fileView, type FileText } from "../src/routes/commits";
 import { claimFiles, emptyBoard, type ClaimBoard, type ClaimResult } from "../src/room/claims";
 import { RACE_LIST_LIMIT, summaryOf, type RaceSummary } from "../src/room/races";
 import type { CreateTaskResult, LoggedStep, NewTask, RunTaskResult, Task } from "../src/room/task";
-import { fakeArtifacts, fakeRepo } from "./fakes";
+import { artifactsError, fakeArtifacts, fakeRepo } from "./fakes";
 import { handlePurge, handleRaceBackfill, handleTasks, isTasksPath } from "../src/routes/tasks";
 
 const readyTask = (input: NewTask): Task => ({
@@ -345,18 +345,32 @@ describe("GET /tasks/:id/commits/:sha", () => {
     committedAt: 2,
   });
 
-  it("returns the fusion commit from the winner's fork with the files it added, cached for good", async () => {
-    const repo = fakeRepo({ readCommit: vi.fn(async (hash: string) => meta(hash)), readFile: vi.fn(async () => new Blob(["it('adds', () => {});\n"])) });
+  it("returns the fusion commit from the winner's fork with the files it changed against its parent, cached for good", async () => {
+    // At the parent the earlier try's file is already there: only the head's own file is new.
+    const files: Record<string, Record<string, string>> = {
+      ["b".repeat(40)]: { "test/a.test.ts": "it('a');\n" },
+      [FUSE]: { "test/a.test.ts": "it('a');\n", "test/c.test.ts": "it('c');\n" },
+    };
+    const repo = fakeRepo({
+      readCommit: vi.fn(async (hash: string) => meta(hash)),
+      readFile: vi.fn(async ({ ref, path }: { ref: string; path: string }) => {
+        const text = files[ref]?.[path];
+        return text === undefined ? null : new Blob([text]);
+      }),
+    });
     const artifacts = fakeArtifacts(repo);
-    const { env } = fakeEnv({ state: async () => judged() }, [], artifacts);
+    const task = judged();
+    task.verdict!.fusion!.tried.push({ agent: "zippy", files: ["test/c.test.ts"], status: "added" });
+    const { env } = fakeEnv({ state: async () => task }, [], artifacts);
     const res = await handleTasks(new Request(url(FUSE)), env);
     expect(res.status).toBe(200);
     expect(res.headers.get("cache-control")).toContain("immutable");
     const body = (await res.json()) as { kind: string; repo: string; author: { name: string }; files: unknown[] };
     expect(body).toMatchObject({ kind: "fusion", repo: "t-0123abcd-ponder", author: { name: "Thunderdome testy" } });
-    expect(body.files).toEqual([{ path: "test/a.test.ts", content: "it('adds', () => {});\n" }]);
+    expect(body.files).toEqual([{ path: "test/c.test.ts", change: "added", content: "it('c');\n" }]);
     expect(artifacts.get).toHaveBeenCalledWith("t-0123abcd-ponder");
-    expect(repo.readFile).toHaveBeenCalledWith({ ref: FUSE, path: "test/a.test.ts" });
+    expect(repo.readFile).toHaveBeenCalledWith({ ref: FUSE, path: "test/c.test.ts" });
+    expect(repo.readFile).toHaveBeenCalledWith({ ref: "b".repeat(40), path: "test/c.test.ts" });
   });
 
   it("reads the merge from the source repo, and answers 404 for any hash the verdict does not name", async () => {
@@ -386,10 +400,34 @@ describe("GET /tasks/:id/commits/:sha", () => {
     expect(res.headers.get("cache-control")).toBeNull();
   });
 
-  it("clips long files and leaves out binary ones", () => {
-    expect(fileView("a", "x".repeat(COMMIT_FILE_MAX + 5))).toEqual({ path: "a", content: "x".repeat(COMMIT_FILE_MAX), clipped: true });
-    expect(fileView("b", "PNG\u0000data")).toEqual({ path: "b", binary: true });
-    expect(fileView("c", undefined)).toEqual({ path: "c" });
+  it("an Artifacts failure is 503 and not cached; a deleted repo is 404", async () => {
+    const failing = fakeArtifacts(fakeRepo({ readCommit: vi.fn(async () => Promise.reject(artifactsError("INTERNAL_ERROR"))) }));
+    const res = await handleTasks(new Request(url(FUSE)), fakeEnv({ state: async () => judged() }, [], failing).env);
+    expect(res.status).toBe(503);
+    expect(res.headers.get("cache-control")).toBeNull();
+    const gone = fakeArtifacts(fakeRepo(), { get: vi.fn(async () => Promise.reject(artifactsError("NOT_FOUND"))) });
+    expect((await handleTasks(new Request(url(FUSE)), fakeEnv({ state: async () => judged() }, [], gone).env)).status).toBe(404);
+  });
+
+  it("a verdict saved without ship answers 404, not a crash", async () => {
+    const { ship: _ship, ...rest } = judged().verdict!;
+    const task = { ...judged(), verdict: rest as unknown as Task["verdict"] };
+    const { env } = fakeEnv({ state: async () => task }, [], fakeArtifacts(fakeRepo()));
+    expect((await handleTasks(new Request(url(MERGE)), env)).status).toBe(404);
+  });
+
+  it("fileView: added, modified, deleted, unchanged, clipped and binary", () => {
+    const text = (t: string, clipped = false): FileText => ({ text: t, clipped, binary: false, found: true });
+    const none: FileText = { clipped: false, binary: false, found: false };
+    const bin: FileText = { clipped: false, binary: true, found: true };
+    expect(fileView("a", none, text("x"))).toEqual({ path: "a", change: "added", content: "x" });
+    expect(fileView("a", text("x"), none)).toEqual({ path: "a", change: "deleted", content: "x" });
+    expect(fileView("a", text("x"), text("y"))).toEqual({ path: "a", change: "modified", before: "x", content: "y" });
+    expect(fileView("a", text("x"), text("x"))).toBeUndefined();
+    expect(fileView("a", none, none)).toBeUndefined();
+    expect(fileView("a", none, text("x".repeat(COMMIT_FILE_MAX), true))).toEqual({ path: "a", change: "added", content: "x".repeat(COMMIT_FILE_MAX), clipped: true });
+    expect(fileView("a", none, bin)).toEqual({ path: "a", change: "added", binary: true });
+    expect(fileView("a", text("x"), bin)).toEqual({ path: "a", change: "modified", binary: true });
   });
 });
 

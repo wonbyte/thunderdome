@@ -714,11 +714,12 @@ function renderGraph(b: Board): void {
     input = { agents, start, ends, dots: liveDots, t, domainEnd: t, ...(merge ? { merge } : {}), ...(fusion ? { fusion } : {}) };
   }
   const graph = gitGraph(input);
-  // The log of main shows once the graph draws the merge (in a replay, once it reaches it).
-  renderGitLog(graph.merge === undefined ? undefined : gitLog(replay !== undefined && recorded !== undefined ? recorded : task));
   const key = JSON.stringify(graph, (_k, v: unknown) => (typeof v === "number" ? Math.round(v * 400) : v));
   if (key === graphKey) return;
   graphKey = key;
+  // The log of main shows once the graph draws the merge (in a replay, once it reaches it). Built
+  // only when the graph changed: the merge, the fusion and every push are in the graph's key.
+  renderGitLog(graph.merge === undefined ? undefined : gitLog(replay !== undefined && recorded !== undefined ? recorded : task));
   drawGraph(byId("graph"), graph, replay === undefined && !b.ended, (agent) => void openDiff(taskId, agent), (hash) => void openCommit(taskId, hash));
   const pushes = graph.lanes.reduce((n, l) => n + l.dots.length, 0);
   const fused = graph.fusion?.tries.filter((t) => t.added).length ?? 0;
@@ -745,8 +746,11 @@ function renderGitLog(lines: LogLine[] | undefined): void {
         const hash = line.hash;
         open.addEventListener("click", () => void openCommit(taskId, hash));
         item.append(open);
-      } else if (line.message !== undefined) {
+      } else if (line.graph.includes("*")) {
+        // A commit line; a fold line ("⋮ 3 earlier pushes") gets no hash column.
         item.append(el("span", "gl-sha", line.sha ?? "·······"));
+      } else if (line.message !== undefined) {
+        item.append(el("span", "gl-sha"));
       }
       if (line.message !== undefined) item.append(el("span", "gl-msg", line.message));
       if (line.who !== undefined) {

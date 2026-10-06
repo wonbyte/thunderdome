@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { WireTask } from "../src/ui/board";
-import { parseDiff } from "../src/ui/diffview";
+import { DIFF_CELLS_MAX, DIFF_CONTEXT, fileDiff, parseDiff } from "../src/ui/diffview";
 import { gitGraph, mergeOf, pushDots } from "../src/ui/gitgraph";
 import { raceStats, standings, type RaceRow } from "../src/ui/leaderboard";
 
@@ -128,5 +128,35 @@ describe("diff view", () => {
     expect(files[0]?.lines.map((l) => l.kind)).toEqual(["hunk", "ctx", "del", "add", "meta"]);
     expect(files[1]?.lines[0]).toEqual({ kind: "meta", text: "new file" });
     expect(parseDiff("")).toEqual([]);
+  });
+});
+
+describe("fileDiff", () => {
+  it("a new file is all added, a deleted one all removed", () => {
+    expect(fileDiff("a", undefined, "x\ny\n")).toEqual({ path: "a", added: 2, removed: 0, lines: [{ kind: "add", text: "x" }, { kind: "add", text: "y" }] });
+    expect(fileDiff("a", "x\n", undefined)).toEqual({ path: "a", added: 0, removed: 1, lines: [{ kind: "del", text: "x" }] });
+  });
+
+  it("an edit is a line diff with DIFF_CONTEXT lines around it, and long unchanged runs fold", () => {
+    const before = Array.from({ length: 20 }, (_, i) => `line ${i}`);
+    const after = before.map((l, i) => (i === 10 ? "changed" : l));
+    after.splice(15, 0, "inserted");
+    const diff = fileDiff("a", `${before.join("\n")}\n`, `${after.join("\n")}\n`);
+    expect([diff.added, diff.removed]).toEqual([2, 1]);
+    expect(diff.lines[0]).toEqual({ kind: "hunk", text: `⋯ ${10 - DIFF_CONTEXT} unchanged lines` });
+    expect(diff.lines.filter((l) => l.kind !== "ctx" && l.kind !== "hunk")).toEqual([
+      { kind: "del", text: "line 10" },
+      { kind: "add", text: "changed" },
+      { kind: "add", text: "inserted" },
+    ]);
+    expect(diff.lines.at(-1)).toEqual({ kind: "hunk", text: `⋯ ${5 - DIFF_CONTEXT} unchanged lines` });
+  });
+
+  it("past DIFF_CELLS_MAX the old lines are all removed and the new all added", () => {
+    const n = Math.ceil(Math.sqrt(DIFF_CELLS_MAX)) + 2;
+    const a = Array.from({ length: n }, (_, i) => `a${i}`).join("\n");
+    const b = Array.from({ length: n }, (_, i) => `b${i}`).join("\n");
+    const diff = fileDiff("a", a, b);
+    expect([diff.added, diff.removed]).toEqual([n, n]);
   });
 });

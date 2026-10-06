@@ -32,6 +32,7 @@
     "src/ui/graphview.ts",
     "src/ui/diffdialog.ts",
     "src/ui/commitdialog.ts",
+    "src/ui/dialog.ts",
     "src/ui/playpage.ts"
   ]
 }

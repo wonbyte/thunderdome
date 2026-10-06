@@ -1,5 +1,7 @@
 // Ships a task: merges the judge's winner into the source repo, then locks every fork.
 // Pure: git and token revocation are injected, so this runs in plain Node tests.
+import { gitIdentity } from "../agents/runner";
+import type { AgentName } from "../agents/prompt";
 import { RESOLVE_REF_PREFIX, type ConflictRequest, type RaceOutcome, type ResolveAttempt, type ResolverName } from "./resolve";
 
 /** A repo to ship into or from: its name, git remote and default branch. */
@@ -69,9 +71,10 @@ export const SHIP_OUTPUT_LIMIT = 4_000;
 
 type MergeOutcome = Omit<ShipResult, "winner" | "locks">;
 
-/** The git trailer that credits an agent, with the identity its commits use (gitIdentity in src/agents/runner.ts). */
+/** The git trailer that credits an agent, with the identity its own commits use. */
 export function coAuthorTrailer(agent: string): string {
-  return `Co-authored-by: Thunderdome ${agent} <${agent}@thunderdome.local>`;
+  const id = gitIdentity(agent as AgentName);
+  return `Co-authored-by: ${id.GIT_AUTHOR_NAME ?? ""} <${id.GIT_AUTHOR_EMAIL ?? ""}>`;
 }
 
 /**
