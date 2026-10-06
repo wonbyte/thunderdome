@@ -33,6 +33,12 @@
       </div>
       <p id="error" class="play-error" role="alert" hidden></p>
       <button id="go" class="cta-btn go" type="submit">▶ Start the race</button>
+      <section id="setup" class="setup" aria-labelledby="setup-title" hidden>
+        <p class="setup-head"><span class="setup-spin" aria-hidden="true"></span><b id="setup-title">Setting up the race</b><span id="setup-time" class="setup-time" aria-hidden="true">0:00</span></p>
+        <ol id="setup-steps" class="setup-steps"></ol>
+        <p id="setup-now" class="sr-only" role="status" aria-live="polite"></p>
+        <p id="setup-note" class="setup-note">This usually takes 20 to 60 seconds. Keep this page open; the race page opens on its own.</p>
+      </section>
       <p class="hint">Races are public: anyone can watch and replay them in the <a href="/races">gallery</a>.</p>
     </form>
   </main>

@@ -132,6 +132,65 @@ async function loadQuota(): Promise<void> {
   }
 }
 
+/**
+ * What POST /play does before it answers, in order, with when each step usually starts (ms after
+ * the click). The server sends no progress, so the page moves on by these times; the last step
+ * stays current until the answer comes, and only then is it ticked.
+ */
+const SETUP_STEPS: { at: number; text: string }[] = [
+  { at: 0, text: "Copying the demo app into a fresh repo on Artifacts" },
+  { at: 3_000, text: "Forking it for Ponder, Zippy and Testy" },
+  { at: 9_000, text: "Starting 3 sandboxes, one container per robot" },
+];
+/** After this long the note says a cold start is still running. */
+const SETUP_SLOW_MS = 60_000;
+
+let setupTimer: ReturnType<typeof setInterval> | undefined;
+
+/** Shows the setup steps and keeps them and the clock moving until stopSetup. */
+function startSetup(): void {
+  const started = Date.now();
+  const panel = byId("setup");
+  const items = SETUP_STEPS.map((step) => {
+    const item = el("li", "todo");
+    item.append(el("span", "setup-mark"), el("span", undefined, step.text));
+    return item;
+  });
+  byId("setup-steps").replaceChildren(...items);
+  byId("setup-note").textContent = "This usually takes 20 to 60 seconds. Keep this page open; the race page opens on its own.";
+  byId("setup-title").textContent = "Setting up the race";
+  panel.hidden = false;
+  let shown = -1;
+  const tick = (): void => {
+    const elapsed = Date.now() - started;
+    const s = Math.floor(elapsed / 1000);
+    byId("setup-time").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+    const now = SETUP_STEPS.findLastIndex((step) => elapsed >= step.at);
+    if (now !== shown) {
+      shown = now;
+      items.forEach((item, i) => (item.className = i < now ? "done" : i === now ? "now" : "todo"));
+      byId("setup-now").textContent = `${SETUP_STEPS[now]?.text ?? ""}…`;
+    }
+    if (elapsed >= SETUP_SLOW_MS) byId("setup-note").textContent = "Still starting: sandboxes that have not run for a while take longer to boot. Keep this page open.";
+  };
+  tick();
+  setupTimer = setInterval(tick, 500);
+}
+
+/** Stops the clock. Done ticks every step; otherwise the panel shows it stopped. */
+function stopSetup(done: boolean): void {
+  clearInterval(setupTimer);
+  setupTimer = undefined;
+  const panel = byId("setup");
+  if (done) {
+    for (const item of byId("setup-steps").children) item.className = "done";
+    byId("setup-title").textContent = "Ready: opening the race";
+    byId("setup-now").textContent = "Ready: opening the race.";
+    return;
+  }
+  panel.hidden = true;
+}
+
 async function submit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
   const prompt = byId("prompt", HTMLTextAreaElement).value.trim();
@@ -149,6 +208,7 @@ async function submit(event: SubmitEvent): Promise<void> {
   go.disabled = true;
   go.textContent = "Starting the race…";
   go.classList.add("busy");
+  startSetup();
   try {
     const res = await fetch("/play", {
       method: "POST",
@@ -158,6 +218,7 @@ async function submit(event: SubmitEvent): Promise<void> {
     const body = (await res.json().catch(() => ({}))) as { page?: unknown; error?: unknown; reason?: unknown; remaining?: unknown };
     if (res.status === 202 && typeof body.page === "string" && /^\/race\/t-[0-9a-f]{8}$/.test(body.page)) {
       go.textContent = "Off they go…";
+      stopSetup(true);
       location.assign(body.page);
       return;
     }
@@ -172,6 +233,7 @@ async function submit(event: SubmitEvent): Promise<void> {
   } catch {
     showError("The race did not start. Try again in a moment.");
   }
+  stopSetup(false);
   go.textContent = "▶ Start the race";
   go.classList.remove("busy");
   go.disabled = remaining === 0;
