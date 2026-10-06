@@ -171,8 +171,10 @@ function drawFusion(
     const off = (ly - wy) * 0.4;
     const ey = t.added ? wy : wy + Math.sign(off) * Math.max(12, Math.abs(off));
     const sx = Math.min(px(lane.endX) + 6, ex - 30);
-    const len = curveLength(sx, ly, sx + 24, ly, ex - 26, ey, ex, ey);
-    const path = svg("path", { d: `M ${sx} ${ly} C ${sx + 24} ${ly}, ${ex - 26} ${ey}, ${ex} ${ey}`, stroke: lane.color, style: `--k:${k};--len:${len}` }, `fuse-path ${t.added ? "kept" : "dropped"}`);
+    // Handles scale with the run, so a long arrow eases out of its lane and into the winner's (an S, not a line).
+    const h = Math.max(24, (ex - sx) * 0.5);
+    const len = curveLength(sx, ly, sx + h, ly, ex - h, ey, ex, ey);
+    const path = svg("path", { d: `M ${sx} ${ly} C ${sx + h} ${ly}, ${ex - h} ${ey}, ${ex} ${ey}`, stroke: lane.color, style: `--k:${k};--len:${len}` }, `fuse-path ${t.added ? "kept" : "dropped"}`);
     g.append(titled(path, t.label));
     if (!t.added) g.append(titled(text(ex + 5, ey + 4, "✗", "fuse-x", "middle"), t.label));
   });
