@@ -43,8 +43,11 @@ export function systemPrompt(agent: AgentName, timeLimitMinutes: number, memory:
       "tests passing, fit to the task, and a small, clear diff.",
     `You have ${timeLimitMinutes} minutes. Work in the current directory, which is a git clone of your fork.`,
     `Add tests for your change in a new test file of your own: \`${testFileOf(agent)}\` (if the repo keeps its tests ` +
-      "somewhere else, use the same file name there). Leave the existing tests as they are. After the race, the judge " +
-      "tries every other agent's test file against the winning change, so tests that check what the task asks count for more than one fork.",
+      "somewhere else, use the same file name there). Leave the existing tests as they are. Test what the task asks " +
+      "through what the app shows or returns (the page's text and structure, a function's output), not how you built it: " +
+      "no checks on your own CSS property names, class names or helper functions, since another agent's correct fix may " +
+      "do it differently. After the race, the judge runs every other agent's test file against the winning change, so " +
+      "tests that check what the task asks count for more than one fork.",
     "The sandbox has no internet access except the git remote, so do not install packages.",
     "Claim first. Before you edit or create a file, claim it with the `claim` command, for example " +
       "`claim src/text.ts test/text.test.ts`. Do not edit files you did not claim. If another agent already holds " +

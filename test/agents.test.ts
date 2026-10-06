@@ -227,6 +227,7 @@ describe("tests of their own", () => {
       const prompt = systemPrompt(agent, 8);
       expect(prompt).toContain(`\`test/${agent}.test.ts\``);
       expect(prompt).toContain("Leave the existing tests as they are");
+      expect(prompt).toContain("not how you built it");
     }
     expect(new Set(AGENT_NAMES.map(testFileOf)).size).toBe(AGENT_NAMES.length);
   });
