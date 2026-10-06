@@ -3,9 +3,12 @@
 import { displayName } from "./board";
 import type { BoardEvent } from "./board";
 
+/** The Cloudflare products a race goes through, in pipeline order. */
 export const STAGES = ["fork", "containers", "claims", "events", "workflows", "previews", "ai", "merge"] as const;
+/** One stage of the pipeline. */
 export type Stage = (typeof STAGES)[number];
 
+/** Each stage's product name and what it does in a race. */
 export const STAGE_INFO: Record<Stage, { product: string; role: string }> = {
   fork: { product: "Artifacts", role: "a fork per agent" },
   containers: { product: "Containers", role: "one sandbox per agent" },
@@ -17,6 +20,7 @@ export const STAGE_INFO: Record<Stage, { product: string; role: string }> = {
   merge: { product: "Artifacts", role: "the winner merges" },
 };
 
+/** One thing a stage did, for its unit's last line. */
 export interface PlatformHit {
   stage: Stage;
   text: string; // e.g. "Testy's preview is live"
@@ -24,6 +28,10 @@ export interface PlatformHit {
   agent?: string;
 }
 
+/**
+ * The pipeline panel's model: counts and the last hit per stage, and the times latencies are
+ * measured from.
+ */
 export interface PlatformState {
   counts: Record<Stage, number>;
   last: Partial<Record<Stage, PlatformHit>>;
@@ -34,6 +42,7 @@ export interface PlatformState {
   agents: number;
 }
 
+/** A pipeline with nothing done yet. */
 export function emptyPlatform(): PlatformState {
   return { counts: { fork: 0, containers: 0, claims: 0, events: 0, workflows: 0, previews: 0, ai: 0, merge: 0 }, last: {}, pushAt: {}, forked: false, agents: 0 };
 }
@@ -51,7 +60,7 @@ function hit(stage: Stage, text: string, extra: { ms?: number | undefined; agent
   return { stage, text, ...(extra.ms === undefined ? {} : { ms: extra.ms }), ...(extra.agent === undefined ? {} : { agent: extra.agent }) };
 }
 
-// The hits one event makes, and the state after it. `at` is when the event happened (ms).
+/** The hits one event makes, and the state after it. `at` is when the event happened (ms). */
 export function applyPlatform(state: PlatformState, event: BoardEvent, at: number): { state: PlatformState; hits: PlatformHit[] } {
   const hits: PlatformHit[] = [];
   const next: PlatformState = { ...state, counts: { ...state.counts }, last: { ...state.last }, pushAt: { ...state.pushAt } };
@@ -128,7 +137,7 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
   return { state: next, hits };
 }
 
-// "6.1 s", "820 ms", "1 m 05 s".
+/** "6.1 s", "820 ms", "1 m 05 s". */
 export function formatMs(value: number): string {
   if (value < 1000) return `${Math.round(value)} ms`;
   if (value < 60_000) return `${(value / 1000).toFixed(1)} s`;

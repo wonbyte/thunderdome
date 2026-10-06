@@ -6,7 +6,7 @@
   --line: #1f2536;
   --text: #e6e9f2;
   --dim: #8a90a6;
-  --faint: #5b6178;
+  --faint: #7d839b; /* 4.5:1 or better on every panel (WCAG AA) */
   --accent: #ffd23f;
   --red: #ff5b5f;
   --green: #3ddc97;
@@ -19,6 +19,8 @@
 }
 
 * { box-sizing: border-box; }
+/* One visible keyboard focus ring everywhere; components may restyle it. */
+:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 html { background: var(--bg); }
 body {
   margin: 0 auto;

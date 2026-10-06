@@ -1,5 +1,9 @@
-// Runs fn until it succeeds, or until attempts run out. Retries only errors that
-// shouldRetry accepts.
+// A small retry helper shared by the judge, the scorer and the Workflow starts.
+
+/**
+ * Runs fn until it succeeds, or until attempts run out. Retries only errors that
+ * shouldRetry accepts.
+ */
 export async function retry<T>(
   fn: () => Promise<T>,
   options: { attempts: number; delayMs: number; shouldRetry: (cause: unknown) => boolean },

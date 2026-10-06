@@ -1,8 +1,12 @@
+// Starts a Workflow instance by id, safely: a retry after a create that landed is not an error.
+
 import { retry } from "./retry";
 
-// Creates Workflow instance `id`, retrying a failed create (the service can answer
-// "internal error"). An instance that already exists counts as started, so a retry
-// after a create that did land is safe. Throws the last error when every attempt fails.
+/**
+ * Creates Workflow instance `id`, retrying a failed create (the service can answer
+ * "internal error"). An instance that already exists counts as started, so a retry
+ * after a create that did land is safe. Throws the last error when every attempt fails.
+ */
 export async function startWorkflow<P>(
   binding: Pick<Workflow<P>, "create" | "get">,
   id: string,
@@ -22,6 +26,7 @@ export async function startWorkflow<P>(
   );
 }
 
+/** Workflow create calls before startWorkflow gives up. */
 export const START_ATTEMPTS = 4;
 const START_DELAY_MS = 2_000;
 

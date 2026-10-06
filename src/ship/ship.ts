@@ -2,8 +2,11 @@
 // Pure: git and token revocation are injected, so this runs in plain Node tests.
 import { RESOLVE_REF_PREFIX, type ConflictRequest, type RaceOutcome, type ResolveAttempt, type ResolverName } from "./resolve";
 
+/** A repo to ship into or from: its name, git remote and default branch. */
 export interface ShipRepo { name: string; remote: string; defaultBranch: string }
+/** An agent's fork. */
 export interface ShipFork extends ShipRepo { agent: string }
+/** What shipping needs: the source repo, every fork, the winner and the why for the merge commit. */
 export interface ShipInput {
   taskId: string;
   prompt: string;
@@ -12,22 +15,30 @@ export interface ShipInput {
   winner: string | null; // agent name from the judge
   why: string;
 }
+/** The exit code and output of one git command. */
 export interface GitResult { exitCode: number; stdout: string; stderr: string }
+/**
+ * What shipping needs from the outside: git in a source clone, token revocation, and optionally the
+ * conflict race.
+ */
 export interface ShipDeps {
-  // Runs `git ...args` in a clone of the source repo (origin = source remote, default branch checked out).
-  // args do NOT include the leading "git". May throw (e.g. the clone failed).
+  /**
+   * Runs `git ...args` in a clone of the source repo (origin = source remote, default branch checked out).
+   * args do NOT include the leading "git". May throw (e.g. the clone failed).
+   */
   git(args: string[]): Promise<GitResult>;
-  // Revokes every active write token of a repo by name; returns how many were revoked.
+  /** Revokes every active write token of a repo by name; returns how many were revoked. */
   revokeWriteTokens(repo: string): Promise<number>;
-  // When given, a merge conflict starts the conflict race (src/ship/resolve.ts) instead of stopping the ship.
+  /** When given, a merge conflict starts the conflict race (src/ship/resolve.ts) instead of stopping the ship. */
   resolver?: ShipResolver;
 }
+/** Runs the conflict race and brings its bundle into the source clone. */
 export interface ShipResolver {
   race(req: ConflictRequest): Promise<RaceOutcome>;
-  // Puts the race's bundle where git in the source clone can fetch it; returns its path.
+  /** Puts the race's bundle where git in the source clone can fetch it; returns its path. */
   importBundle(bundle: string): Promise<string>;
 }
-// The conflict race behind a ship: which files conflicted, every attempt, and the one that shipped.
+/** The conflict race behind a ship: which files conflicted, every attempt, and the one that shipped. */
 export interface ShipResolve {
   files: string[];
   attempts: ResolveAttempt[];
@@ -35,8 +46,14 @@ export interface ShipResolve {
   kept?: string[]; // branches on the source repo that keep the other committed attempts
   error?: string; // why the race itself failed
 }
+/** How shipping ended: merged, stopped on a conflict, nothing to ship, or failed. */
 export type ShipStatus = "merged" | "conflict" | "no-winner" | "error";
-export interface ForkLock { agent: string; fork: string; revoked?: number; error?: string } // exactly one of revoked/error
+/**
+ * A fork after shipping: how many write tokens were revoked, or why revoking failed (exactly one of
+ * the two).
+ */
+export interface ForkLock { agent: string; fork: string; revoked?: number; error?: string }
+/** What shipping did: the merge, the conflict race when there was one, and every fork's lock. */
 export interface ShipResult {
   status: ShipStatus;
   winner: string | null;
@@ -46,17 +63,18 @@ export interface ShipResult {
   resolve?: ShipResolve; // set when the winner conflicted with the source and a resolver was given
   locks: ForkLock[]; // one per input fork, same order
 }
+/** Characters of git output a ship result keeps. */
 export const SHIP_OUTPUT_LIMIT = 4_000;
 
 type MergeOutcome = Omit<ShipResult, "winner" | "locks">;
 
-// Title line, blank line, then the why unchanged.
+/** Title line, blank line, then the why unchanged. */
 export function mergeMessage(taskId: string, prompt: string, winner: string, why: string): string {
   void prompt; // the prompt is deliberately left out of the message
   return `Thunderdome: ship ${winner}'s fork for task ${taskId}\n\n${why}`;
 }
 
-// Merges the winner (when there is one), then locks every fork. Never throws.
+/** Merges the winner (when there is one), then locks every fork. Never throws. */
 export async function shipTask(deps: ShipDeps, input: ShipInput): Promise<ShipResult> {
   const outcome = await merge(deps, input);
   const locks = await lockForks(deps, input.forks);
@@ -100,7 +118,7 @@ async function mergeFork(deps: ShipDeps, input: ShipInput, fork: ShipFork): Prom
 
 interface Conflict { files: string[]; output: string; message: string }
 
-// Races resolvers on the conflict and ships the chosen resolution. With none, the ship stays "conflict".
+/** Races resolvers on the conflict and ships the chosen resolution. With none, the ship stays "conflict". */
 async function resolveConflict(deps: ShipDeps, resolver: ShipResolver, input: ShipInput, fork: ShipFork, conflict: Conflict): Promise<MergeOutcome> {
   const { files, output, message } = conflict;
   const base = (await runOk(deps, ["rev-parse", "HEAD"])).stdout.trim();
@@ -146,7 +164,7 @@ async function resolveConflict(deps: ShipDeps, resolver: ShipResolver, input: Sh
   return { status: "merged", commit: chosen.commit, resolve };
 }
 
-// Best effort: the other committed attempts stay on the source as branches, like the losing forks.
+/** Best effort: the other committed attempts stay on the source as branches, like the losing forks. */
 async function keepAttempts(deps: ShipDeps, taskId: string, attempts: ResolveAttempt[], chosen: ResolverName): Promise<string[]> {
   const others = attempts.filter((a) => a.agent !== chosen && a.commit !== undefined);
   if (others.length === 0) return [];
@@ -160,7 +178,7 @@ async function keepAttempts(deps: ShipDeps, taskId: string, attempts: ResolveAtt
   }
 }
 
-// The conflicted paths while the merge is still in progress.
+/** The conflicted paths while the merge is still in progress. */
 async function unmergedFiles(deps: ShipDeps): Promise<string[]> {
   try {
     const result = await deps.git(["diff", "--name-only", "--diff-filter=U"]);
@@ -174,7 +192,7 @@ function isConflict(result: GitResult, output: string): boolean {
   return result.exitCode === 1 || /^CONFLICT\b/m.test(output);
 }
 
-// Best effort: the merge failure is what gets reported, not a failed abort.
+/** Best effort: the merge failure is what gets reported, not a failed abort. */
 async function abortMerge(deps: ShipDeps): Promise<void> {
   try {
     await deps.git(["merge", "--abort"]);
@@ -202,7 +220,7 @@ function gitOutput(result: GitResult): string {
   return text.slice(-SHIP_OUTPUT_LIMIT);
 }
 
-// Every fork, the winner's too, becomes read-only; one failure does not stop the others.
+/** Every fork, the winner's too, becomes read-only; one failure does not stop the others. */
 async function lockForks(deps: ShipDeps, forks: ShipFork[]): Promise<ForkLock[]> {
   // The async wrapper turns a synchronous throw into a rejection, so allSettled still sees it.
   const settled = await Promise.allSettled(forks.map(async (f) => deps.revokeWriteTokens(f.name)));

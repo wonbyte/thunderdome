@@ -5,24 +5,30 @@ import { fixFingerprint, scoreForks, type ForkInput, type ScoreResult } from "./
 import type { Scorer, ScorerResult } from "./scorer";
 import { buildWhy } from "./why";
 
-export const TEST_ATTEMPTS = 3; // 1 run + 2 retries
+/** Test runs per fork: one run plus two retries, for a flaky container start. */
+export const TEST_ATTEMPTS = 3;
+/** Wait between test attempts. */
 export const TEST_RETRY_DELAY_MS = 5_000;
-// One test run is cut off after this. Every attempt plus the retry delays must fit in one Workflow step.
+/** One test run is cut off after this. Every attempt plus the retry delays must fit in one Workflow step. */
 export const TEST_TIMEOUT_S = 240;
+/** Timeout of one fork's Workflow step: clone, tests with retries, diff and scoring. */
 export const FORK_STEP_TIMEOUT_S = 15 * 60;
 
-// `npm test` under a hard timeout: a hanging suite fails one attempt (no summary) instead of the whole step.
+/** `npm test` under a hard timeout: a hanging suite fails one attempt (no summary) instead of the whole step. */
 export function testCommand(timeoutS = TEST_TIMEOUT_S): string[] {
   return ["timeout", "--kill-after=10", String(timeoutS), "npm", "test"];
 }
 
-// The commit a fork started from: the newest commit in its history that the source repo also has.
-// Diffing against the source's current head is wrong once the source moves on after the fork.
+/**
+ * The commit a fork started from: the newest commit in its history that the source repo also has.
+ * Diffing against the source's current head is wrong once the source moves on after the fork.
+ */
 export function forkPoint(forkLog: string[], sourceLog: string[]): string | undefined {
   const source = new Set(sourceLog);
   return forkLog.find((hash) => source.has(hash));
 }
 
+/** One agent's fork as the judge sees it: where it lives and what the agent claimed. */
 export interface JudgeFork {
   agent: string;
   fork: string;
@@ -33,6 +39,7 @@ export interface JudgeFork {
   endedAt?: string; // when the agent ended (ISO); breaks a tie on points and diff size
 }
 
+/** The judge Workflow's payload: the task, its source repo and every fork. */
 export interface JudgeInput {
   taskId: string;
   repo: string; // source repo name
@@ -40,11 +47,13 @@ export interface JudgeInput {
   forks: JudgeFork[];
 }
 
+/** Passing and total tests from one `npm test` run. */
 export interface TestRun {
   passed: number;
   total: number;
 }
 
+/** A fork's change since its fork point: the unified diff and its size. */
 export interface ForkDiff {
   diff: string;
   filesChanged: string[];
@@ -52,6 +61,10 @@ export interface ForkDiff {
   linesRemoved: number;
 }
 
+/**
+ * What judging needs from the outside: test and diff runners and the Clef scorer. Injected so the
+ * judge runs in plain Node tests.
+ */
 export interface JudgeDeps {
   runTests(fork: JudgeFork): Promise<TestRun>;
   getDiff(fork: JudgeFork): Promise<ForkDiff>;
@@ -59,6 +72,10 @@ export interface JudgeDeps {
   sleep?: (ms: number) => Promise<void>;
 }
 
+/**
+ * Everything the judge learned about one fork. Holds no diff text, so it fits in a Workflow step
+ * output.
+ */
 export interface JudgedFork {
   agent: string;
   fork: string;
@@ -69,6 +86,10 @@ export interface JudgedFork {
   input: ForkInput;
 }
 
+/**
+ * The judge's verdict: every fork judged, the scores, the winner (null when no fork is eligible)
+ * and the plain-text why.
+ */
 export interface JudgeResult {
   taskId: string;
   forks: JudgedFork[];
@@ -78,11 +99,12 @@ export interface JudgeResult {
   look?: LookResult; // whether the race was judged on look, and each fork's look
 }
 
+/** The judge Workflow instance id for a task. One judge per task, so a second start finds the first. */
 export function judgeInstanceId(taskId: string): string {
   return `${taskId}-judge`;
 }
 
-// Last "<marker> <name> <n>" line in node --test output, TAP (#) or spec (ℹ).
+/** Last "<marker> <name> <n>" line in node --test output, TAP (#) or spec (ℹ). */
 function summaryCount(output: string, name: string): number | undefined {
   const pattern = new RegExp(`^\\s*(?:#|ℹ)\\s*${name}\\s+(\\d+)\\s*$`, "gm");
   const matches = [...output.matchAll(pattern)];
@@ -90,7 +112,7 @@ function summaryCount(output: string, name: string): number | undefined {
   return last?.[1] === undefined ? undefined : Number(last[1]);
 }
 
-// Parses node --test summary lines (TAP "# tests 7" / "# pass 5" or spec "ℹ tests 7" / "ℹ pass 5").
+/** Parses node --test summary lines (TAP "# tests 7" / "# pass 5" or spec "ℹ tests 7" / "ℹ pass 5"). */
 export function parseTestSummary(output: string): TestRun | undefined {
   const total = summaryCount(output, "tests");
   const passed = summaryCount(output, "pass");
@@ -98,7 +120,7 @@ export function parseTestSummary(output: string): TestRun | undefined {
   return { passed, total };
 }
 
-// Parses `git diff --numstat` lines. Binary files ("-") count as 0 lines.
+/** Parses `git diff --numstat` lines. Binary files ("-") count as 0 lines. */
 export function parseNumstat(numstat: string): Omit<ForkDiff, "diff"> {
   const result = { filesChanged: [] as string[], linesAdded: 0, linesRemoved: 0 };
   for (const line of numstat.split("\n")) {
@@ -111,7 +133,7 @@ export function parseNumstat(numstat: string): Omit<ForkDiff, "diff"> {
   return result;
 }
 
-// Runs the fork's tests up to TEST_ATTEMPTS times; a run that never succeeds counts as 0/0.
+/** Runs the fork's tests up to TEST_ATTEMPTS times; a run that never succeeds counts as 0/0. */
 async function testFork(deps: JudgeDeps, fork: JudgeFork): Promise<JudgedFork["tests"]> {
   try {
     const run = await retry(
@@ -125,7 +147,7 @@ async function testFork(deps: JudgeDeps, fork: JudgeFork): Promise<JudgedFork["t
   }
 }
 
-// Tests, diff and scorer for one fork. getDiff and scorer errors propagate.
+/** Tests, diff and scorer for one fork. getDiff and scorer errors propagate. */
 export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeFork): Promise<JudgedFork> {
   const tests = await testFork(deps, fork);
   const { diff, filesChanged, linesAdded, linesRemoved } = await deps.getDiff(fork);
@@ -156,7 +178,7 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
   return judged;
 }
 
-// Gives every fork its look when the race is judged on look; a fork missing from the result gets 0.
+/** Gives every fork its look when the race is judged on look; a fork missing from the result gets 0. */
 export function applyLook(forks: JudgedFork[], look: LookResult): JudgedFork[] {
   if (!look.judged) return forks;
   return forks.map((fork) => {
@@ -166,13 +188,13 @@ export function applyLook(forks: JudgedFork[], look: LookResult): JudgedFork[] {
   });
 }
 
-// Pure: scores, winner and why from the judged forks.
+/** Pure: scores, winner and why from the judged forks. */
 export function decide(input: JudgeInput, forks: JudgedFork[]): JudgeResult {
   const scores = scoreForks(forks.map((f) => f.input));
   return { taskId: input.taskId, forks, scores, winner: scores.winner, why: buildWhy(scores) };
 }
 
-// Judges every fork in order, then decides.
+/** Judges every fork in order, then decides. */
 export async function judgeTask(deps: JudgeDeps, input: JudgeInput): Promise<JudgeResult> {
   const forks: JudgedFork[] = [];
   for (const fork of input.forks) forks.push(await judgeFork(deps, input, fork));

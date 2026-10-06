@@ -18,19 +18,19 @@ const STEP_PAGE = 500;
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 10000];
 const SCORE_TRIES = 5;
 const SCORE_WAIT_MS = 2000;
-// Look is a part only in races judged on the look of each preview; it scores 0 and stays hidden otherwise.
+/** Look is a part only in races judged on the look of each preview; it scores 0 and stays hidden otherwise. */
 const PARTS = ["tests", "taskFit", "clarity", "look", "claim"] as const;
 type Part = (typeof PARTS)[number];
 const PART_MAX: Record<Part, number> = { tests: 50, taskFit: 25, clarity: 15, look: 0, claim: 10 };
 const LOOK_MAX: Record<Part, number> = { tests: 45, taskFit: 20, clarity: 10, look: 15, claim: 10 };
 const PART_LABEL: Record<Part, string> = { tests: "tests", taskFit: "task fit", clarity: "clarity", look: "look", claim: "claims" };
 
-// A part's points, 0 for a part the race does not have.
+/** A part's points, 0 for a part the race does not have. */
 function partPoints(parts: { look?: number } & Record<Exclude<Part, "look">, number>, part: Part): number {
   return parts[part] ?? 0;
 }
 
-// The parts a score shows and their maximums: look only when the race was judged on look.
+/** The parts a score shows and their maximums: look only when the race was judged on look. */
 function scoreParts(parts: { look?: number }): { shown: Part[]; max: Record<Part, number> } {
   const looked = parts.look !== undefined;
   return { shown: PARTS.filter((p) => looked || p !== "look"), max: looked ? LOOK_MAX : PART_MAX };
@@ -42,15 +42,15 @@ const TOAST_MS = 2600;
 const TICKER_MAX = 3;
 const TICKER_MS = 5200;
 const SPEEDS = [1, 2, 4, 8];
-// The judging reveal: one part of the score per beat, then the winner.
+/** The judging reveal: one part of the score per beat, then the winner. */
 const REVEAL_LEAD_MS = 600;
 const REVEAL_PART_MS = 1100;
-// When the winner shows: once every part of the race has filled.
+/** When the winner shows: once every part of the race has filled. */
 function revealWinnerMs(parts: readonly Part[]): number {
   return REVEAL_LEAD_MS + parts.length * REVEAL_PART_MS + 300;
 }
 
-// The parts the reveal steps through: look only when the race was judged on look.
+/** The parts the reveal steps through: look only when the race was judged on look. */
 function revealParts(b: Board): Part[] {
   return b.fighters.some((f) => f.score?.parts.look !== undefined) ? [...PARTS] : PARTS.filter((p) => p !== "look");
 }
@@ -73,7 +73,7 @@ const LABELS: Record<Action, string> = {
   lost: "out",
 };
 
-// Moves that play once when they happen; the rest loop while they last.
+/** Moves that play once when they happen; the rest loop while they last. */
 const ONE_SHOT: ReadonlySet<Action> = new Set(["push", "clash", "flag", "hurt"]);
 
 interface BotView {
@@ -116,10 +116,10 @@ let stopped = false;
 let pending: BoardEvent[] = [];
 let platform: PlatformState = emptyPlatform();
 let replay: Replay | undefined;
-// performance.now() when the judging reveal started; undefined when there is none to play.
+/** performance.now() when the judging reveal started; undefined when there is none to play. */
 let revealStart: number | undefined;
 let revealFrame: number | undefined;
-// armed: the verdict is in but the scores are not, so the result waits for the reveal.
+/** armed: the verdict is in but the scores are not, so the result waits for the reveal. */
 let revealArmed = false;
 let botsKey = "";
 let claimsKey = "";
@@ -130,7 +130,7 @@ let logShown = new Set<number>();
 let wipeKey = "";
 let toastKey = "";
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
-// The git graph: the whole recorded task (replay) or the pushes seen so far (live).
+/** The git graph: the whole recorded task (replay) or the pushes seen so far (live). */
 let recorded: WireTask | undefined;
 let liveDots: PushDot[] = [];
 const endSeen = new Map<string, number>();
@@ -169,7 +169,7 @@ function hideMessage(): void {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// The JSON body of a 2xx GET, else undefined (also on network errors).
+/** The JSON body of a 2xx GET, else undefined (also on network errors). */
 async function getJson(path: string): Promise<unknown> {
   try {
     const res = await fetch(path, { headers: { accept: "application/json" } });
@@ -183,14 +183,14 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-// Restarts a CSS animation class on an element.
+/** Restarts a CSS animation class on an element. */
 function kick(node: Element, className: string): void {
   node.classList.remove(className);
   void (node as HTMLElement).offsetWidth;
   node.classList.add(className);
 }
 
-// The race clock: replay time in a replay, else now.
+/** The race clock: replay time in a replay, else now. */
 function clock(): number {
   return replay?.t ?? Date.now();
 }
@@ -226,7 +226,7 @@ function main(): void {
   connect(id, 0);
 }
 
-// Floating dust in the stage, so the page is never still.
+/** Floating dust in the stage, so the page is never still. */
 function addMotes(): void {
   const sky = document.querySelector(".motes");
   if (sky === null) return;
@@ -253,7 +253,7 @@ function failMessage(status: number): string {
   return status === 404 ? "No race with this id." : `Could not load the race (HTTP ${status}).`;
 }
 
-// Fetches the task, its steps and claims, then rebuilds the board. Events that arrive meanwhile wait.
+/** Fetches the task, its steps and claims, then rebuilds the board. Events that arrive meanwhile wait. */
 async function load(id: string): Promise<boolean> {
   loading = true;
   try {
@@ -286,7 +286,7 @@ async function load(id: string): Promise<boolean> {
   }
 }
 
-// Pages through the step log until `next` stops moving.
+/** Pages through the step log until `next` stops moving. */
 async function loadSteps(id: string): Promise<WireStep[]> {
   const all: WireStep[] = [];
   let after = 0;
@@ -300,7 +300,7 @@ async function loadSteps(id: string): Promise<WireStep[]> {
   return all;
 }
 
-// Reconnects with backoff (1, 2, 4, 8, then 10 s); every reconnect refetches the board.
+/** Reconnects with backoff (1, 2, 4, 8, then 10 s); every reconnect refetches the board. */
 function connect(id: string, attempt: number): void {
   if (stopped) return;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
@@ -353,7 +353,7 @@ function onMessage(data: unknown): void {
   happened(before, [{ at: now, event }], true);
 }
 
-// Side effects of events that just happened: platform hits, beams, banners.
+/** Side effects of events that just happened: platform hits, beams, banners. */
 function happened(before: Board, events: TimedEvent[], animate: boolean): void {
   const hits: PlatformHit[] = [];
   for (const { at, event } of events) {
@@ -370,7 +370,7 @@ function happened(before: Board, events: TimedEvent[], animate: boolean): void {
   renderPipeline(animate ? hits : []);
 }
 
-// A replayed claim has no clash list; read it from who held the file before.
+/** A replayed claim has no clash list; read it from who held the file before. */
 function clashIn(before: Board, agent: string, files: string[]): { file: string; heldBy: string[] } | undefined {
   for (const file of files) {
     const heldBy = Object.keys(before.grid.cells[file] ?? {}).filter((a) => a !== agent);
@@ -391,7 +391,7 @@ function setBoard(next: Board): void {
   if (next.ended && ranked === undefined && replay === undefined) void loadScores();
 }
 
-// The judge may still be writing its output when the verdict lands, so retry a few times.
+/** The judge may still be writing its output when the verdict lands, so retry a few times. */
 async function loadScores(): Promise<void> {
   if (scoresLoading) return;
   scoresLoading = true;
@@ -532,7 +532,7 @@ function tick(now: number): void {
   r.frame = requestAnimationFrame(tick);
 }
 
-// Moves the replay to time t. Playing forward animates what happened in between; a jump does not.
+/** Moves the replay to time t. Playing forward animates what happened in between; a jump does not. */
 function seek(t: number, animate: boolean): void {
   const r = replay;
   if (r === undefined) return;
@@ -566,7 +566,7 @@ function mmss(ms: number): string {
 
 // ---- judging reveal ----
 
-// The verdict arrived live: hold the result back until the scores can be revealed.
+/** The verdict arrived live: hold the result back until the scores can be revealed. */
 function armReveal(): void {
   if (reducedMotion()) return;
   revealArmed = true;
@@ -593,7 +593,7 @@ function stopReveal(): void {
   revealFrame = undefined;
 }
 
-// 0..1 per part at `elapsed` ms into the reveal; all 1 when no reveal runs.
+/** 0..1 per part at `elapsed` ms into the reveal; all 1 when no reveal runs. */
 function revealFractions(parts: readonly Part[], elapsed: number | undefined): Record<Part, number> {
   const out = { tests: 1, taskFit: 1, clarity: 1, look: 1, claim: 1 };
   if (elapsed === undefined) return out;
@@ -625,7 +625,7 @@ function revealTick(): void {
   revealFrame = requestAnimationFrame(revealTick);
 }
 
-// The why types itself out once the winner is shown.
+/** The why types itself out once the winner is shown. */
 function typeWhy(): void {
   const why = byId("why");
   const full = why.textContent ?? "";
@@ -656,7 +656,7 @@ function render(b: Board): void {
   renderTimer();
 }
 
-// A live push: one more dot, with the commits it added.
+/** A live push: one more dot, with the commits it added. */
 function addLiveDot(agent: string, push: { commits: number; lastPushAt?: string; head?: string; headMessage?: string }, now: number): void {
   const before = liveDots.filter((d) => d.agent === agent).reduce((n, d) => n + d.commits, 0);
   const at = Date.parse(push.lastPushAt ?? "");
@@ -710,9 +710,9 @@ function renderGraph(b: Board): void {
   byId("graph-stat").textContent = `${graph.lanes.length} forks · ${pushes} push${pushes === 1 ? "" : "es"}${graph.merge ? " · 1 merge" : ""}`;
 }
 
-// What the robots were told about earlier races on this app. Rebuilt only when it changes.
+/** What the robots were told about earlier races on this app. Rebuilt only when it changes. */
 let memoryKey = "";
-// Earlier races in this race's memory, for the tag on each robot's nameplate.
+/** Earlier races in this race's memory, for the tag on each robot's nameplate. */
 let memoryCount = 0;
 
 function setMemoryTag(tag: HTMLElement, agent: string): void {
@@ -789,7 +789,7 @@ function renderTimer(): void {
   timer.dataset.running = Number.isNaN(finished) || clock() < finished ? "yes" : "no";
 }
 
-// Robots stand in a row across the front of the stage, facing the core.
+/** Robots stand in a row across the front of the stage, facing the core. */
 function botX(index: number, count: number): number {
   const span = count <= 3 ? 64 : 80;
   return 50 - span / 2 + (span * (index + 0.5)) / count;
@@ -806,7 +806,7 @@ function renderBots(b: Board): void {
   b.fighters.forEach((f, i) => updateBot(b, f, i));
 }
 
-// The Thunderdome mascot, perched on a robot's head while it claims or pushes.
+/** The Thunderdome mascot, perched on a robot's head while it claims or pushes. */
 function mascot(): HTMLElement {
   const img = el("img", "fx-mascot");
   img.src = "/mascot.svg";
@@ -958,7 +958,7 @@ function bubbleOf(b: Board, f: Fighter): string {
   return f.bubble ?? (f.status === "running" ? "warming up" : "waiting");
 }
 
-// One curved beam from each robot to the core. It runs while the robot works.
+/** One curved beam from each robot to the core. It runs while the robot works. */
 function drawBeams(b: Board): void {
   const stage = byId("stage");
   const svg = byId("beams");
@@ -991,7 +991,7 @@ function drawBeams(b: Board): void {
   for (const stale of existing.values()) stale.remove();
 }
 
-// A push sends a bright pulse up the robot's beam into the core.
+/** A push sends a bright pulse up the robot's beam into the core. */
 function fireBeam(agent: string): void {
   const path = document.querySelector<SVGPathElement>(`#beams path[data-agent="${CSS.escape(agent)}"]`);
   if (path !== null) {
@@ -1002,7 +1002,7 @@ function fireBeam(agent: string): void {
   kick(byId("core"), "hit");
 }
 
-// One added fusion: whose files joined the winner's fix.
+/** One added fusion: whose files joined the winner's fix. */
 interface Fused { agent: string; files: string[] }
 
 function toast(title: string, detail: string, kind: string, note?: string, fused: Fused[] = []): void {
@@ -1031,7 +1031,7 @@ function toast(title: string, detail: string, kind: string, note?: string, fused
   }, TOAST_MS);
 }
 
-// Judging while the judge runs; the winner once it has spoken (after the reveal, when one plays).
+/** Judging while the judge runs; the winner once it has spoken (after the reveal, when one plays). */
 function renderBanner(b: Board, final: boolean): void {
   const banner = byId("banner");
   if (!b.ended) {
@@ -1083,7 +1083,7 @@ const LEDS = 4;
 
 const svgNs = "http://www.w3.org/2000/svg";
 
-// A four-blade fan; CSS spins it.
+/** A four-blade fan; CSS spins it. */
 function fanSvg(): SVGSVGElement {
   const svg = document.createElementNS(svgNs, "svg");
   svg.setAttribute("viewBox", "-10 -10 20 20");
@@ -1138,7 +1138,7 @@ function buildPipeline(): void {
   );
 }
 
-// Types a new terminal line; an older typing is cut short by the newer one.
+/** Types a new terminal line; an older typing is cut short by the newer one. */
 function typeLine(view: StageView, text: string): void {
   if (text === view.text) return;
   view.text = text;
@@ -1156,14 +1156,14 @@ function typeLine(view: StageView, text: string): void {
   requestAnimationFrame(step);
 }
 
-// The unit works for a moment: fast fan, flickering LEDs.
+/** The unit works for a moment: fast fan, flickering LEDs. */
 function setBusy(view: StageView): void {
   view.root.classList.add("busy");
   if (view.busy !== undefined) clearTimeout(view.busy);
   view.busy = setTimeout(() => view.root.classList.remove("busy"), BUSY_MS);
 }
 
-// The bus y under a unit, and the x of its center, in the pipeline's coordinates.
+/** The bus y under a unit, and the x of its center, in the pipeline's coordinates. */
 function busY(n: HTMLElement): number {
   return n.offsetTop + n.offsetHeight + 7;
 }
@@ -1172,7 +1172,7 @@ function busX(n: HTMLElement): number {
   return n.offsetLeft + n.offsetWidth / 2;
 }
 
-// A packet along the bus from the stage before (or the bus start) into this unit.
+/** A packet along the bus from the stage before (or the bus start) into this unit. */
 function sendPacket(stage: Stage): void {
   if (reducedMotion()) return;
   const list = byId("pipeline");
@@ -1228,7 +1228,7 @@ function renderPipeline(hits: PlatformHit[]): void {
   }
 }
 
-// The newest platform events, as chips in the stage corner.
+/** The newest platform events, as chips in the stage corner. */
 function addTicker(h: PlatformHit): void {
   const ticker = byId("ticker");
   const chip = el("li", "tick");
@@ -1329,7 +1329,7 @@ function skeleton(): HTMLElement {
   return box;
 }
 
-// Only https URLs are shown; a new commit reloads the frame. A replay can go back to no preview.
+/** Only https URLs are shown; a new commit reloads the frame. A replay can go back to no preview. */
 function updatePreview(view: PreviewView, slot: Slot, winner: boolean): void {
   view.root.classList.toggle("winner", winner);
   const preview = slot.preview;
@@ -1387,8 +1387,10 @@ let flipTimer: ReturnType<typeof setInterval> | undefined;
 let flipPaused = false;
 const frameSizer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(fitFrames);
 
-// Each page renders at least PAGE_WIDTH wide and is scaled down to its frame, so it looks like a real
-// page. A frame wider than that (the flip view) renders the page at its own width, so it fills it.
+/**
+ * Each page renders at least PAGE_WIDTH wide and is scaled down to its frame, so it looks like a real
+ * page. A frame wider than that (the flip view) renders the page at its own width, so it fills it.
+ */
 function fitFrames(entries: ResizeObserverEntry[]): void {
   for (const entry of entries) {
     const box = entry.target as HTMLElement;
@@ -1410,7 +1412,7 @@ function setupWipe(): void {
   for (const id of ["cmp-before", "cmp-after"]) frameSizer?.observe(byId(id));
 }
 
-// Side by side shows both; flip stacks them and swaps every FLIP_MS (paused while hovered).
+/** Side by side shows both; flip stacks them and swaps every FLIP_MS (paused while hovered). */
 function setCompareMode(mode: "side" | "flip"): void {
   const compare = byId("compare");
   compare.dataset.mode = mode;
@@ -1429,7 +1431,7 @@ function setCompareMode(mode: "side" | "flip"): void {
   }, FLIP_MS);
 }
 
-// The base preview next to the winner's.
+/** The base preview next to the winner's. */
 function renderWipe(b: Board): void {
   const winner = b.fighters.find((f) => f.agent === b.winner);
   const before = b.basePreview === undefined ? undefined : httpsUrl(b.basePreview.url);
@@ -1489,7 +1491,7 @@ function podiumStep(f: Scored): HTMLElement {
   return step;
 }
 
-// One stacked bar per robot; each part's width is its points out of 100.
+/** One stacked bar per robot; each part's width is its points out of 100. */
 function scoreRow(f: Scored): HTMLElement {
   const row = el("li", "score-row");
   row.style.setProperty("--color", f.color);
@@ -1517,7 +1519,7 @@ function scoreRow(f: Scored): HTMLElement {
   return row;
 }
 
-// Newest first. Each line is the step's short label; the raw step is its tooltip.
+/** Newest first. Each line is the step's short label; the raw step is its tooltip. */
 function renderLog(b: Board): void {
   const lines: { step: WireStep; label: string }[] = [];
   for (const step of log) {

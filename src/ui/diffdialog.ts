@@ -93,7 +93,7 @@ function messageFor(status: number): string {
   return "Could not load the diff. Try again in a moment.";
 }
 
-// Opens the dialog for one agent and fills it when the diff arrives.
+/** Opens the dialog for one agent and fills it when the diff arrives. */
 export async function openDiff(taskId: string, agent: string): Promise<void> {
   const d = dialog();
   d.style.setProperty("--color", colorFor(agent));

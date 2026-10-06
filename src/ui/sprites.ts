@@ -2,12 +2,13 @@
 // The robot is original: a boxy helmet with a dark visor, an antenna light, a chest light,
 // side arms and two legs. Parts are separate groups so CSS can animate them.
 
+/** Pixels per side of the robot sprite. */
 export const SPRITE_GRID = 16;
 
 const HEX = /^#[0-9a-f]{6}$/i;
 const FALLBACK = "#8b8d98";
 
-// Only a #rrggbb color reaches the SVG markup.
+/** Only a #rrggbb color reaches the SVG markup. */
 function safeHex(hex: string): string {
   return HEX.test(hex) ? hex.toLowerCase() : FALLBACK;
 }
@@ -18,17 +19,17 @@ function scaleHex(hex: string, change: (channel: number) => number): string {
   return `#${channels.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 
-// A darker (factor < 1) #rrggbb of the color.
+/** A darker (factor < 1) #rrggbb of the color. */
 export function shade(hex: string, factor: number): string {
   return scaleHex(hex, (c) => c * factor);
 }
 
-// A lighter #rrggbb: mixes `amount` (0..1) of white in.
+/** A lighter #rrggbb: mixes `amount` (0..1) of white in. */
 export function tint(hex: string, amount: number): string {
   return scaleHex(hex, (c) => c + (255 - c) * amount);
 }
 
-// One char per pixel. Each char names its group and its color key.
+/** One char per pixel. Each char names its group and its color key. */
 const ROBOT = [
   ".......AA.......",
   ".......nn.......",
@@ -59,7 +60,7 @@ const ROBOT_GROUPS: [group: string, chars: string][] = [
   ["robot-light", "A"],
 ];
 
-// Rects for the chars of one group, merging runs of the same char on a row.
+/** Rects for the chars of one group, merging runs of the same char on a row. */
 function rects(grid: string[], chars: string, colors: Record<string, string>): string {
   const out: string[] = [];
   grid.forEach((row, y) => {
@@ -82,6 +83,10 @@ function svg(className: string, width: number, height: number, body: string): st
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" shape-rendering="crispEdges" class="${className}" aria-hidden="true" focusable="false">${body}</svg>`;
 }
 
+/**
+ * The robot in `color` (#rrggbb; anything else draws the fallback gray), with each part in its own
+ * group for CSS to animate.
+ */
 export function robotSvg(color: string): string {
   const body = safeHex(color);
   const outline = shade(body, 0.42);
@@ -113,6 +118,7 @@ const CROWN = [
   "oooooooo",
 ];
 
+/** The winner's pixel crown. */
 export function crownSvg(): string {
   return svg("crown-svg", 8, 6, rects(CROWN, "oyr", { o: "#b07d00", y: "#ffd23f", r: "#e5484d" }));
 }
@@ -126,11 +132,12 @@ const HAMMER = [
   "..s..",
 ];
 
+/** The pixel hammer a robot swings while it edits. */
 export function hammerSvg(): string {
   return svg("hammer-svg", 5, 5, rects(HAMMER, "hs", { h: "#c7cbd6", s: "#8a5a2b" }));
 }
 
-// The repo core: a crystal drawn smooth, with two orbit rings for CSS to spin.
+/** The repo core: a crystal drawn smooth, with two orbit rings for CSS to spin. */
 export function coreSvg(): string {
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="-60 -60 120 120" class="core-svg" aria-hidden="true" focusable="false">
 <defs>

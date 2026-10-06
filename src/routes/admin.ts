@@ -2,13 +2,18 @@
 import { MODEL_API_HOST } from "../agents/runner";
 import { decideOutbound } from "../sandbox/policy";
 
+/**
+ * What the model key looks like, without the key: its type, its length, and whether it had
+ * whitespace around it.
+ */
 export interface KeyShape {
-  // The key type, e.g. "sk-ant-api" for a Console API key. Never more than that.
+  /** The key type, e.g. "sk-ant-api" for a Console API key. Never more than that. */
   kind: string;
   length: number;
   trimmed: boolean;
 }
 
+/** The shape of the model key, safe to return to the admin. */
 export function keyShape(key: string | undefined): KeyShape {
   const raw = key ?? "";
   const clean = raw.trim();
@@ -16,6 +21,10 @@ export function keyShape(key: string | undefined): KeyShape {
   return { kind, length: clean.length, trimmed: clean !== raw };
 }
 
+/**
+ * GET /admin/model-check: one model API call with the Worker's key, sent the way the Outbound
+ * Worker sends it. Returns the key's shape and the API's answer, never the key.
+ */
 export async function modelCheck(env: Pick<Env, "ANTHROPIC_API_KEY">, fetcher: typeof fetch = fetch): Promise<Response> {
   const url = new URL(`https://${MODEL_API_HOST}/v1/models?limit=1`);
   const shape = keyShape(env.ANTHROPIC_API_KEY);

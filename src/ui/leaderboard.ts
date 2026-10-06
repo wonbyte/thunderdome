@@ -1,9 +1,10 @@
 // The leaderboard: how each agent style does across every race in the list. Pure, like board.ts.
 import { colorFor, displayName } from "./board";
 
+/** What decided a race (src/judge/why.ts DecidedBy). */
 export type DecidedBy = "code" | "claims" | "close" | "same";
 
-// The fields of a race summary the leaderboard reads.
+/** The fields of a race summary the leaderboard reads. */
 export interface RaceRow {
   id: string;
   agents: string[];
@@ -15,6 +16,7 @@ export interface RaceRow {
   finishedAt?: string;
 }
 
+/** One robot's row on the leaderboard. */
 export interface Standing {
   agent: string;
   name: string;
@@ -25,6 +27,7 @@ export interface Standing {
   avgScore?: number; // over the races with scores, 1 decimal
 }
 
+/** Totals across every judged race: clash rate, what decided the races, and the average race time. */
 export interface RaceStats {
   judged: number;
   clashRate: number; // 0..1, of judged races
@@ -38,7 +41,7 @@ function judged(races: readonly RaceRow[]): RaceRow[] {
   return races.filter((r) => r.winner !== undefined);
 }
 
-// Most wins first, then the better win rate, then the higher average, then the agent id.
+/** Most wins first, then the better win rate, then the higher average, then the agent id. */
 export function standings(races: readonly RaceRow[]): Standing[] {
   const rows = new Map<string, { races: number; wins: number; sum: number; scored: number }>();
   for (const race of judged(races)) {
@@ -67,6 +70,7 @@ export function standings(races: readonly RaceRow[]): Standing[] {
     .toSorted((a, b) => b.wins - a.wins || b.winRate - a.winRate || (b.avgScore ?? -1) - (a.avgScore ?? -1) || a.agent.localeCompare(b.agent));
 }
 
+/** The totals for the stats strip above the leaderboard. */
 export function raceStats(races: readonly RaceRow[]): RaceStats {
   const done = judged(races);
   const decided: Record<DecidedBy, number> = { code: 0, claims: 0, close: 0, same: 0 };

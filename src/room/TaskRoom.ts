@@ -1,3 +1,6 @@
+// The TaskRoom Durable Object: one per race. It owns the task, the fork tokens, the claim board,
+// the agents' step log, the live WebSockets, and the watchdog alarm.
+
 import { DurableObject } from "cloudflare:workers";
 
 import type { Step } from "../agents/events";
@@ -50,18 +53,18 @@ import {
 } from "./task";
 
 const TASK_KEY = "task";
-// Fork write tokens stay in the Durable Object. GET /tasks/:id never returns them.
+/** Fork write tokens stay in the Durable Object. GET /tasks/:id never returns them. */
 const TOKENS_KEY = "tokens";
 const CLAIMS_KEY = "claims";
-// kv key `diff:<agent>`: the diff the judge scored for that agent's fork.
+/** kv key `diff:<agent>`: the diff the judge scored for that agent's fork. */
 const DIFF_KEY_PREFIX = "diff:";
 const MAX_STEPS_PER_PAGE = 500;
-// Close code for a socket whose send failed.
+/** Close code for a socket whose send failed. */
 const CLOSE_SEND_FAILED = 1011;
-// The one RaceIndex instance.
+/** The one RaceIndex instance. */
 const RACE_INDEX_NAME = "all";
 
-// One message on the live WebSocket. Each change is sent once, after it is saved.
+/** One message on the live WebSocket. Each change is sent once, after it is saved. */
 export type LiveEvent =
   | { kind: "snapshot"; taskId: string; task: Task | null } // sent to a new socket only
   | { kind: "status"; taskId: string; task: Task } // run start, starts applied
@@ -74,8 +77,10 @@ export type LiveEvent =
   | { kind: "verdict"; taskId: string; verdict: Verdict }
   | { kind: "base-preview"; taskId: string; preview: Preview };
 
-// One TaskRoom per task. It owns the task state, the fork tokens, the claim board, the
-// agents' step log, and the live WebSockets.
+/**
+ * One TaskRoom per task. It owns the task state, the fork tokens, the claim board, the
+ * agents' step log, and the live WebSockets.
+ */
 export class TaskRoom extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
@@ -84,7 +89,7 @@ export class TaskRoom extends DurableObject<Env> {
     );
   }
 
-  // GET /tasks/:id/live: accepts a hibernating WebSocket and sends it a snapshot.
+  /** GET /tasks/:id/live: accepts a hibernating WebSocket and sends it a snapshot. */
   override fetch(request: Request): Response {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return Response.json({ error: "Expected Upgrade: websocket" }, { status: 426, headers: { upgrade: "websocket" } });
@@ -97,9 +102,10 @@ export class TaskRoom extends DurableObject<Env> {
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  // Clients only listen.
+  /** Clients only listen. */
   override webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): void {}
 
+  /** Closes our side of a socket the client closed. */
   override webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): void {
     try {
       ws.close(code, reason);
@@ -108,10 +114,15 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
+  /** Logs a socket error; the socket is dropped by the runtime. */
   override webSocketError(_ws: WebSocket, error: unknown): void {
     console.error({ event: "live.socket_error", error: String(error) });
   }
 
+  /**
+   * Makes the task: the source repo and one fork per agent, with the race memory. Fork tokens stay
+   * here. 409 when the room already has a task.
+   */
   async create(input: NewTask): Promise<CreateTaskResult> {
     if (this.#task() !== undefined) {
       return { ok: false, status: 409, error: { error: `Task ${input.id} already exists` } };
@@ -152,7 +163,7 @@ export class TaskRoom extends DurableObject<Env> {
     return { ok: true, task, tokens };
   }
 
-  // Starts every agent at once, each in its own sandbox on its own fork.
+  /** Starts every agent at once, each in its own sandbox on its own fork. */
   async run(): Promise<RunTaskResult> {
     const task = this.#task();
     if (task === undefined) return { ok: false, status: 404, error: { error: "not found" } };
@@ -211,15 +222,17 @@ export class TaskRoom extends DurableObject<Env> {
     return { ok: true, task: latest };
   }
 
-  // The watchdog (set by run): every agent still not ended is ended as failed, so the race
-  // finishes and the judge starts. Does nothing once every agent has ended.
+  /**
+   * The watchdog (set by run): every agent still not ended is ended as failed, so the race
+   * finishes and the judge starts. Does nothing once every agent has ended.
+   */
   override async alarm(): Promise<void> {
     const task = this.#task();
     if (task === undefined || task.status !== "running") return;
     for (const { agent, outcome } of stalledOutcomes(task)) await this.agentFinished(agent, outcome);
   }
 
-  // Called by a sandbox with the steps its agent took since the last call.
+  /** Called by a sandbox with the steps its agent took since the last call. */
   agentSteps(agent: string, steps: Step[]): void {
     const at = new Date().toISOString();
     const logged: LoggedStep[] = [];
@@ -233,7 +246,7 @@ export class TaskRoom extends DurableObject<Env> {
     if (taskId !== undefined && logged.length > 0) this.#broadcast({ kind: "steps", taskId, agent, steps: logged });
   }
 
-  // Called by a sandbox once its agent has ended and its work is pushed: the agent's DONE.
+  /** Called by a sandbox once its agent has ended and its work is pushed: the agent's DONE. */
   async agentFinished(agent: string, outcome: AgentOutcome): Promise<void> {
     const task = this.#task();
     if (task === undefined) return;
@@ -251,7 +264,7 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
-  // Called by the push Workflow for each push to a fork. build: the push needs a preview.
+  /** Called by the push Workflow for each push to a fork. build: the push needs a preview. */
   recordPush(push: PushInput): PushRecordResult {
     const task = this.#task();
     const slot = task?.agents.find((candidate) => candidate.name === push.agent);
@@ -265,7 +278,7 @@ export class TaskRoom extends DurableObject<Env> {
     return { known: true, recorded, build: needsPreview(task, push.agent, push.after) };
   }
 
-  // Called by the push Workflow with a built preview. Saved only for the agent's newest head.
+  /** Called by the push Workflow with a built preview. Saved only for the agent's newest head. */
   savePreview(agent: string, preview: PreviewInput): boolean {
     const task = this.#task();
     if (task === undefined || !applyPreview(task, agent, preview, new Date().toISOString())) return false;
@@ -275,7 +288,7 @@ export class TaskRoom extends DurableObject<Env> {
     return true;
   }
 
-  // Called by the push Workflow with the built base preview. Saved only for the task's base commit.
+  /** Called by the push Workflow with the built base preview. Saved only for the task's base commit. */
   saveBasePreview(preview: PreviewInput): boolean {
     const task = this.#task();
     if (task === undefined || !applyBasePreview(task, preview, new Date().toISOString())) return false;
@@ -284,7 +297,7 @@ export class TaskRoom extends DurableObject<Env> {
     return true;
   }
 
-  // Called by the judge Workflow once it has decided and shipped. A verdict is saved once.
+  /** Called by the judge Workflow once it has decided and shipped. A verdict is saved once. */
   async saveVerdict(verdict: Verdict): Promise<{ ok: true; task: Task } | { ok: false; status: number; error: string }> {
     const task = this.#task();
     if (task === undefined) return { ok: false, status: 404, error: "not found" };
@@ -295,8 +308,10 @@ export class TaskRoom extends DurableObject<Env> {
     return { ok: true, task };
   }
 
-  // Called by the judge Workflow with the (clipped) diff it scored. False when there is no
-  // task or the agent is not one of its agents.
+  /**
+   * Called by the judge Workflow with the (clipped) diff it scored. False when there is no
+   * task or the agent is not one of its agents.
+   */
   saveDiff(agent: string, saved: SavedDiff): boolean {
     const task = this.#task();
     if (task === undefined || !task.agents.some((slot) => slot.name === agent)) return false;
@@ -304,12 +319,12 @@ export class TaskRoom extends DurableObject<Env> {
     return true;
   }
 
-  // The saved diff of an agent's fork, or null before the judge saved one.
+  /** The saved diff of an agent's fork, or null before the judge saved one. */
   forkDiff(agent: string): SavedDiff | null {
     return this.ctx.storage.kv.get<SavedDiff>(`${DIFF_KEY_PREFIX}${agent}`) ?? null;
   }
 
-  // Claims files for an agent. A file another agent holds is claimed as shared and returned as a clash.
+  /** Claims files for an agent. A file another agent holds is claimed as shared and returned as a clash. */
   claim(agent: string, files: unknown, shared: boolean): ClaimResult {
     const task = this.#task();
     const refusal = claimRefusal(task, agent);
@@ -324,7 +339,7 @@ export class TaskRoom extends DurableObject<Env> {
     return result;
   }
 
-  // Releases the given files, or all of the agent's files when files is undefined.
+  /** Releases the given files, or all of the agent's files when files is undefined. */
   release(agent: string, files?: unknown): { ok: true; released: string[] } | { ok: false; status: number; error: string } {
     const parsed = files === undefined ? undefined : parseFiles(files);
     if (typeof parsed === "string") return { ok: false, status: 400, error: parsed };
@@ -339,8 +354,10 @@ export class TaskRoom extends DurableObject<Env> {
     return { ok: true, released };
   }
 
-  // Deletes the task's repos, then all of its state: task, tokens, claims, diffs and steps. A repo
-  // that fails to delete keeps the state, so the purge can be run again.
+  /**
+   * Deletes the task's repos, then all of its state: task, tokens, claims, diffs and steps. A repo
+   * that fails to delete keeps the state, so the purge can be run again.
+   */
   async purge(): Promise<{ ok: true; deleted: string[] } | { ok: false; error: string }> {
     const task = this.#task();
     const refusal = purgeRefusal(task);
@@ -360,14 +377,17 @@ export class TaskRoom extends DurableObject<Env> {
     return { ok: true, deleted: repos };
   }
 
+  /** The claim board: the claims held now and every claim made. */
   claimBoard(): ClaimBoard {
     return this.#board();
   }
 
+  /** The task, or null when the room has none. */
   state(): Task | null {
     return this.#task() ?? null;
   }
 
+  /** Up to `limit` logged steps with seq above `after`, oldest first. */
   steps(after: number, limit: number): LoggedStep[] {
     return this.ctx.storage.sql
       .exec<LoggedStep>(
@@ -378,7 +398,7 @@ export class TaskRoom extends DurableObject<Env> {
       .toArray();
   }
 
-  // What earlier races on the same app taught, for the agents. Never throws: no memory is fine.
+  /** What earlier races on the same app taught, for the agents. Never throws: no memory is fine. */
   async #memory(task: Task): Promise<RaceMemory[]> {
     try {
       const races = await this.env.RACE_INDEX.getByName(RACE_INDEX_NAME).list(RACE_INDEX_MAX);
@@ -389,7 +409,7 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
-  // Records the task's summary in the race index. Never throws: a failed record is only logged.
+  /** Records the task's summary in the race index. Never throws: a failed record is only logged. */
   async #index(task: Task): Promise<void> {
     try {
       await this.env.RACE_INDEX.getByName(RACE_INDEX_NAME).record(summaryOf(task, this.claimBoard().history));
@@ -398,8 +418,10 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
-  // Starts the judge with the same id and params as the manual route, retrying a failed
-  // create. Never throws: a start that still fails is only logged.
+  /**
+   * Starts the judge with the same id and params as the manual route, retrying a failed
+   * create. Never throws: a start that still fails is only logged.
+   */
   async #startJudge(task: Task): Promise<void> {
     try {
       await startWorkflow(this.env.JUDGE, judgeInstanceId(task.id), judgeInput(task, this.#board()));
@@ -408,8 +430,10 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
-  // Starts the base preview build when the task has a base commit, retrying a failed create.
-  // Never throws: a start that still fails is only logged.
+  /**
+   * Starts the base preview build when the task has a base commit, retrying a failed create.
+   * Never throws: a start that still fails is only logged.
+   */
   async #startBasePreview(task: Task): Promise<void> {
     const request = baseRequest(task);
     if (request === undefined) return;
@@ -420,7 +444,7 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
-  // Sends one change to every live socket. Never throws, so a send never breaks the change.
+  /** Sends one change to every live socket. Never throws, so a send never breaks the change. */
   #broadcast(event: LiveEvent): void {
     try {
       const message = JSON.stringify(event);
@@ -430,7 +454,7 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
-  // A socket whose send throws is closed, which drops it from getWebSockets().
+  /** A socket whose send throws is closed, which drops it from getWebSockets(). */
   #send(ws: WebSocket, message: string): void {
     try {
       ws.send(message);

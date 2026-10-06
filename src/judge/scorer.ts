@@ -1,18 +1,24 @@
 // Clef scorer: rates a fork's diff for task fit and clarity on Workers AI. No cloudflare:workers import; the AI runner is injected.
 import { retry } from "../retry";
 
+/** The Workers AI model id of Clef. */
 export const CLEF_MODEL_ID = "@cf/cloudflare/clef";
+/** The System One model name inside a Clef request. */
 export const CLEF_MODEL = "clef";
+/** Diff characters sent to Clef; a longer diff is cut. */
 export const MAX_DIFF_CHARS = 100_000;
+/** Clef calls per question set: one call plus three retries. */
 export const SCORER_ATTEMPTS = 4;
+/** Wait between Clef retries. */
 export const SCORER_RETRY_DELAY_MS = 2_000;
 const ERROR_MESSAGE_CHARS = 300;
 
-// The slice of the Workers AI binding the scorer uses.
+/** The slice of the Workers AI binding the scorer uses. */
 export interface AiRunner {
   run(model: string, input: unknown): Promise<unknown>;
 }
 
+/** One fork's change to score, with the task it was for. */
 export interface ScoreRequest {
   task: string;
   diff: string; // untrusted, agent-written
@@ -21,6 +27,7 @@ export interface ScoreRequest {
   linesRemoved: number;
 }
 
+/** Clef's answer to one score question. */
 export interface ScoreAnswer {
   type: "score";
   score: number;
@@ -29,29 +36,33 @@ export interface ScoreAnswer {
   legend?: Record<string, unknown>;
 }
 
+/** Task fit and clarity, each 0..1, with Clef's raw answers. */
 export interface ScorerResult {
   taskFit: number; // 0..1 = score / (levels - 1), clamped
   clarity: number; // 0..1
   raw: { taskFit: ScoreAnswer; clarity: ScoreAnswer };
 }
 
+/** Scores a fork's change for task fit and clarity. */
 export interface Scorer {
   score(request: ScoreRequest): Promise<ScorerResult>;
 }
 
+/** A System One score question: what to judge, and its levels from low to high. */
 export interface ScoreQuestion {
   type: "score";
   instructions: string;
   criteria: string[];
 }
 
+/** The Clef request body for scoring one fork's change. */
 export interface SystemOneRequest {
   state: { task: string; diff: string; files_changed: string[]; lines_added: number; lines_removed: number };
   model: string;
   questions: { task_fit: ScoreQuestion; clarity: ScoreQuestion };
 }
 
-// Constant; never contains fork content. 5 levels each, low to high, each level stands on its own.
+/** Constant; never contains fork content. 5 levels each, low to high, each level stands on its own. */
 export const QUESTIONS: SystemOneRequest["questions"] = {
   task_fit: {
     type: "score",
@@ -79,6 +90,7 @@ export const QUESTIONS: SystemOneRequest["questions"] = {
   },
 };
 
+/** A Clef call that failed or gave an answer the scorer cannot use. */
 export class ScorerError extends Error {
   readonly status: number | undefined;
   readonly retryable: boolean; // true for a failed AI.run
@@ -91,13 +103,13 @@ export class ScorerError extends Error {
   }
 }
 
-// Clips an oversized diff and marks the cut.
+/** Clips an oversized diff and marks the cut. */
 function clipDiff(diff: string): string {
   if (diff.length <= MAX_DIFF_CHARS) return diff;
   return `${diff.slice(0, MAX_DIFF_CHARS)}\n[diff clipped at ${MAX_DIFF_CHARS} chars]`;
 }
 
-// The diff goes only in state; questions are the shared constant.
+/** The diff goes only in state; questions are the shared constant. */
 export function buildRequest(input: ScoreRequest): SystemOneRequest {
   return {
     state: {
@@ -115,13 +127,13 @@ export function buildRequest(input: ScoreRequest): SystemOneRequest {
 const isRecord = (x: unknown): x is Record<string, unknown> => typeof x === "object" && x !== null && !Array.isArray(x);
 const isNumber = (x: unknown): x is number => typeof x === "number" && Number.isFinite(x);
 
-// Clamps x to 0..1; NaN becomes 0.
+/** Clamps x to 0..1; NaN becomes 0. */
 function clamp01(x: number): number {
   if (Number.isNaN(x)) return 0;
   return Math.min(1, Math.max(0, x));
 }
 
-// Top level number of a question (levels - 1).
+/** Top level number of a question (levels - 1). */
 const topLevel = (question: ScoreQuestion): number => question.criteria.length - 1;
 
 function parseAnswer(answers: Record<string, unknown>, id: keyof SystemOneRequest["questions"]): ScoreAnswer {
@@ -137,7 +149,7 @@ function parseAnswer(answers: Record<string, unknown>, id: keyof SystemOneReques
   return parsed;
 }
 
-// Accepts { answers } or Workers AI's { result: { answers } }.
+/** Accepts { answers } or Workers AI's { result: { answers } }. */
 export function parseResponse(body: unknown): ScorerResult {
   const unwrapped = isRecord(body) && !isRecord(body.answers) && isRecord(body.result) ? body.result : body;
   if (!isRecord(unwrapped) || !isRecord(unwrapped.answers)) throw new ScorerError("Clef response has no answers");
@@ -150,7 +162,7 @@ export function parseResponse(body: unknown): ScorerResult {
   };
 }
 
-// Replaces every non-empty secret in text with a marker. Longest first, so a secret inside another cannot split it.
+/** Replaces every non-empty secret in text with a marker. Longest first, so a secret inside another cannot split it. */
 function redact(text: string, secrets: string[]): string {
   return secrets
     .filter((s) => s !== "")
@@ -158,7 +170,7 @@ function redact(text: string, secrets: string[]): string {
     .reduce((t, s) => t.split(s).join("[diff]"), text);
 }
 
-// The text of a thrown value. A value that cannot be turned into text must not hide the run failure.
+/** The text of a thrown value. A value that cannot be turned into text must not hide the run failure. */
 function errorText(cause: unknown): string {
   try {
     return cause instanceof Error ? cause.message : String(cause);
@@ -167,7 +179,7 @@ function errorText(cause: unknown): string {
   }
 }
 
-// A retryable error for a failed AI.run: the start of its message, with every form of the diff removed.
+/** A retryable error for a failed AI.run: the start of its message, with every form of the diff removed. */
 function runError(cause: unknown, diffs: string[]): ScorerError {
   const secrets = diffs.flatMap((d) => [d, JSON.stringify(d).slice(1, -1)]);
   const text = redact(errorText(cause), secrets).slice(0, ERROR_MESSAGE_CHARS);
@@ -188,6 +200,7 @@ async function callClef(ai: AiRunner, request: ScoreRequest): Promise<ScorerResu
 
 const isRetryable = (cause: unknown): boolean => cause instanceof ScorerError && cause.retryable;
 
+/** The Scorer that asks Clef on Workers AI, with retries for failed runs. */
 export function clefScorer(ai: AiRunner, sleep?: (ms: number) => Promise<void>): Scorer {
   return {
     async score(request) {
@@ -200,7 +213,7 @@ export function clefScorer(ai: AiRunner, sleep?: (ms: number) => Promise<void>):
   };
 }
 
-// A raw answer for a 0..1 value: probability split between the two nearest levels.
+/** A raw answer for a 0..1 value: probability split between the two nearest levels. */
 function fakeAnswer(value: number, question: ScoreQuestion): ScoreAnswer {
   const top = topLevel(question);
   const score = value * top;
@@ -216,7 +229,7 @@ function fakeAnswer(value: number, question: ScoreQuestion): ScoreAnswer {
   return { type: "score", score, confidence: 1, probabilities, legend };
 }
 
-// For other tests: fixed values, or a function of the request. raw answers are built from the values.
+/** For other tests: fixed values, or a function of the request. raw answers are built from the values. */
 export function fakeScorer(
   values: { taskFit?: number; clarity?: number } | ((request: ScoreRequest) => { taskFit: number; clarity: number }) = {},
 ): Scorer {

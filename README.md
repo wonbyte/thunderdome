@@ -111,7 +111,7 @@ The live deploy is at **https://thunderdome.git-bc1.workers.dev**:
 
 ```sh
 npm install
-npm run check        # typecheck + unit tests
+npm run check        # typecheck, lint (oxlint, type-aware) and unit tests
 ```
 
 **2. Point it at your account.** In `wrangler.jsonc`, set `CF_ACCOUNT_ID` to your account id

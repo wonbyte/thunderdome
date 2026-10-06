@@ -8,9 +8,14 @@
 // - Claiming a file you already hold changes nothing. Releasing frees files for other agents.
 // - History keeps every claim ever made, for the "claim kept" score.
 
+/** Files one claim call may name. */
 export const MAX_FILES_PER_CLAIM = 50;
 const MAX_PATH_LENGTH = 300;
 
+/**
+ * One agent's claim on one file. `shared` is true when another agent held the file first, or the
+ * agent asked for a shared claim.
+ */
 export interface Claim {
   agent: string;
   file: string;
@@ -18,25 +23,32 @@ export interface Claim {
   at: string;
 }
 
+/** The claims held now, and every claim ever made (for the "claim kept" score). */
 export interface ClaimBoard {
   active: Claim[];
   history: Claim[];
 }
 
+/** A clash: a file being claimed and the agents that already hold it. */
 export interface Conflict {
   file: string;
   heldBy: string[];
 }
 
+/**
+ * A claim's answer: what was claimed, already held, shared or clashed, or why the request was
+ * refused.
+ */
 export type ClaimResult =
   | { ok: true; claimed: string[]; already: string[]; shared: string[]; clashes: Conflict[] }
   | { ok: false; status: number; error: string };
 
+/** A board with no claims. */
 export function emptyBoard(): ClaimBoard {
   return { active: [], history: [] };
 }
 
-// Repo-relative path with no "./", no "..", and no leading "/". Undefined when it is not one.
+/** Repo-relative path with no "./", no "..", and no leading "/". Undefined when it is not one. */
 export function normalizeFile(path: string): string | undefined {
   let file = path.trim().replace(/\/{2,}/g, "/");
   while (file.startsWith("./")) file = file.slice(2);
@@ -45,7 +57,7 @@ export function normalizeFile(path: string): string | undefined {
   return file;
 }
 
-// Returns the normalized, distinct files, or an error message.
+/** Returns the normalized, distinct files, or an error message. */
 export function parseFiles(value: unknown, { allowEmpty = false } = {}): string[] | string {
   if (!Array.isArray(value)) return "files must be an array of repo paths";
   if (value.length === 0 && !allowEmpty) return "files must not be empty";
@@ -59,12 +71,15 @@ export function parseFiles(value: unknown, { allowEmpty = false } = {}): string[
   return files;
 }
 
+/** The active claims on `file`, oldest first. */
 export function holdersOf(board: ClaimBoard, file: string): Claim[] {
   return board.active.filter((claim) => claim.file === file);
 }
 
-// Claims every file. A file other agents hold is claimed as shared and reported in clashes;
-// with shared set, every new claim is shared.
+/**
+ * Claims every file. A file other agents hold is claimed as shared and reported in clashes;
+ * with shared set, every new claim is shared.
+ */
 export function claimFiles(board: ClaimBoard, agent: string, files: string[], shared: boolean, at: string): ClaimResult {
   const clashes: Conflict[] = [];
   const already: string[] = [];
@@ -87,7 +102,7 @@ export function claimFiles(board: ClaimBoard, agent: string, files: string[], sh
   return { ok: true, claimed, already, shared: sharedFiles, clashes };
 }
 
-// Releases the given files, or all of the agent's files. Returns the released files.
+/** Releases the given files, or all of the agent's files. Returns the released files. */
 export function releaseFiles(board: ClaimBoard, agent: string, files?: string[]): string[] {
   const released: string[] = [];
   board.active = board.active.filter((claim) => {
@@ -98,7 +113,7 @@ export function releaseFiles(board: ClaimBoard, agent: string, files?: string[])
   return released;
 }
 
-// Every file the agent ever claimed, and which of those claims were shared.
+/** Every file the agent ever claimed, and which of those claims were shared. */
 export function claimsOf(board: ClaimBoard, agent: string): { files: string[]; shared: string[] } {
   const mine = board.history.filter((claim) => claim.agent === agent);
   return {
@@ -107,7 +122,7 @@ export function claimsOf(board: ClaimBoard, agent: string): { files: string[]; s
   };
 }
 
-// One line for the step log.
+/** One line for the step log. */
 export function describeClaim(result: ClaimResult): string {
   if (!result.ok) return `claim refused: ${result.error}`;
   const own = result.claimed.filter((file) => !result.shared.includes(file));

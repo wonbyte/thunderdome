@@ -3,6 +3,7 @@
 import { colorFor, displayName } from "./board";
 import type { WireTask } from "./board";
 
+/** One push to a fork, as a dot on its lane. */
 export interface PushDot {
   agent: string;
   at: number; // ms
@@ -12,6 +13,10 @@ export interface PushDot {
   approx?: boolean; // the time is estimated (the task kept only a count)
 }
 
+/**
+ * What the graph is drawn from: the agents, their pushes and end times, the merge, and the time
+ * now.
+ */
 export interface GraphInput {
   agents: string[];
   start: number; // the fork point: when the race started
@@ -22,6 +27,7 @@ export interface GraphInput {
   domainEnd: number; // the time at the right edge
 }
 
+/** A push dot placed on its lane: x is 0..1 across the graph. */
 export interface LaneDot {
   key: string;
   x: number;
@@ -30,6 +36,7 @@ export interface LaneDot {
   label: string;
 }
 
+/** One fork's lane: its robot, where it stops, and its dots. */
 export interface Lane {
   agent: string;
   name: string;
@@ -40,6 +47,10 @@ export interface Lane {
   dots: LaneDot[];
 }
 
+/**
+ * The graph to draw: the fork point, the now line, the lanes and the merge, all as 0..1 x
+ * positions.
+ */
 export interface GitGraph {
   forkX: number;
   nowX: number;
@@ -53,8 +64,10 @@ const ms = (iso: string | undefined): number | undefined => {
   return Number.isNaN(t) ? undefined : t;
 };
 
-// Every push of the race. A task with a push log has exact times; an older one keeps only the
-// count and the last time, so earlier pushes are spread evenly over the agent's run.
+/**
+ * Every push of the race. A task with a push log has exact times; an older one keeps only the
+ * count and the last time, so earlier pushes are spread evenly over the agent's run.
+ */
 export function pushDots(task: WireTask): PushDot[] {
   return task.agents.flatMap((slot): PushDot[] => {
     const push = slot.push;
@@ -84,7 +97,7 @@ export function pushDots(task: WireTask): PushDot[] {
   });
 }
 
-// The merge into main, once the verdict says the winner merged.
+/** The merge into main, once the verdict says the winner merged. */
 export function mergeOf(task: WireTask): GraphInput["merge"] {
   const v = task.verdict;
   const at = ms(v?.judgedAt) ?? ms(task.finishedAt);
@@ -98,6 +111,7 @@ function shortSha(commit: string | undefined): string | undefined {
   return commit === undefined ? undefined : commit.slice(0, 7);
 }
 
+/** Places every lane and dot at time `input.t`, so a replay draws the graph as it was. */
 export function gitGraph(input: GraphInput): GitGraph {
   const { start, t } = input;
   const span = Math.max(1, Math.max(input.domainEnd, t) - start);

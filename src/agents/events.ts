@@ -1,10 +1,15 @@
 // Turns Claude Code stream-json output into short steps for the TaskRoom log.
 
+/** One line in the TaskRoom's step log: what an agent did, already clipped for display. */
 export interface Step {
   kind: "init" | "text" | "tool" | "result" | "error" | "claim";
   text: string;
 }
 
+/**
+ * The final `result` event of a Claude Code run: whether it failed, its last message, and what it
+ * cost.
+ */
 export interface RunResult {
   isError: boolean;
   text: string;
@@ -14,8 +19,10 @@ export interface RunResult {
 
 const MAX_STEP_TEXT = 500;
 
-// Splits complete lines off the front of a byte buffer. A partial last line stays unread,
-// so the next read starts at `consumed`.
+/**
+ * Splits complete lines off the front of a byte buffer. A partial last line stays unread,
+ * so the next read starts at `consumed`.
+ */
 export function splitLines(bytes: Uint8Array): { lines: string[]; consumed: number } {
   const end = bytes.lastIndexOf(0x0a);
   if (end < 0) return { lines: [], consumed: 0 };
@@ -23,11 +30,13 @@ export function splitLines(bytes: Uint8Array): { lines: string[]; consumed: numb
   return { lines: text.split("\n").filter((line) => line.trim() !== ""), consumed: end + 1 };
 }
 
+/** Folds whitespace and cuts `text` to at most `max` characters, ending a cut text with an ellipsis. */
 export function clip(text: string, max = MAX_STEP_TEXT): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length <= max ? flat : `${flat.slice(0, max - 1)}…`;
 }
 
+/** Parses one stream-json line; undefined when the line is not JSON. */
 export function parseEvent(line: string): unknown {
   try {
     return JSON.parse(line);
@@ -36,7 +45,7 @@ export function parseEvent(line: string): unknown {
   }
 }
 
-// The final result event. A failed model call still has subtype "success", so read is_error.
+/** The final result event. A failed model call still has subtype "success", so read is_error. */
 export function resultOf(event: unknown): RunResult | undefined {
   if (!isRecord(event) || event.type !== "result") return undefined;
   return {
@@ -47,6 +56,10 @@ export function resultOf(event: unknown): RunResult | undefined {
   };
 }
 
+/**
+ * The log steps for one stream-json event: init, assistant text, tool calls, and the result.
+ * Unknown events give none.
+ */
 export function stepsOf(event: unknown): Step[] {
   if (!isRecord(event)) return [];
   if (event.type === "system" && event.subtype === "init") {
@@ -70,13 +83,15 @@ export function stepsOf(event: unknown): Step[] {
   return steps;
 }
 
-// A sub-command that starts a test runner. Strict on purpose: a heredoc that writes a test file
-// full of `test(...)` calls is not a test run.
+/**
+ * A sub-command that starts a test runner. Strict on purpose: a heredoc that writes a test file
+ * full of `test(...)` calls is not a test run.
+ */
 const TEST_RUN =
   /^(?:timeout\s+(?:-\S+\s+)*\S+\s+)?(?:npx\s+)?(?:vitest|jest|pytest|mocha|(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?t(?:est)?\b|node\s+(?:\S+\s+)*--test\b|go\s+test\b|cargo\s+test\b)/;
 const TEST_RUN_MAX = 80;
 
-// The first sub-command of a shell command that runs the tests, whitespace collapsed.
+/** The first sub-command of a shell command that runs the tests, whitespace collapsed. */
 export function testRunIn(command: string): string | undefined {
   for (const part of command.split(/\n|&&|\|\||;|\|/)) {
     const run = part.replace(/\s+/g, " ").trim();
@@ -85,8 +100,10 @@ export function testRunIn(command: string): string | undefined {
   return undefined;
 }
 
-// A tool call's step text. A long Bash command is clipped, but a test run it holds is kept at the
-// end ("… npm test"), so the page still sees that the agent ran the tests.
+/**
+ * A tool call's step text. A long Bash command is clipped, but a test run it holds is kept at the
+ * end ("… npm test"), so the page still sees that the agent ran the tests.
+ */
 function toolText(name: string, input: unknown): string {
   const full = `${name} ${describeInput(input)}`;
   const text = clip(full);
@@ -97,7 +114,7 @@ function toolText(name: string, input: unknown): string {
   return `${clip(full, MAX_STEP_TEXT - tail.length)}${tail}`;
 }
 
-// The most telling field of a tool call, e.g. the command for Bash or the path for Edit.
+/** The most telling field of a tool call, e.g. the command for Bash or the path for Edit. */
 function describeInput(input: unknown): string {
   if (!isRecord(input)) return "";
   for (const key of ["command", "file_path", "path", "pattern", "description"]) {

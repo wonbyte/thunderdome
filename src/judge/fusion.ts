@@ -10,26 +10,31 @@ import { ask } from "./look";
 import type { ForkScore } from "./score";
 import { CLEF_MODEL, ScorerError, type AiRunner } from "./scorer";
 
-// Clef's yes for "the additions make the change better" must reach this.
+/** Clef's yes for "the additions make the change better" must reach this. */
 export const FUSE_THRESHOLD = 0.6;
+/** One fusion test run is cut off after this many seconds. */
 export const FUSE_TEST_TIMEOUT_S = 180;
-// Diff characters each side of the Clef question keeps.
+/** Diff characters each side of the Clef question keeps. */
 export const FUSE_DIFF_CHARS = 40_000;
-// The winner fork's clone (ThunderdomeSandbox REPO_DIR).
+/** The winner fork's clone (ThunderdomeSandbox REPO_DIR). */
 export const FUSE_REPO_DIR = "/workspace/repo";
-// The kept commits leave the read-only fusion sandbox as a bundle of this ref, so the sandbox that
-// runs the losers' tests never holds a write token.
+/**
+ * The kept commits leave the read-only fusion sandbox as a bundle of this ref, so the sandbox that
+ * runs the losers' tests never holds a write token.
+ */
 export const FUSE_REF = "refs/fusion/result";
+/** Where the fusion sandbox writes the bundle, and where the push sandbox reads it. */
 export const FUSE_BUNDLE_PATH = "/workspace/fusion.bundle";
-// Fusion bundles past this many base64 characters are not pushed (test files are small).
+/** Fusion bundles past this many base64 characters are not pushed (test files are small). */
 export const FUSE_BUNDLE_MAX = 512 * 1_024;
 const NOTE_CHARS = 300;
-// The fusion commit names Thunderdome as committer; its author is the agent whose files it adds.
+/** The fusion commit names Thunderdome as committer; its author is the agent whose files it adds. */
 const COMMITTER = { GIT_COMMITTER_NAME: "Thunderdome", GIT_COMMITTER_EMAIL: "thunderdome@thunderdome.local" };
 
+/** The exit code and output of one command in a sandbox. */
 export interface CommandResult { exitCode: number; stdout: string; stderr: string }
 
-// One loser's files that the winner did not change.
+/** One loser's files that the winner did not change. */
 export interface FuseCandidate {
   agent: string;
   remote: string;
@@ -37,6 +42,10 @@ export interface FuseCandidate {
   files: string[];
 }
 
+/**
+ * What the fusion round starts from: the task, the winner and its passing tests, and the losers'
+ * candidate files.
+ */
 export interface FuseInput {
   task: string;
   winner: string;
@@ -44,28 +53,38 @@ export interface FuseInput {
   candidates: FuseCandidate[];
 }
 
+/**
+ * What the fusion round needs from the outside. Injected so it runs in plain Node tests against
+ * real git.
+ */
 export interface FuseDeps {
-  // Runs argv in the fusion sandbox. cwd is absolute. May throw.
+  /** Runs argv in the fusion sandbox. cwd is absolute. May throw. */
   exec(argv: string[], cwd: string, env?: Record<string, string>): Promise<CommandResult>;
   ai: AiRunner;
   sleep?: (ms: number) => Promise<void>;
-  // When now() passes deadline (ms), candidates not yet tried are skipped, so the round ends inside its step.
+  /** When now() passes deadline (ms), candidates not yet tried are skipped, so the round ends inside its step. */
   now?: () => number;
   deadline?: number;
 }
 
-// "coverage": the additions are all tests, so Clef judges what they check that the winner's tests do
-// not. "better": other files, so Clef judges whether they make the change better.
+/**
+ * "coverage": the additions are all tests, so Clef judges what they check that the winner's tests do
+ * not. "better": other files, so Clef judges whether they make the change better.
+ */
 export type FuseQuestion = "coverage" | "better";
 
-// A test file by path: under a test folder, or named *.test.* / *.spec.*.
+/** A test file by path: under a test folder, or named *.test.* / *.spec.*. */
 export function isTestFile(path: string): boolean {
   return /(^|\/)(test|tests|__tests__)\//.test(path) || /\.(test|spec)\.[^/]+$/.test(path);
 }
 
-// "added": kept. "rejected": a gate said no. "failed": the try itself broke.
+/** "added": kept. "rejected": a gate said no. "failed": the try itself broke. */
 export type FuseStatus = "added" | "rejected" | "failed";
 
+/**
+ * One loser's try: its files, whether they were added, and the test run and Clef answer that
+ * decided it.
+ */
 export interface FuseTry {
   agent: string;
   files: string[];
@@ -76,6 +95,7 @@ export interface FuseTry {
   note?: string; // why it was not added
 }
 
+/** The whole fusion round: every try, and the winner fork's head before and after. */
 export interface FusionResult {
   tried: FuseTry[];
   base?: string; // the winner fork's head the fusion started from
@@ -83,8 +103,10 @@ export interface FusionResult {
   error?: string; // why the fusion round itself did not run
 }
 
-// Each eligible loser's files the winner did not change, best-ranked loser first. A loser with the
-// winner's exact fix, or with nothing new, is left out.
+/**
+ * Each eligible loser's files the winner did not change, best-ranked loser first. A loser with the
+ * winner's exact fix, or with nothing new, is left out.
+ */
 export function fusionCandidates(ranked: ForkScore[], forks: JudgedFork[], winner: string, remotes: Record<string, { remote: string; branch: string }>): FuseCandidate[] {
   const win = ranked.find((s) => s.agent === winner);
   if (win === undefined) return [];
@@ -102,6 +124,10 @@ export function fusionCandidates(ranked: ForkScore[], forks: JudgedFork[], winne
   return candidates;
 }
 
+/**
+ * The Clef question for additions that are not all tests: do they make the winning change better
+ * for the task?
+ */
 export const BETTER_QUESTION = {
   better: {
     type: "noul",
@@ -119,8 +145,10 @@ function clipped(diff: string): string {
   return diff.length <= FUSE_DIFF_CHARS ? diff : `${diff.slice(0, FUSE_DIFF_CHARS)}\n[diff clipped at ${FUSE_DIFF_CHARS} chars]`;
 }
 
-// For additions that are all tests. The winner's change comes split into its code and its own
-// tests, so Clef can compare what each set of tests checks.
+/**
+ * For additions that are all tests. The winner's change comes split into its code and its own
+ * tests, so Clef can compare what each set of tests checks.
+ */
 export const COVERAGE_QUESTION = {
   covers: {
     type: "noul",
@@ -137,10 +165,15 @@ export const COVERAGE_QUESTION = {
   },
 } as const;
 
+/** The Clef request that asks BETTER_QUESTION about `additions` on top of the winner's `change`. */
 export function betterRequest(task: string, change: string, additions: string): unknown {
   return { model: CLEF_MODEL, state: { task, change: clipped(change), additions: clipped(additions) }, questions: BETTER_QUESTION };
 }
 
+/**
+ * The Clef request that asks COVERAGE_QUESTION about a loser's `addedTests` next to the winner's
+ * code and tests.
+ */
 export function coverageRequest(task: string, winnerCode: string, winnerTests: string, addedTests: string): unknown {
   const state = { task, winner_code: clipped(winnerCode), winner_tests: winnerTests.trim() === "" ? "(the winner added no tests)" : clipped(winnerTests), added_tests: clipped(addedTests) };
   return { model: CLEF_MODEL, state, questions: COVERAGE_QUESTION };
@@ -154,7 +187,7 @@ async function yesOf(deps: FuseDeps, body: unknown, id: "better" | "covers"): Pr
   return Math.min(1, Math.max(0, yes.noul));
 }
 
-// The fusion commit's message: what was added and why it passed the gates.
+/** The fusion commit's message: what was added and why it passed the gates. */
 export function fusionMessage(winner: string, agent: string, files: string[], tests: TestRun, yes: number, question: FuseQuestion = "better"): string {
   const said = question === "coverage" ? `they check something the task asks that ${winner}'s tests do not` : "they make the change better for the task";
   return [
@@ -168,8 +201,10 @@ export function fusionMessage(winner: string, agent: string, files: string[], te
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 
-// Tries each candidate on top of the winner's clone at FUSE_REPO_DIR, keeping each one that passes
-// the gates as its own commit. Never throws: a broken try is "failed" and the next one still runs.
+/**
+ * Tries each candidate on top of the winner's clone at FUSE_REPO_DIR, keeping each one that passes
+ * the gates as its own commit. Never throws: a broken try is "failed" and the next one still runs.
+ */
 export async function runFusion(deps: FuseDeps, input: FuseInput): Promise<FusionResult> {
   const dir = FUSE_REPO_DIR;
   const tried: FuseTry[] = [];
@@ -200,7 +235,7 @@ export async function runFusion(deps: FuseDeps, input: FuseInput): Promise<Fusio
   return { tried, base, commit: (await must(deps, ["git", "rev-parse", "HEAD"], dir)).stdout.trim() };
 }
 
-// The kept commits (base..commit) as a base64 git bundle of FUSE_REF.
+/** The kept commits (base..commit) as a base64 git bundle of FUSE_REF. */
 export async function fusionBundle(deps: Pick<FuseDeps, "exec">, base: string, commit: string): Promise<string> {
   const dir = FUSE_REPO_DIR;
   await must(deps, ["git", "update-ref", FUSE_REF, commit], dir);
@@ -208,10 +243,12 @@ export async function fusionBundle(deps: Pick<FuseDeps, "exec">, base: string, c
   return (await must(deps, ["base64", "-w0", FUSE_BUNDLE_PATH], dir)).stdout.trim();
 }
 
-// Run in the push sandbox (a fresh clone of the winner fork, after the bundle is fetched into
-// FUSE_REF). The bundle came from a sandbox that ran agent-written tests, so it is pushed only when
-// the fork has not moved, the fusion only adds commits on top of it, and it changes only the files
-// that passed the gates. Returns why not, or undefined when it may be pushed.
+/**
+ * Run in the push sandbox (a fresh clone of the winner fork, after the bundle is fetched into
+ * FUSE_REF). The bundle came from a sandbox that ran agent-written tests, so it is pushed only when
+ * the fork has not moved, the fusion only adds commits on top of it, and it changes only the files
+ * that passed the gates. Returns why not, or undefined when it may be pushed.
+ */
 export async function fusionProblem(deps: Pick<FuseDeps, "exec">, fusion: FusionResult): Promise<string | undefined> {
   const dir = FUSE_REPO_DIR;
   const head = (await must(deps, ["git", "rev-parse", "HEAD"], dir)).stdout.trim();
@@ -273,7 +310,7 @@ async function tryOne(deps: FuseDeps, input: FuseInput, c: FuseCandidate, passed
   return { status: "added", tests, better: yes, question };
 }
 
-// Drops a rejected try: staged files, edits and anything the tests wrote.
+/** Drops a rejected try: staged files, edits and anything the tests wrote. */
 async function reset(deps: FuseDeps, dir: string): Promise<void> {
   try {
     await deps.exec(["git", "reset", "--quiet", "--hard", "HEAD"], dir);
@@ -283,7 +320,7 @@ async function reset(deps: FuseDeps, dir: string): Promise<void> {
   }
 }
 
-// The why's fusion section, or "" when nothing was tried.
+/** The why's fusion section, or "" when nothing was tried. */
 export function fusionWhy(result: FusionResult): string {
   if (result.tried.length === 0) return "";
   const lines = result.tried.map((t) => {

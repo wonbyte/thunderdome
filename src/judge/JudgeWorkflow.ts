@@ -1,4 +1,4 @@
-// Thin Workflow around judge.ts and ship.ts: one step per fork and a look step, all at once, then decide, ship, then save the verdict.
+// The judge Workflow around judge.ts, look.ts, fusion.ts and ship.ts: forks and look in parallel, then decide, fuse, ship and save the verdict.
 import { launch, type Browser } from "@cloudflare/puppeteer";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 
@@ -36,37 +36,39 @@ const FORK_STEP = {
   retries: { limit: 2, delay: "10 seconds", backoff: "exponential" },
   timeout: `${FORK_STEP_TIMEOUT_S} seconds`,
 } as const;
-// Long enough for a conflict race: clones, resolvers (RESOLVE_TIME_S), their tests, then the push.
+/** Long enough for a conflict race: clones, resolvers (RESOLVE_TIME_S), their tests, then the push. */
 const SHIP_STEP = {
   retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
   timeout: "20 minutes",
 } as const;
-// Tests and one Clef question per losing fork with new files. No retries: see the fuse step.
+/** Tests and one Clef question per losing fork with new files. No retries: see the fuse step. */
 const FUSE_STEP = {
   retries: { limit: 0, delay: "10 seconds", backoff: "constant" },
   timeout: "10 minutes",
 } as const;
-// No new candidate starts after this; with one test run (FUSE_TEST_TIMEOUT_S) and the push after
-// it, the round ends well inside FUSE_STEP's timeout.
+/**
+ * No new candidate starts after this; with one test run (FUSE_TEST_TIMEOUT_S) and the push after
+ * it, the round ends well inside FUSE_STEP's timeout.
+ */
 const FUSE_BUDGET_MS = 5 * 60 * 1_000;
-// A push may not start later than this after the budget.
+/** A push may not start later than this after the budget. */
 const FUSE_PUSH_MS = 2 * 60 * 1_000;
-// Screenshots and Clef questions for every fork, after waiting for the final previews.
+/** Screenshots and Clef questions for every fork, after waiting for the final previews. */
 const LOOK_STEP = {
   retries: { limit: 1, delay: "10 seconds", backoff: "constant" },
   timeout: "10 minutes",
 } as const;
-// A fork's final preview builds after its last push; the judge waits this long for it.
+/** A fork's final preview builds after its last push; the judge waits this long for it. */
 const PREVIEW_WAIT_MS = 3 * 60 * 1_000;
-// The whole look, preview wait included, must end well inside LOOK_STEP's timeout.
+/** The whole look, preview wait included, must end well inside LOOK_STEP's timeout. */
 const LOOK_BUDGET_MS = 8 * 60 * 1_000;
 const PREVIEW_POLL_MS = 5_000;
 const PAGE_TIMEOUT_MS = 30_000;
-// Base64 written per exec call, under the kernel's limit for one argument.
+/** Base64 written per exec call, under the kernel's limit for one argument. */
 const BUNDLE_CHUNK = 64 * 1_024;
 const TOKEN_TTL_S = 3_600;
 const LOG_LIMIT = 200; // commits read from each repo to find a fork's starting point
-// The merge commit names Thunderdome, not an agent.
+/** The merge commit names Thunderdome, not an agent. */
 const SHIP_IDENTITY = {
   GIT_AUTHOR_NAME: "Thunderdome",
   GIT_AUTHOR_EMAIL: "thunderdome@thunderdome.local",
@@ -76,9 +78,16 @@ const SHIP_IDENTITY = {
 
 type Sandbox = ReturnType<Env["SANDBOX"]["getByName"]>;
 
+/** The judge Workflow's output: the verdict plus what shipping did. */
 export type JudgeOutput = JudgeResult & { ship: ShipResult };
 
+/**
+ * The judge Workflow: tests and scores every fork and looks at the previews in parallel, picks the
+ * winner, runs the fusion round, ships the result and saves the verdict. Each part is a step, so a
+ * retry resumes where it failed.
+ */
 export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
+  /** Judges, fuses and ships one race. Each part is a durable step. */
   override async run(event: WorkflowEvent<JudgeInput>, step: WorkflowStep): Promise<JudgeOutput> {
     const input = event.payload;
     // Every fork is judged in its own sandbox, and the look needs only the previews, so all of
@@ -134,7 +143,7 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
   }
 }
 
-// The verdict's scores: one per fork, in ranked order.
+/** The verdict's scores: one per fork, in ranked order. */
 function verdictScores(ranked: ForkScore[]): VerdictScore[] {
   return ranked.map(({ agent, total, eligible, parts }) => ({
     agent,
@@ -155,8 +164,10 @@ async function commitHashes(artifacts: Artifacts, name: string): Promise<string[
   return (await repo.log({ limit: LOG_LIMIT })).map((c) => c.hash);
 }
 
-// Waits for each fork's final preview, then judges the look. Never throws: a failure means the
-// race is judged without look, and the error is kept in the result.
+/**
+ * Waits for each fork's final preview, then judges the look. Never throws: a failure means the
+ * race is judged without look, and the error is kept in the result.
+ */
 async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> {
   // A promise, so forks shot at once share one browser.
   let browser: Promise<Browser> | undefined;
@@ -188,7 +199,7 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
   }
 }
 
-// A JPEG of the whole page, base64. A page that does not answer 2xx is an error, not a screenshot.
+/** A JPEG of the whole page, base64. A page that does not answer 2xx is an error, not a screenshot. */
 async function screenshot(browser: Browser, url: string, viewport: Viewport): Promise<string> {
   const page = await browser.newPage();
   try {
@@ -202,7 +213,7 @@ async function screenshot(browser: Browser, url: string, viewport: Viewport): Pr
   }
 }
 
-// The commit the fork started from, so its diff holds only the agent's changes.
+/** The commit the fork started from, so its diff holds only the agent's changes. */
 async function forkBase(artifacts: Artifacts, source: string, fork: string): Promise<string> {
   const [forkLog, sourceLog] = await Promise.all([commitHashes(artifacts, fork), commitHashes(artifacts, source)]);
   const base = forkPoint(forkLog, sourceLog);
@@ -210,13 +221,13 @@ async function forkBase(artifacts: Artifacts, source: string, fork: string): Pro
   return base;
 }
 
-// A short-lived read token for the fork.
+/** A short-lived read token for the fork. */
 async function readToken(artifacts: Artifacts, name: string): Promise<string> {
   using repo = await artifacts.get(name);
   return (await repo.createToken("read", TOKEN_TTL_S)).plaintext;
 }
 
-// Clones the fork into its own judge sandbox, judges it, and stops the sandbox.
+/** Clones the fork into its own judge sandbox, judges it, and stops the sandbox. */
 async function judgeInSandbox(env: Env, input: JudgeInput, fork: JudgeFork): Promise<JudgedFork> {
   const base = await forkBase(env.ARTIFACTS, input.repo, fork.fork);
   const sandbox = env.SANDBOX.getByName(`judge-${fork.fork}`);
@@ -230,8 +241,10 @@ async function judgeInSandbox(env: Env, input: JudgeInput, fork: JudgeFork): Pro
   }
 }
 
-// Merges the winner into the source repo and locks every fork. shipTask never throws, so a
-// failed source lookup or clone becomes status "error" and the forks are still locked.
+/**
+ * Merges the winner into the source repo and locks every fork. shipTask never throws, so a
+ * failed source lookup or clone becomes status "error" and the forks are still locked.
+ */
 async function shipInSandbox(env: Env, input: JudgeInput, result: JudgeResult): Promise<ShipResult> {
   const deps = (git: ShipDeps["git"], resolver?: ShipResolver): ShipDeps => ({
     git,
@@ -256,10 +269,12 @@ async function shipInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   }
 }
 
-// The fusion round in two sandboxes, like the conflict race. The fuse sandbox runs the losers'
-// agent-written tests, so it holds read tokens only; the kept commits leave it as a bundle. A
-// second sandbox holds the winner fork's write token, runs only git, checks the bundle
-// (fusionProblem) and pushes it. Time-boxed so nothing is pushed after the step gives up.
+/**
+ * The fusion round in two sandboxes, like the conflict race. The fuse sandbox runs the losers'
+ * agent-written tests, so it holds read tokens only; the kept commits leave it as a bundle. A
+ * second sandbox holds the winner fork's write token, runs only git, checks the bundle
+ * (fusionProblem) and pushes it. Time-boxed so nothing is pushed after the step gives up.
+ */
 async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): Promise<FusionResult> {
   const winner = input.forks.find((f) => f.agent === result.winner);
   const judged = result.forks.find((f) => f.agent === result.winner);
@@ -294,7 +309,7 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   return { ...rest, tried: fused.tried.map((t) => (t.status === "added" ? { ...t, status: "failed" as const, note: problem } : t)), error: problem };
 }
 
-// Pushes a checked fusion bundle to the winner's fork. Runs no agent code. Returns why it did not push.
+/** Pushes a checked fusion bundle to the winner's fork. Runs no agent code. Returns why it did not push. */
 async function pushFusion(env: Env, winner: JudgeFork, winnerRead: string, fused: FusionResult, bundle: string): Promise<string | undefined> {
   using fork = await env.ARTIFACTS.get(winner.fork);
   const write = await fork.createToken("write", TOKEN_TTL_S);
@@ -317,7 +332,7 @@ async function pushFusion(env: Env, winner: JudgeFork, winnerRead: string, fused
   }
 }
 
-// Writes a base64 bundle into a sandbox in chunks (one exec argument has a size limit), then decodes it.
+/** Writes a base64 bundle into a sandbox in chunks (one exec argument has a size limit), then decodes it. */
 async function writeBundle(box: Sandbox, bundle: string, path: string): Promise<void> {
   const b64 = `${path}.b64`;
   await mustIn(box, ["rm", "-f", b64, path]);
@@ -327,8 +342,10 @@ async function writeBundle(box: Sandbox, bundle: string, path: string): Promise<
   await mustIn(box, ["/bin/sh", "-c", 'base64 -d "$1" > "$2"', "decode", b64, path]);
 }
 
-// The conflict race runs in its own sandbox with read tokens and the model API. The source write
-// token stays in the ship sandbox, so no resolver can push; the result comes back as a bundle.
+/**
+ * The conflict race runs in its own sandbox with read tokens and the model API. The source write
+ * token stays in the ship sandbox, so no resolver can push; the result comes back as a bundle.
+ */
 async function raceInSandbox(env: Env, source: ArtifactsRepo, ship: ShipInput, req: ConflictRequest): Promise<RaceOutcome> {
   const winner = ship.forks.find((f) => f.agent === req.winner);
   if (winner === undefined) throw new Error(`No fork for winner ${req.winner}`);
@@ -350,7 +367,7 @@ async function raceInSandbox(env: Env, source: ArtifactsRepo, ship: ShipInput, r
   }
 }
 
-// The source repo handle and where it lives. The handle is disposed when info fails.
+/** The source repo handle and where it lives. The handle is disposed when info fails. */
 async function sourceRepo(artifacts: Artifacts, name: string): Promise<{ repo: ArtifactsRepo; info: ShipRepo }> {
   const repo = await artifacts.get(name);
   try {
@@ -373,7 +390,7 @@ function shipInput(input: JudgeInput, result: JudgeResult, source: ShipRepo): Sh
   };
 }
 
-// Git in a clone of the source, made on the first call. With no winner nothing is made.
+/** Git in a clone of the source, made on the first call. With no winner nothing is made. */
 function shipGit(
   env: Env,
   source: ArtifactsRepo,
@@ -422,7 +439,7 @@ function shipGit(
   };
 }
 
-// The write token goes only to the source repo, the read token to the winner fork; the read token is the fallback.
+/** The write token goes only to the source repo, the read token to the winner fork; the read token is the fallback. */
 function shipProps(sourceRemote: string, writeToken: string, winner: ShipFork, winnerRead: string): OutboundProps {
   return {
     gitHost: new URL(sourceRemote).hostname,
@@ -457,7 +474,7 @@ function sandboxDeps(env: Env, sandbox: Sandbox, base: string, taskId: string): 
   };
 }
 
-// Best effort: a failed save is only logged, so the judge goes on. Never throws.
+/** Best effort: a failed save is only logged, so the judge goes on. Never throws. */
 async function saveForkDiff(env: Env, taskId: string, agent: string, diff: string): Promise<void> {
   try {
     await env.TASK_ROOM.getByName(taskId).saveDiff(agent, clipDiff(diff));

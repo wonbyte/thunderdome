@@ -103,7 +103,7 @@ function decidedLabel(by: DecidedBy): string {
   return by === "close" ? "close call" : by === "same" ? "same fix" : `by ${by}`;
 }
 
-// What decided the races, as one stacked bar.
+/** What decided the races, as one stacked bar. */
 function decidedBar(stats: RaceStats): HTMLElement | undefined {
   const parts = (["code", "claims", "close", "same"] as const).filter((k) => stats.decided[k] > 0);
   const total = parts.reduce((n, k) => n + stats.decided[k], 0);

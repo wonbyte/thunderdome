@@ -4,19 +4,25 @@ import { PLAY_AGENTS, parsePlay, playDailyLimit, utcDay } from "../play/play";
 import type { PlayQuota } from "../play/PlayQuota";
 import { newTaskId } from "../room/task";
 
-// The one PlayQuota instance.
+/** The one PlayQuota instance. */
 export const PLAY_QUOTA_NAME = "daily";
 
+/** The bindings and settings the play routes use. */
 export type PlayEnv = Pick<Env, "TASK_ROOM"> & {
   PLAY_QUOTA: DurableObjectNamespace<PlayQuota>;
   PLAY_INVITE?: string;
   PLAY_DAILY_LIMIT?: string;
 };
 
+/** True for the play API routes. */
 export function isPlayPath(pathname: string): boolean {
   return pathname === "/play" || pathname === "/play/quota";
 }
 
+/**
+ * POST /play starts a race when the input checks and the quota allow it; GET /play/quota shows
+ * today's quota.
+ */
 export async function handlePlay(request: Request, env: PlayEnv): Promise<Response> {
   const { pathname } = new URL(request.url);
   const day = utcDay(new Date());
@@ -31,8 +37,10 @@ export async function handlePlay(request: Request, env: PlayEnv): Promise<Respon
   return startPlay(request, env, day, limit, invite);
 }
 
-// Checks the input, takes the quota, then creates and runs the task. A failed create or run
-// does not give the play back. The fork tokens are never read into the response.
+/**
+ * Checks the input, takes the quota, then creates and runs the task. A failed create or run
+ * does not give the play back. The fork tokens are never read into the response.
+ */
 async function startPlay(request: Request, env: PlayEnv, day: string, limit: number, invite: string): Promise<Response> {
   const input = parsePlay(await request.json().catch(() => undefined), invite);
   if ("error" in input) return Response.json({ error: input.error }, { status: input.status });

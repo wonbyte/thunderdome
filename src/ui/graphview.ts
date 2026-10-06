@@ -34,7 +34,7 @@ function titled<T extends SVGElement>(node: T, title: string): T {
 
 let shown = new Set<string>();
 
-// Replaces the graph in `host`. Dots and the merge that were not drawn before pop in.
+/** Replaces the graph in `host`. Dots and the merge that were not drawn before pop in. */
 export function drawGraph(host: Element, graph: GitGraph, live: boolean, onLane: (agent: string) => void): void {
   const height = TOP + (graph.lanes.length + 1) * LANE_H - 8;
   const root = svg("svg", { viewBox: `0 0 ${W} ${height}`, role: "img", "aria-label": "Git graph of the race" }, "graph-svg");

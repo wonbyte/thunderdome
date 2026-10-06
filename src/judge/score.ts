@@ -1,12 +1,18 @@
 // Pure fork scoring: no I/O, no imports from cloudflare:workers.
+
+/** Points per part for a race not judged on look. They add up to 100. */
 export const WEIGHTS = { tests: 50, taskFit: 25, clarity: 15, claim: 10 } as const;
-// Weights for a race judged on the look of each fork's preview too (the task asks for a visible change).
+/** Weights for a race judged on the look of each fork's preview too (the task asks for a visible change). */
 export const LOOK_WEIGHTS = { tests: 45, taskFit: 20, clarity: 10, look: 15, claim: 10 } as const;
+/** Points per part; `look` is set only for a race judged on look. */
 export interface Weights { tests: number; taskFit: number; clarity: number; look?: number; claim: number }
-// Points off the claim part for changing a file held only as shared when another fork showed the
-// task could be done without it. Small, so an avoidable clash breaks near-ties but does not outweigh a better fix.
+/**
+ * Points off the claim part for changing a file held only as shared when another fork showed the
+ * task could be done without it. Small, so an avoidable clash breaks near-ties but does not outweigh a better fix.
+ */
 export const SHARED_COST = 2;
 
+/** Everything scoring needs to know about one fork. */
 export interface ForkInput {
   agent: string;
   testsPassed: number;
@@ -23,9 +29,11 @@ export interface ForkInput {
   lookError?: string; // why the fork's preview could not be judged (then look is 0)
 }
 
-// A fingerprint of a unified diff's changed lines, each with its file, that ignores whitespace,
-// blank lines and line order, so two forks that wrote the same fix get the same value.
-// Not a security hash: it only compares forks.
+/**
+ * A fingerprint of a unified diff's changed lines, each with its file, that ignores whitespace,
+ * blank lines and line order, so two forks that wrote the same fix get the same value.
+ * Not a security hash: it only compares forks.
+ */
 export function fixFingerprint(diff: string): string {
   const lines: string[] = [];
   let file = "";
@@ -56,7 +64,7 @@ export function fixFingerprint(diff: string): string {
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, "0");
 }
 
-// Points per part, each rounded to 2 decimals.
+/** Points per part, each rounded to 2 decimals. */
 export interface ScoreParts {
   tests: number;
   taskFit: number;
@@ -65,6 +73,7 @@ export interface ScoreParts {
   claim: number;
 }
 
+/** One fork's score: its points per part and total, and what the claim part found. */
 export interface ForkScore {
   agent: string;
   parts: ScoreParts;
@@ -77,6 +86,7 @@ export interface ForkScore {
   input: ForkInput;
 }
 
+/** Every fork ranked, the weights used, and the winner. */
 export interface ScoreResult {
   weights: Weights; // LOOK_WEIGHTS when any fork has a look, else WEIGHTS
   ranked: ForkScore[]; // eligible first, then total desc, then linesChanged asc, then endedAt asc, then input order
@@ -85,19 +95,19 @@ export interface ScoreResult {
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
 
-// Clamps x to lo..hi; NaN becomes lo.
+/** Clamps x to lo..hi; NaN becomes lo. */
 function clamp(x: number, lo: number, hi: number): number {
   if (Number.isNaN(x)) return lo;
   return Math.min(hi, Math.max(lo, x));
 }
 
-// Changed files that are not in the claimed set (exact match, no duplicates).
+/** Changed files that are not in the claimed set (exact match, no duplicates). */
 function unclaimedFiles(filesChanged: string[], filesClaimed: string[]): string[] {
   const claimed = new Set(filesClaimed);
   return [...new Set(filesChanged.filter((file) => !claimed.has(file)))];
 }
 
-// True when every changed file was claimed. No changes counts as kept.
+/** True when every changed file was claimed. No changes counts as kept. */
 export function claimKept(filesChanged: string[], filesClaimed: string[]): boolean {
   return unclaimedFiles(filesChanged, filesClaimed).length === 0;
 }
@@ -107,21 +117,23 @@ function testPoints(passed: number, total: number, weight: number): number {
   return (weight * clamp(passed, 0, total)) / total;
 }
 
-// Changed files that were claimed only as shared.
+/** Changed files that were claimed only as shared. */
 function sharedFiles(filesChanged: string[], filesShared: string[] = []): string[] {
   const shared = new Set(filesShared);
   return [...new Set(filesChanged.filter((file) => shared.has(file)))];
 }
 
-// Full points when every changed file was claimed, SHARED_COST less when some were shared, none when some were not claimed.
+/** Full points when every changed file was claimed, SHARED_COST less when some were shared, none when some were not claimed. */
 function claimPoints(kept: boolean, shared: string[], weight: number): number {
   if (!kept) return 0;
   return shared.length > 0 ? weight - SHARED_COST : weight;
 }
 
-// `needed` holds the files every other eligible fork changed too; a clash on one of those was
-// unavoidable and costs nothing. scoreFork alone does not know the other forks, so every clash costs.
-// With look weights, a fork without a look (its preview failed) gets 0 look points.
+/**
+ * `needed` holds the files every other eligible fork changed too; a clash on one of those was
+ * unavoidable and costs nothing. scoreFork alone does not know the other forks, so every clash costs.
+ * With look weights, a fork without a look (its preview failed) gets 0 look points.
+ */
 export function scoreFork(input: ForkInput, needed: ReadonlySet<string> = new Set(), weights: Weights = WEIGHTS): ForkScore {
   const unclaimed = unclaimedFiles(input.filesChanged, input.filesClaimed);
   const kept = unclaimed.length === 0;
@@ -154,28 +166,30 @@ function isEligible(input: ForkInput): boolean {
   return input.testsPassed > 0 && input.filesChanged.length > 0;
 }
 
-// The files every eligible fork other than `fork` changed. With no other eligible fork, nobody showed
-// a way around any file, so every file counts as needed.
+/**
+ * The files every eligible fork other than `fork` changed. With no other eligible fork, nobody showed
+ * a way around any file, so every file counts as needed.
+ */
 export function neededFiles(fork: ForkInput, inputs: ForkInput[]): Set<string> {
   const others = inputs.filter((other) => other !== fork && isEligible(other));
   if (others.length === 0) return new Set(fork.filesChanged);
   return new Set(fork.filesChanged.filter((file) => others.every((other) => other.filesChanged.includes(file))));
 }
 
-// Milliseconds of an ISO time; a missing or bad time sorts last.
+/** Milliseconds of an ISO time; a missing or bad time sorts last. */
 export function endedMs(input: ForkInput): number {
   const ms = input.endedAt === undefined ? NaN : Date.parse(input.endedAt);
   return Number.isNaN(ms) ? Infinity : ms;
 }
 
-// Earlier end first; equal (or both missing) ends compare as 0.
+/** Earlier end first; equal (or both missing) ends compare as 0. */
 function byEnd(a: ForkInput, b: ForkInput): number {
   const x = endedMs(a);
   const y = endedMs(b);
   return x === y ? 0 : x < y ? -1 : 1;
 }
 
-// Eligible first, then total desc, then linesChanged asc, then endedAt asc; the stable sort keeps input order.
+/** Eligible first, then total desc, then linesChanged asc, then endedAt asc; the stable sort keeps input order. */
 export function rankForks(scores: ForkScore[]): ForkScore[] {
   return scores.toSorted(
     (a, b) =>
@@ -186,7 +200,7 @@ export function rankForks(scores: ForkScore[]): ForkScore[] {
   );
 }
 
-// The race is judged on look when the judge gave any fork a look score.
+/** The race is judged on look when the judge gave any fork a look score. */
 export function scoreForks(inputs: ForkInput[]): ScoreResult {
   const weights: Weights = inputs.some((input) => input.look !== undefined) ? LOOK_WEIGHTS : WEIGHTS;
   const ranked = rankForks(inputs.map((input) => scoreFork(input, neededFiles(input, inputs), weights)));

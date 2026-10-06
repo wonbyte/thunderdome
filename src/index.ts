@@ -1,3 +1,6 @@
+// The Thunderdome Worker: routes every request, checks who may call it, and exports the
+// Durable Objects, Workflows and the Outbound Worker that wrangler.jsonc binds.
+
 import { isArtifactsError, isRepoName } from "./artifacts/repo";
 import { accessFor, pageAsset } from "./routes/access";
 import { modelCheck } from "./routes/admin";

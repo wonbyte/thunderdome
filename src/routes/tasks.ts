@@ -8,23 +8,28 @@ import { isForkAgent } from "./access";
 export { judgeInput } from "../room/task";
 
 const JUDGE_PATH = /^\/tasks\/([^/]+)\/judge$/;
-// The one RaceIndex instance.
+/** The one RaceIndex instance. */
 const RACE_INDEX_NAME = "all";
-// Ids one backfill call may record.
+/** Ids one backfill call may record. */
 const MAX_BACKFILL_IDS = 50;
 
 type TasksEnv = Pick<Env, "TASK_ROOM" | "RACE_INDEX">;
 
+/** True for /tasks and every route under it. */
 export function isTasksPath(pathname: string): boolean {
   return pathname === "/tasks" || pathname.startsWith("/tasks/");
 }
 
-// Task id when the path is exactly /tasks/:id/judge with a valid id, else undefined.
+/** Task id when the path is exactly /tasks/:id/judge with a valid id, else undefined. */
 export function judgeTaskId(pathname: string): string | undefined {
   const id = JUDGE_PATH.exec(pathname)?.[1];
   return id !== undefined && isTaskId(id) ? id : undefined;
 }
 
+/**
+ * The /tasks routes: list and create races, read one, run it, and its forks, diffs, steps and
+ * claims. The caller checks admin auth first.
+ */
 export async function handleTasks(request: Request, env: TasksEnv): Promise<Response> {
   const { pathname } = new URL(request.url);
   if (pathname === "/tasks") {
@@ -85,14 +90,14 @@ export async function handleTasks(request: Request, env: TasksEnv): Promise<Resp
   return notFound();
 }
 
-// GET /tasks/:id/forks/:agent/diff: the diff the judge scored for the fork, once it saved one.
+/** GET /tasks/:id/forks/:agent/diff: the diff the judge scored for the fork, once it saved one. */
 async function forkDiff(request: Request, env: TasksEnv, id: string, agent: string): Promise<Response> {
   if (request.method !== "GET") return methodNotAllowed("GET");
   const saved = await env.TASK_ROOM.getByName(id).forkDiff(agent);
   return saved === null ? notFound() : Response.json({ agent, diff: saved.diff, clipped: saved.clipped });
 }
 
-// POST /admin/races: records races made before the index. Unknown ids come back in missing.
+/** POST /admin/races: records races made before the index. Unknown ids come back in missing. */
 export async function handleRaceBackfill(request: Request, env: TasksEnv): Promise<Response> {
   const ids = backfillIds(await jsonObject(request));
   if (ids === undefined) return Response.json({ error: `Body must be { ids: 1..${MAX_BACKFILL_IDS} task ids }` }, { status: 400 });
@@ -112,9 +117,11 @@ export async function handleRaceBackfill(request: Request, env: TasksEnv): Promi
   return Response.json({ recorded, missing });
 }
 
-// POST /admin/purge: deletes races for good: their repos, their room state, and their place in
-// the race list. { ids } purges those ids; an empty body purges every race in the list. A race
-// still running or being judged is skipped, as is one whose repos fail to delete.
+/**
+ * POST /admin/purge: deletes races for good: their repos, their room state, and their place in
+ * the race list. { ids } purges those ids; an empty body purges every race in the list. A race
+ * still running or being judged is skipped, as is one whose repos fail to delete.
+ */
 export async function handlePurge(request: Request, env: TasksEnv): Promise<Response> {
   const body = await jsonObject(request);
   const index = env.RACE_INDEX.getByName(RACE_INDEX_NAME);
@@ -132,7 +139,7 @@ export async function handlePurge(request: Request, env: TasksEnv): Promise<Resp
   return Response.json({ purged, skipped });
 }
 
-// The unique ids in first-seen order, or undefined when the body is not { ids: 1..50 task ids }.
+/** The unique ids in first-seen order, or undefined when the body is not { ids: 1..50 task ids }. */
 function backfillIds(body: Record<string, unknown> | undefined): string[] | undefined {
   const ids = body?.ids;
   if (!Array.isArray(ids) || ids.length < 1 || ids.length > MAX_BACKFILL_IDS) return undefined;
@@ -140,7 +147,7 @@ function backfillIds(body: Record<string, unknown> | undefined): string[] | unde
   return [...new Set(ids)];
 }
 
-// POST starts the judge on a finished task; GET returns its status and output.
+/** POST starts the judge on a finished task; GET returns its status and output. */
 export async function handleJudge(request: Request, env: Pick<Env, "TASK_ROOM" | "JUDGE">, id: string): Promise<Response> {
   if (request.method === "POST") return startJudge(env, id);
   if (request.method !== "GET") return methodNotAllowed("GET, POST");
@@ -149,7 +156,7 @@ export async function handleJudge(request: Request, env: Pick<Env, "TASK_ROOM" |
   return Response.json({ id: instance.id, ...(await instance.status()) });
 }
 
-// The room starts the judge on its own; this is the manual start for when it did not.
+/** The room starts the judge on its own; this is the manual start for when it did not. */
 async function startJudge(env: Pick<Env, "TASK_ROOM" | "JUDGE">, id: string): Promise<Response> {
   const room = env.TASK_ROOM.getByName(id);
   const task = await room.state();
@@ -176,7 +183,7 @@ async function alreadyJudged(instance: WorkflowInstance): Promise<Response> {
   return Response.json({ error: "Task is already judged or being judged", id: instance.id, status }, { status: 409 });
 }
 
-// The task's judge instance, or undefined when none was started.
+/** The task's judge instance, or undefined when none was started. */
 async function judgeInstance(env: Pick<Env, "JUDGE">, id: string): Promise<WorkflowInstance | undefined> {
   try {
     return await env.JUDGE.get(judgeInstanceId(id));

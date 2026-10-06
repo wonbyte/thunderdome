@@ -3,23 +3,25 @@ import { thunderdomeApiBase, MODEL_API_HOST } from "../sandbox/policy";
 import type { RaceMemory } from "../room/races";
 import { systemPrompt, type AgentName } from "./prompt";
 
+/** How long one agent may run before the sandbox stops it and the run ends as a timeout. */
 export const AGENT_TIME_LIMIT_MS = 8 * 60 * 1_000;
-// Each check is a request to the container, which keeps it awake, and flushes new steps.
+/** Each check is a request to the container, which keeps it awake, and flushes new steps. */
 export const POLL_INTERVAL_MS = 10 * 1_000;
 export { MODEL_API_HOST };
-// Claude Code needs a key to start. The Outbound Worker replaces it with the real key.
+/** Claude Code needs a key to start. The Outbound Worker replaces it with the real key. */
 export const PLACEHOLDER_API_KEY = "provided-by-worker";
 
-// The hook that commits and pushes the agent's work as it goes (image/autopush.mjs).
+/** The hook that commits and pushes the agent's work as it goes (image/autopush.mjs). */
 export const AUTOPUSH_HOOK_PATH = "/usr/local/bin/autopush";
-// Outside the repo, so it stays out of the diff (same dir as ThunderdomeSandbox's RUN_DIR).
+/** Outside the repo, so it stays out of the diff (same dir as ThunderdomeSandbox's RUN_DIR). */
 export const AUTOPUSH_STATE_PATH = "/workspace/run/autopush.json";
 
+/** The `hooks` part of Claude Code's settings file. */
 export interface HookSettings {
   hooks: { PostToolUse: { matcher: string; hooks: { type: "command"; command: string }[] }[] };
 }
 
-// Claude Code settings that run the autopush hook after tool calls that can change files.
+/** Claude Code settings that run the autopush hook after tool calls that can change files. */
 export function autopushSettings(): HookSettings {
   return {
     hooks: {
@@ -28,7 +30,7 @@ export function autopushSettings(): HookSettings {
   };
 }
 
-// Everything a sandbox needs to run one agent on one fork.
+/** Everything a sandbox needs to run one agent on one fork. */
 export interface AgentSpec {
   taskId: string;
   agent: AgentName;
@@ -38,17 +40,19 @@ export interface AgentSpec {
   defaultBranch: string;
   prompt: string;
   deadline: number;
-  // Empty means Claude Code picks its default model.
+  /** Empty means Claude Code picks its default model. */
   model: string;
-  // Earlier races on the same app; missing = none.
+  /** Earlier races on the same app; missing = none. */
   memory?: RaceMemory[];
 }
 
+/** How an agent run ended. */
 export type AgentEnd = "done" | "failed" | "timeout";
 
+/** What the sandbox reports when an agent run ends. */
 export interface AgentOutcome {
   end: AgentEnd;
-  // The fork head after the run, and whether the run added commits to it.
+  /** The fork head after the run, and whether the run added commits to it. */
   commit?: string;
   pushed: boolean;
   summary?: string;
@@ -57,6 +61,10 @@ export interface AgentOutcome {
   turns?: number;
 }
 
+/**
+ * The Claude Code command line and environment for one agent run. The API key is a placeholder; the
+ * Outbound Worker puts the real key on the request.
+ */
 export function agentCommand(spec: AgentSpec): { argv: string[]; env: Record<string, string> } {
   const minutes = Math.max(1, Math.round((spec.deadline - Date.now()) / 60_000));
   const model = spec.model === "" ? [] : ["--model", spec.model];
@@ -91,7 +99,7 @@ export function agentCommand(spec: AgentSpec): { argv: string[]; env: Record<str
   };
 }
 
-// Commits made in a fork name the agent that made them.
+/** Commits made in a fork name the agent that made them. */
 export function gitIdentity(agent: AgentName): Record<string, string> {
   const name = `Thunderdome ${agent}`;
   const email = `${agent}@thunderdome.local`;

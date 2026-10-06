@@ -3,13 +3,17 @@
 import type { ClaimBoard, ClaimResult } from "../room/claims";
 import { THUNDERDOME_API_PREFIX, type OutboundProps } from "./policy";
 
-// The TaskRoom methods this API uses.
+/** The TaskRoom methods this API uses. */
 export interface ClaimRoom {
   claim(agent: string, files: unknown, shared: boolean): ClaimResult | Promise<ClaimResult>;
   release(agent: string, files?: unknown): { ok: boolean } | Promise<{ ok: boolean }>;
   claimBoard(): ClaimBoard | Promise<ClaimBoard>;
 }
 
+/**
+ * Answers an agent's claim, release and board calls. The agent comes from the Outbound props, never
+ * from the request.
+ */
 export async function handleThunderdomeApi(request: Request, props: OutboundProps, roomFor: (taskId: string) => ClaimRoom): Promise<Response> {
   if (new URL(request.url).protocol !== "https:") return Response.json({ error: "HTTPS only" }, { status: 403 });
   if (props.taskId === undefined || props.agent === undefined) {

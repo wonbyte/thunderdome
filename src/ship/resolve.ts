@@ -5,21 +5,33 @@ import { clip, parseEvent, resultOf, type RunResult } from "../agents/events";
 import { PLACEHOLDER_API_KEY } from "../agents/runner";
 import { parseNumstat, parseTestSummary, testCommand, type TestRun } from "../judge/judge";
 
+/** The robots that race to resolve a merge conflict. */
 export const RESOLVERS = ["ponder", "zippy", "testy"] as const;
+/** The id of a conflict resolver. */
 export type ResolverName = (typeof RESOLVERS)[number];
+/** How long each resolver may run. */
 export const RESOLVE_TIME_S = 5 * 60;
+/** One resolver's test run is cut off after this many seconds. */
 export const RESOLVE_TEST_TIMEOUT_S = 180;
-export const RESOLVE_REPO_DIR = "/workspace/repo"; // ThunderdomeSandbox REPO_DIR, where clone() puts the source
+/** The source clone the resolvers branch from (ThunderdomeSandbox REPO_DIR). */
+export const RESOLVE_REPO_DIR = "/workspace/repo";
+/** Each resolver's git worktree lives under this directory. */
 export const RESOLVE_DIR = "/workspace/resolve";
+/** Where the resolve sandbox writes the bundle of committed attempts. */
 export const BUNDLE_PATH = "/workspace/resolve.bundle";
-// Each resolver's Claude Code output goes to a log outside its worktree, so it never gets committed.
+/** Each resolver's Claude Code output goes to a log outside its worktree, so it never gets committed. */
 export const RESOLVE_LOG_DIR = "/workspace/resolve-logs";
 const LOG_TAIL_LINES = 20;
-// Each attempt that made a merge commit keeps it under this ref, so one bundle carries them all.
+/** Each attempt that made a merge commit keeps it under this ref, so one bundle carries them all. */
 export const RESOLVE_REF_PREFIX = "refs/resolve/";
 
+/** The exit code and output of one command in a sandbox. */
 export interface CommandResult { exitCode: number; stdout: string; stderr: string }
 
+/**
+ * A merge that conflicted: the race's task, the winner's fork and head, the source head, and the
+ * files in conflict.
+ */
 export interface ConflictRequest {
   taskId: string;
   prompt: string; // the race's task
@@ -32,17 +44,21 @@ export interface ConflictRequest {
   files: string[]; // the files that conflicted
 }
 
+/** What the conflict race needs from the outside. Injected so it runs in plain Node tests. */
 export interface RaceDeps {
-  // Runs argv in the resolve sandbox. cwd is absolute. May throw.
+  /** Runs argv in the resolve sandbox. cwd is absolute. May throw. */
   exec(argv: string[], cwd: string, env?: Record<string, string>): Promise<CommandResult>;
   now(): number;
   model?: string; // empty or missing: Claude Code's default
 }
 
-// "green": committed and every test passed. "red": committed, tests fail. "unresolved": conflict
-// markers or a broken merge were left. "failed": the attempt itself broke.
+/**
+ * "green": committed and every test passed. "red": committed, tests fail. "unresolved": conflict
+ * markers or a broken merge were left. "failed": the attempt itself broke.
+ */
 export type AttemptStatus = "green" | "red" | "unresolved" | "failed";
 
+/** One resolver's attempt: how it ended, when, and its commit and tests. */
 export interface ResolveAttempt {
   agent: ResolverName;
   status: AttemptStatus;
@@ -54,6 +70,7 @@ export interface ResolveAttempt {
   note?: string; // why it is not green, short
 }
 
+/** The whole conflict race: every attempt, the one chosen, and a bundle of every committed attempt. */
 export interface RaceOutcome {
   attempts: ResolveAttempt[]; // RESOLVERS order
   chosen?: ResolverName;
@@ -73,6 +90,7 @@ const RESOLVER_STYLES: Record<ResolverName, string> = {
   testy: "You are Testy, the test-first resolver. Run the tests early, then resolve until they all pass.",
 };
 
+/** The system prompt add-on for one resolver: its style and the rules of the race. */
 export function resolverPrompt(name: ResolverName, minutes: number): string {
   return [
     RESOLVER_STYLES[name],
@@ -84,6 +102,7 @@ export function resolverPrompt(name: ResolverName, minutes: number): string {
   ].join("\n\n");
 }
 
+/** The task a resolver gets: what the race was for, and which files conflict. */
 export function resolverTask(req: ConflictRequest): string {
   return [
     `A race picked ${req.winner}'s change for this task:`,
@@ -94,6 +113,7 @@ export function resolverTask(req: ConflictRequest): string {
   ].join("\n\n");
 }
 
+/** The Claude Code command line and environment for one resolver. */
 export function resolverCommand(name: ResolverName, req: ConflictRequest, model = ""): { argv: string[]; env: Record<string, string> } {
   const models = model === "" ? [] : ["--model", model];
   return {
@@ -123,22 +143,24 @@ export function resolverCommand(name: ResolverName, req: ConflictRequest, model 
   };
 }
 
-// The resolution commit: the merge message, then a line on how the conflict was resolved.
+/** The resolution commit: the merge message, then a line on how the conflict was resolved. */
 export function resolvedMessage(message: string, name: ResolverName, seconds: number, files: string[], tests: TestRun): string {
   const body = message.endsWith("\n") ? message : `${message}\n`;
   const where = files.length === 0 ? "" : ` in ${files.join(", ")}`;
   return `${body}\nThe source changed during the race, so the merge conflicted${where}. ${name} resolved it in ${seconds} s; tests ${tests.passed}/${tests.total}.\n`;
 }
 
-// Green attempts in finish order; a tie goes to the smaller change, then to RESOLVERS order.
+/** Green attempts in finish order; a tie goes to the smaller change, then to RESOLVERS order. */
 export function pickResolution(attempts: ResolveAttempt[]): ResolverName | undefined {
   const green = attempts.filter((a) => a.status === "green");
   green.sort((a, b) => a.seconds - b.seconds || (a.lines ?? 0) - (b.lines ?? 0) || RESOLVERS.indexOf(a.agent) - RESOLVERS.indexOf(b.agent));
   return green[0]?.agent;
 }
 
-// Sets up one worktree per resolver, runs them all at once, and bundles every committed attempt.
-// Throws only when the shared setup fails; one broken attempt does not stop the others.
+/**
+ * Sets up one worktree per resolver, runs them all at once, and bundles every committed attempt.
+ * Throws only when the shared setup fails; one broken attempt does not stop the others.
+ */
 export async function raceConflict(deps: RaceDeps, req: ConflictRequest): Promise<RaceOutcome> {
   const repo = RESOLVE_REPO_DIR;
   // A retried step can find the worktrees of an earlier try.
@@ -163,7 +185,7 @@ export async function raceConflict(deps: RaceDeps, req: ConflictRequest): Promis
   return { attempts, chosen, bundle };
 }
 
-// A worktree at the source head with the winner's merge in progress, or the error that stopped it.
+/** A worktree at the source head with the winner's merge in progress, or the error that stopped it. */
 async function prepare(deps: RaceDeps, req: ConflictRequest, name: ResolverName): Promise<Error | undefined> {
   const dir = `${RESOLVE_DIR}/${name}`;
   try {
@@ -210,7 +232,7 @@ async function attempt(deps: RaceDeps, req: ConflictRequest, name: ResolverName,
   }
 }
 
-// What the resolver left undone, or undefined when the merge is ready to commit.
+/** What the resolver left undone, or undefined when the merge is ready to commit. */
 async function leftover(deps: RaceDeps, dir: string, req: ConflictRequest): Promise<string | undefined> {
   const head = await deps.exec(["git", "rev-parse", "HEAD"], dir);
   if (head.stdout.trim() !== req.base) return "HEAD moved: the resolver committed or switched branches";

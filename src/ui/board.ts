@@ -4,9 +4,14 @@
 
 // Wire types mirror the server's (Task, LoggedStep, ClaimBoard, LiveEvent, ForkScore), keeping
 // only the fields the board reads, so a real server value is assignable to them.
+
+/** A saved Workers Preview (src/room/task.ts Preview). */
 export interface WirePreview { url: string; commit: string; at: string }
+/** A race's status (src/room/task.ts TaskStatus). */
 export type WireTaskStatus = "creating" | "ready" | "running" | "finished" | "failed";
+/** An agent's status (src/room/task.ts AgentStatus). */
 export type WireAgentStatus = "idle" | "starting" | "running" | "done" | "failed" | "timeout";
+/** One agent of a race (src/room/task.ts AgentSlot). */
 export interface WireAgent {
   name: string; // mirrors AgentSlot.name (the server field is `name`, not `agent`)
   status: WireAgentStatus;
@@ -23,6 +28,7 @@ export interface WireAgent {
   };
   costUsd?: number;
 }
+/** The judge's verdict (src/room/task.ts Verdict). */
 export interface WireVerdict {
   winner: string | null;
   why: string;
@@ -30,6 +36,7 @@ export interface WireVerdict {
   ship?: { status: string; commit?: string; resolve?: { chosen?: string } };
   fusion?: { tried: { agent: string; files: string[]; status: string }[]; commit?: string };
 }
+/** A race as GET /tasks/:id returns it (src/room/task.ts Task). */
 export interface WireTask {
   id: string;
   prompt: string;
@@ -42,20 +49,26 @@ export interface WireTask {
   basePreview?: WirePreview;
   memory?: WireMemory[];
 }
-// One earlier race the robots were told about (src/room/races.ts RaceMemory).
+/** One earlier race the robots were told about (src/room/races.ts RaceMemory). */
 export interface WireMemory { id: string; prompt: string; winner: string; headline?: string; lesson?: string; commit?: string }
+/** One logged agent step (src/room/task.ts LoggedStep). */
 export interface WireStep { seq: number; agent: string; at: string; kind: string; text: string }
+/** One claim (src/room/claims.ts Claim). */
 export interface WireClaim { agent: string; file: string; shared: boolean; at: string }
+/** The claim board (src/room/claims.ts ClaimBoard). */
 export interface WireClaimBoard { active: WireClaim[]; history: WireClaim[] }
+/** A claim's answer as the live feed sends it (src/room/claims.ts ClaimResult). */
 export type WireClaimResult =
   | { ok: true; claimed: string[]; shared: string[]; clashes: { file: string; heldBy: string[] }[] }
   | { ok: false };
+/** One fork's score (src/judge/score.ts ForkScore). */
 export interface WireScore {
   agent: string;
   parts: { tests: number; taskFit: number; clarity: number; look?: number; claim: number };
   total: number;
   eligible: boolean;
 }
+/** One live event (src/room/TaskRoom.ts LiveEvent); replays build the same events from the record. */
 export type BoardEvent =
   | { kind: "snapshot"; taskId: string; task: WireTask | null }
   | { kind: "status"; taskId: string; task: WireTask }
@@ -68,6 +81,7 @@ export type BoardEvent =
   | { kind: "verdict"; taskId: string; verdict: WireVerdict }
   | { kind: "base-preview"; taskId: string; preview: WirePreview };
 
+/** Each robot's color on the page. */
 export const AGENT_COLORS: Readonly<Record<string, string>> = {
   ponder: "#d97757",
   zippy: "#e5484d",
@@ -75,7 +89,7 @@ export const AGENT_COLORS: Readonly<Record<string, string>> = {
   snip: "#30a46c",
   sparkle: "#8e4ec6",
 };
-// The fighters' names on the page. The agent id (the name in lowercase) stays the key everywhere else.
+/** The fighters' names on the page. The agent id (the name in lowercase) stays the key everywhere else. */
 export const AGENT_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   ponder: "Ponder", // thinks before it types
   zippy: "Zippy",
@@ -83,9 +97,9 @@ export const AGENT_DISPLAY_NAMES: Readonly<Record<string, string>> = {
   snip: "Snip", // the smallest diff
   sparkle: "Sparkle", // code that sparks joy
 };
-// Every robot's agent id.
+/** Every robot's agent id. */
 export const AGENT_IDS: readonly string[] = Object.keys(AGENT_DISPLAY_NAMES);
-// Each robot's style, shown next to its name.
+/** Each robot's style, shown next to its name. */
 export const AGENT_STYLE_LABELS: Readonly<Record<string, string>> = {
   ponder: "careful",
   zippy: "fast",
@@ -94,20 +108,24 @@ export const AGENT_STYLE_LABELS: Readonly<Record<string, string>> = {
   sparkle: "tidy",
 };
 
-// The robot's style, or undefined for an agent with none.
+/** The robot's style, or undefined for an agent with none. */
 export function styleLabel(agent: string): string | undefined {
   return Object.prototype.hasOwnProperty.call(AGENT_STYLE_LABELS, agent) ? AGENT_STYLE_LABELS[agent] : undefined;
 }
+/** The color of an agent with none of its own. */
 export const FALLBACK_COLOR = "#8b8d98";
+/** Characters of a step's text the board keeps. */
 export const STEP_TEXT_MAX = 120;
 
-// The fighter's name, or the agent id when it has none.
+/** The fighter's name, or the agent id when it has none. */
 export function displayName(agent: string): string {
   return Object.prototype.hasOwnProperty.call(AGENT_DISPLAY_NAMES, agent) ? (AGENT_DISPLAY_NAMES[agent] ?? agent) : agent;
 }
 
-// The judge's why with each agent id swapped for its name. In the score table (an id followed
-// by 2+ spaces) the padding changes so the columns stay aligned.
+/**
+ * The judge's why with each agent id swapped for its name. In the score table (an id followed
+ * by 2+ spaces) the padding changes so the columns stay aligned.
+ */
 export function whyWithNames(why: string, agents: readonly string[]): string {
   let text = why;
   for (const agent of agents) {
@@ -120,22 +138,24 @@ export function whyWithNames(why: string, agents: readonly string[]): string {
   return text;
 }
 
-// The judge's "Decided by …" line from the why, if it has one.
+/** The judge's "Decided by …" line from the why, if it has one. */
 export function decidedLine(why: string | undefined): string | undefined {
   return why?.split("\n").find((line) => line.startsWith("Decided by"));
 }
 
+/** The robot's color, or FALLBACK_COLOR for an agent with none. */
 export function colorFor(agent: string): string {
   return Object.prototype.hasOwnProperty.call(AGENT_COLORS, agent) ? (AGENT_COLORS[agent] ?? FALLBACK_COLOR) : FALLBACK_COLOR;
 }
 
+/** What a robot is shown doing on the stage. Each action has its own animation. */
 export type Action = "idle" | "think" | "scan" | "hammer" | "charge" | "work" | "flag" | "clash" | "push" | "hurt" | "finished" | "down" | "won" | "lost";
 
 const SCAN_TOOLS: ReadonlySet<string> = new Set(["Read", "Grep", "Glob", "LS"]);
 const HAMMER_TOOLS: ReadonlySet<string> = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const TEST_COMMAND = /\b(vitest|jest|pytest|mocha)\b|\b(npm|pnpm|yarn|bun)\s+(run\s+)?t(est)?\b|--test\b|\btest\b(?!\/)/;
 
-// The robot move for one step. Tool steps are "<Tool> <input>", as src/agents/events.ts writes them.
+/** The robot move for one step. Tool steps are "<Tool> <input>", as src/agents/events.ts writes them. */
 export function actionForStep(step: Pick<WireStep, "kind" | "text">): Action {
   switch (step.kind) {
     case "text":
@@ -181,8 +201,10 @@ function shortText(text: string): string {
   return sentence.length <= BUBBLE_MAX ? sentence : `${sentence.slice(0, BUBBLE_MAX - 1)}…`;
 }
 
-// A short speech-bubble label for a step, e.g. "editing cart.ts" or "running the tests".
-// Undefined for a step that should not replace the bubble (an init step).
+/**
+ * A short speech-bubble label for a step, e.g. "editing cart.ts" or "running the tests".
+ * Undefined for a step that should not replace the bubble (an init step).
+ */
 export function bubbleFor(step: Pick<WireStep, "kind" | "text">): string | undefined {
   const text = step.text.trim();
   switch (step.kind) {
@@ -219,7 +241,9 @@ export function bubbleFor(step: Pick<WireStep, "kind" | "text">): string | undef
   return word === "" ? "working" : `running ${word}`;
 }
 
+/** A robot's score and place once the race is judged. */
 export interface FighterScore { total: number; parts: WireScore["parts"]; eligible: boolean; place: number }
+/** One robot on the stage: what it is doing now, what it has done, and its score. */
 export interface Fighter {
   agent: string;
   color: string;
@@ -236,12 +260,15 @@ export interface Fighter {
   clashFile?: string;
   score?: FighterScore;
 }
+/** How an agent holds a file: claimed first (own) or after another agent (shared). */
 export type Cell = "own" | "shared";
+/** The claim grid: files by agents, and the files with a clash. */
 export interface Grid {
   files: string[]; // sorted, only files someone holds
   cells: Record<string, Record<string, Cell>>; // file -> agent -> cell
   clashes: string[]; // files with 2+ holders, in `files` order
 }
+/** Everything the race page draws, as one value. */
 export interface Board {
   taskId: string;
   task?: WireTask;
@@ -255,13 +282,16 @@ export interface Board {
   lastSeq: number;
 }
 
+/** A board for a task with nothing known yet. */
 export function emptyBoard(taskId: string): Board {
   return { taskId, fighters: [], grid: { files: [], cells: {}, clashes: [] }, claimed: { files: [], cells: {}, clashes: [] }, ended: false, lastSeq: 0 };
 }
 
-// The steps of an agent's race, in order; the squares under each robot.
+/** The steps of an agent's race, in order; the squares under each robot. */
 export const PROGRESS_STEPS = ["started", "claimed", "edited", "tested", "pushed", "won"] as const;
+/** One step of an agent's race. */
 export type ProgressStep = (typeof PROGRESS_STEPS)[number];
+/** Each progress step's label for its square's tooltip. */
 export const PROGRESS_LABELS: Record<ProgressStep, string> = {
   started: "sandbox up",
   claimed: "claimed files",
@@ -271,7 +301,7 @@ export const PROGRESS_LABELS: Record<ProgressStep, string> = {
   won: "won the race",
 };
 
-// The steps this agent has reached. The winner has every step: the full bar is the win.
+/** The steps this agent has reached. The winner has every step: the full bar is the win. */
 export function progressOf(board: Board, f: Fighter): Set<ProgressStep> {
   if (board.winner === f.agent) return new Set(PROGRESS_STEPS);
   const reached = new Set<ProgressStep>();
@@ -288,7 +318,7 @@ export function progressOf(board: Board, f: Fighter): Set<ProgressStep> {
   return reached;
 }
 
-// Built by replaying events, so a page that loads late sees the same board as one that watched live.
+/** Built by replaying events, so a page that loads late sees the same board as one that watched live. */
 export function initBoard(task: WireTask, steps: WireStep[], claims: WireClaimBoard, now: number): Board {
   const taskId = task.id;
   let board = applyEvent(emptyBoard(taskId), { kind: "snapshot", taskId, task }, now);
@@ -310,6 +340,7 @@ export function initBoard(task: WireTask, steps: WireStep[], claims: WireClaimBo
   return board;
 }
 
+/** The board after one event. Pure: returns a new board; `now` (ms) stamps actions. */
 export function applyEvent(board: Board, event: BoardEvent, now: number): Board {
   if (event.taskId !== board.taskId) return board;
   switch (event.kind) {
@@ -357,7 +388,7 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
   }
 }
 
-// Gives each fighter its score and place (index in the judge's ranking + 1). Order is unchanged.
+/** Gives each fighter its score and place (index in the judge's ranking + 1). Order is unchanged. */
 export function applyScores(board: Board, ranked: WireScore[]): Board {
   const fighters = board.fighters.map((f) => {
     const place = ranked.findIndex((score) => score.agent === f.agent);
@@ -374,7 +405,7 @@ function isEnded(status: WireAgentStatus): boolean {
   return status === "done" || status === "failed" || status === "timeout";
 }
 
-// A fighter whose action may still change with steps, claims and pushes.
+/** A fighter whose action may still change with steps, claims and pushes. */
 function isActive(board: Board, f: Fighter): boolean {
   return !board.ended && !isEnded(f.status);
 }
@@ -385,12 +416,12 @@ function endAction(status: WireAgentStatus): Action | undefined {
   return undefined;
 }
 
-// Sets an action and its time; each new move re-triggers the animation.
+/** Sets an action and its time; each new move re-triggers the animation. */
 function act(f: Fighter, action: Action, now: number): Fighter {
   return { ...f, action, actionAt: now };
 }
 
-// Sets an action only when it differs, so a resync does not replay the animation.
+/** Sets an action only when it differs, so a resync does not replay the animation. */
 function settle(f: Fighter, action: Action, now: number): Fighter {
   return f.action === action ? f : act(f, action, now);
 }
@@ -426,7 +457,7 @@ function clipStep(text: string): string {
   return flat.length <= STEP_TEXT_MAX ? flat : `${flat.slice(0, STEP_TEXT_MAX - 1)}…`;
 }
 
-// Steps at or below lastSeq were already seen (a reload replays them).
+/** Steps at or below lastSeq were already seen (a reload replays them). */
 function applySteps(board: Board, steps: WireStep[], now: number): Board {
   let next = board;
   for (const step of steps) {
@@ -467,14 +498,14 @@ function applyClaim(board: Board, agent: string, result: WireClaimResult, now: n
   return next;
 }
 
-// A shared cell stays shared once it was.
+/** A shared cell stays shared once it was. */
 function withCell(cells: Grid["cells"], file: string, agent: string, cell: Cell): Grid["cells"] {
   const row = cells[file] ?? {};
   const kept = row[agent] === "shared" ? "shared" : cell;
   return { ...cells, [file]: { ...row, [agent]: kept } };
 }
 
-// Frees the agent's cells for the given files and clears clash marks that no longer hold.
+/** Frees the agent's cells for the given files and clears clash marks that no longer hold. */
 function releaseCells(board: Board, agent: string, files: string[]): Board {
   const cells: Grid["cells"] = {};
   for (const [file, row] of Object.entries(board.grid.cells)) {
@@ -495,7 +526,7 @@ function releaseCells(board: Board, agent: string, files: string[]): Board {
   return { ...board, grid, fighters };
 }
 
-// Rows with no holder are dropped; a file with 2+ holders is a clash.
+/** Rows with no holder are dropped; a file with 2+ holders is a clash. */
 function gridOf(cells: Grid["cells"]): Grid {
   const kept: Grid["cells"] = {};
   for (const [file, row] of Object.entries(cells)) {
@@ -506,7 +537,7 @@ function gridOf(cells: Grid["cells"]): Grid {
   return { files, cells: kept, clashes };
 }
 
-// The server frees an ended agent's files without a release event, so the board does too.
+/** The server frees an ended agent's files without a release event, so the board does too. */
 function applyAgentEnd(board: Board, agent: string, end: "done" | "failed" | "timeout", status: WireTaskStatus, now: number): Board {
   const at = new Date(now).toISOString();
   let next = board;
@@ -524,7 +555,7 @@ function applyAgentEnd(board: Board, agent: string, end: "done" | "failed" | "ti
   return held.length > 0 ? releaseCells(next, agent, held) : next;
 }
 
-// The winner wins and the rest lose; with no winner, each robot just finishes or goes down.
+/** The winner wins and the rest lose; with no winner, each robot just finishes or goes down. */
 function applyVerdict(board: Board, verdict: { winner: string | null; why: string }, now: number): Board {
   const { winner, why } = verdict;
   const fighters = board.fighters.map((f) => {

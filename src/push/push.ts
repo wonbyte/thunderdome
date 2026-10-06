@@ -4,12 +4,22 @@ import { isAgentName, type AgentName } from "../agents/prompt";
 import { forkName, isRepoName } from "../artifacts/repo";
 import { isTaskId } from "../room/task";
 
+/** The Artifacts event type for a push. */
 export const PUSH_EVENT_TYPE = "cf.artifacts.repo.pushed";
+/** The Artifacts namespace every Thunderdome repo lives in. */
 export const THUNDERDOME_NAMESPACE = "thunderdome";
+/** The only ref whose pushes are recorded and previewed. */
 export const PUSH_REF = "refs/heads/main";
+/** Where the preview's wrangler config is written in the sandbox. */
 export const PREVIEW_CONFIG_PATH = "/workspace/preview.jsonc";
-export const PREVIEW_MAIN = "repo/src/index.ts"; // relative to PREVIEW_CONFIG_PATH's directory
-export const MAX_PREVIEW_NAME_LENGTH = 32; // leaves room for "-<worker>" (worker <= 30 chars) in one 63-char label
+/** The preview's entry point, relative to PREVIEW_CONFIG_PATH's directory. */
+export const PREVIEW_MAIN = "repo/src/index.ts";
+/**
+ * Longest preview name: leaves room for "-<worker>" (worker at most 30 characters) in one
+ * 63-character DNS label.
+ */
+export const MAX_PREVIEW_NAME_LENGTH = 32;
+/** The `kind` of a base preview request from the TaskRoom. */
 export const BASE_REQUEST_KIND = "base";
 
 const MAX_MESSAGE_LENGTH = 500;
@@ -17,6 +27,7 @@ const COMMIT_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const ZERO_COMMIT = /^0+$/;
 const DNS_NAME = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
+/** A checked push to a fork: which task and agent, the new head, and how many commits it added. */
 export interface PushEvent {
   taskId: string;
   agent: AgentName;
@@ -27,7 +38,7 @@ export interface PushEvent {
   message?: string;
 }
 
-// A request to preview the source repo at the commit the forks were made from.
+/** A request to preview the source repo at the commit the forks were made from. */
 export interface BaseRequest {
   kind: "base";
   taskId: string;
@@ -35,7 +46,7 @@ export interface BaseRequest {
   commit: string;
 }
 
-// Inverse of forkName: "<taskId>-<agent>". The agent name has no hyphen, so split at the last one.
+/** Inverse of forkName: "<taskId>-<agent>". The agent name has no hyphen, so split at the last one. */
 export function parseForkName(name: string): { taskId: string; agent: AgentName } | undefined {
   const cut = name.lastIndexOf("-");
   if (cut < 0) return undefined;
@@ -49,7 +60,7 @@ export function parseForkName(name: string): { taskId: string; agent: AgentName 
   }
 }
 
-// The push to a task fork's main branch, or undefined for anything else. Never throws.
+/** The push to a task fork's main branch, or undefined for anything else. Never throws. */
 export function parsePushEvent(event: unknown, namespace: string = THUNDERDOME_NAMESPACE): PushEvent | undefined {
   if (!isRecord(event) || event.type !== PUSH_EVENT_TYPE) return undefined;
   const { source, payload } = event;
@@ -73,7 +84,7 @@ export function parsePushEvent(event: unknown, namespace: string = THUNDERDOME_N
   };
 }
 
-// The base preview request, or undefined for anything else (including an Artifacts push event). Never throws.
+/** The base preview request, or undefined for anything else (including an Artifacts push event). Never throws. */
 export function parseBaseRequest(payload: unknown): BaseRequest | undefined {
   if (!isRecord(payload) || payload.kind !== BASE_REQUEST_KIND) return undefined;
   const { taskId, repo, commit } = payload;
@@ -83,7 +94,7 @@ export function parseBaseRequest(payload: unknown): BaseRequest | undefined {
   return { kind: BASE_REQUEST_KIND, taskId, repo, commit };
 }
 
-// `${taskId}-${agent}`, checked to be a short lowercase DNS label.
+/** `${taskId}-${agent}`, checked to be a short lowercase DNS label. */
 export function previewName(taskId: string, agent: AgentName): string {
   if (!isTaskId(taskId)) throw new Error(`Invalid task id: ${taskId}`);
   if (!isAgentName(agent)) throw new Error(`Invalid agent: ${String(agent)}`);
@@ -92,7 +103,7 @@ export function previewName(taskId: string, agent: AgentName): string {
   return name;
 }
 
-// `${taskId}-base`, checked like previewName.
+/** `${taskId}-base`, checked like previewName. */
 export function basePreviewName(taskId: string): string {
   if (!isTaskId(taskId)) throw new Error(`Invalid task id: ${taskId}`);
   const name = `${taskId}-base`;
@@ -100,12 +111,12 @@ export function basePreviewName(taskId: string): string {
   return name;
 }
 
-// Thunderdome's own wrangler config, so forks need no Wrangler file.
+/** Thunderdome's own wrangler config, so forks need no Wrangler file. */
 export function previewConfig(worker: string, compatibilityDate: string): string {
   return `${JSON.stringify({ name: worker, main: PREVIEW_MAIN, compatibility_date: compatibilityDate, previews: {} }, null, 2)}\n`;
 }
 
-// The first preview URL from `wrangler preview --json`, only when it is https. Never throws.
+/** The first preview URL from `wrangler preview --json`, only when it is https. Never throws. */
 export function previewUrl(stdout: string): string | undefined {
   const output = parseJson(stdout);
   if (!isRecord(output) || !isRecord(output.preview) || !Array.isArray(output.preview.urls)) return undefined;
@@ -119,7 +130,7 @@ export function previewUrl(stdout: string): string | undefined {
   }
 }
 
-// The commit list and count. A missing list is fine only with a valid totalCommitsCount.
+/** The commit list and count. A missing list is fine only with a valid totalCommitsCount. */
 function commitsOf(payload: Record<string, unknown>): { list: Record<string, unknown>[]; count: number } | undefined {
   const total = payload.totalCommitsCount;
   const validTotal = typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : undefined;
@@ -129,7 +140,7 @@ function commitsOf(payload: Record<string, unknown>): { list: Record<string, unk
   return { list, count: validTotal ?? list.length };
 }
 
-// The message of the commit that is `after`, else of the last entry.
+/** The message of the commit that is `after`, else of the last entry. */
 function newestMessage(commits: Record<string, unknown>[], after: string): string | undefined {
   const newest = commits.find((commit) => [commit.id, commit.hash, commit.sha].includes(after)) ?? commits[commits.length - 1];
   if (newest === undefined || typeof newest.message !== "string") return undefined;

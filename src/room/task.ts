@@ -15,20 +15,27 @@ import type { RaceMemory } from "./races";
 
 // A task with N agents uses the first N names.
 export { AGENT_NAMES };
+/** Fewest robots in a race. */
 export const MIN_AGENTS = 3;
+/** Most robots in a race: one per name. */
 export const MAX_AGENTS = AGENT_NAMES.length;
+/** Longest task prompt POST /tasks accepts. */
 export const MAX_PROMPT_LENGTH = 10_000;
-// Pushes remembered per agent, so event retries are recorded once.
+/** Pushes remembered per agent, so event retries are recorded once. */
 export const MAX_SEEN_PUSHES = 50;
 
 const TASK_ID_PATTERN = /^t-[0-9a-f]{8}$/;
 
-// Exactly one of repo and template. A template task forks the template into a fresh source
-// repo first, so the race and the merge never change the template.
+/**
+ * Exactly one of repo and template. A template task forks the template into a fresh source
+ * repo first, so the race and the merge never change the template.
+ */
 export type CreateTaskInput = { prompt: string; agents: number } & ({ repo: string; template?: never } | { template: string; repo?: never });
 
+/** A checked create request with the task id the room was made for. */
 export type NewTask = CreateTaskInput & { id: string };
 
+/** One agent's fork: its repo name, git remote and default branch. */
 export interface ForkSlot {
   name: AgentName;
   fork: string;
@@ -36,9 +43,10 @@ export interface ForkSlot {
   defaultBranch: string;
 }
 
+/** Where an agent's run is: not started, starting, running, or how it ended. */
 export type AgentStatus = "idle" | "starting" | "running" | AgentOutcome["end"];
 
-// One push to an agent's fork. push.ts's PushEvent fits this shape.
+/** One push to an agent's fork. push.ts's PushEvent fits this shape. */
 export interface PushInput {
   agent: string;
   after: string;
@@ -46,16 +54,18 @@ export interface PushInput {
   message?: string;
 }
 
+/** A Workers Preview to save: its URL and the commit it was built from. */
 export interface PreviewInput {
   url: string;
   commit: string;
 }
 
+/** A saved Workers Preview. */
 export interface Preview extends PreviewInput {
   at: string; // ISO
 }
 
-// One recorded push, for the git graph.
+/** One recorded push, for the git graph. */
 export interface PushLogEntry {
   at: string; // ISO, when it was recorded
   commit: string; // the push's `after`
@@ -63,6 +73,7 @@ export interface PushLogEntry {
   message?: string; // only when the push had one
 }
 
+/** What an agent's pushes added up to, for the board and the git graph. */
 export interface PushState {
   commits: number; // sum of commit counts of recorded pushes
   pushes: number; // recorded pushes (distinct `after`)
@@ -74,6 +85,7 @@ export interface PushState {
   preview?: Preview; // newest saved preview and the commit it was built from
 }
 
+/** One agent in a task: its fork, its run, and its pushes. */
 export interface AgentSlot extends ForkSlot, Partial<Omit<AgentOutcome, "end">> {
   status: AgentStatus;
   startedAt?: string;
@@ -81,10 +93,10 @@ export interface AgentSlot extends ForkSlot, Partial<Omit<AgentOutcome, "end">> 
   push?: PushState;
 }
 
-// creating → ready → running → finished. "failed" means the forks could not be made.
+/** creating → ready → running → finished. "failed" means the forks could not be made. */
 export type TaskStatus = "creating" | "ready" | "running" | "finished" | "failed";
 
-// One fork's score in a verdict.
+/** One fork's score in a verdict. */
 export interface VerdictScore {
   agent: string;
   total: number;
@@ -92,7 +104,7 @@ export interface VerdictScore {
   parts: ScoreParts;
 }
 
-// The judge's outcome and what shipping it did.
+/** The judge's outcome and what shipping it did. */
 export interface Verdict {
   winner: string | null;
   why: string;
@@ -105,6 +117,10 @@ export interface Verdict {
   fusion?: FusionResult; // the fusion round, when it tried something or failed
 }
 
+/**
+ * A race: the task prompt, its source repo, the agents and their forks, and, once judged, the
+ * verdict.
+ */
 export interface Task {
   id: string;
   repo: string; // the source repo the forks come from and the winner merges into
@@ -122,7 +138,7 @@ export interface Task {
   memory?: RaceMemory[]; // earlier races on the same app, told to every agent; missing = none
 }
 
-// A type alias, not an interface, so it fits the SQL row type.
+/** A type alias, not an interface, so it fits the SQL row type. */
 export type LoggedStep = {
   seq: number;
   agent: string;
@@ -131,35 +147,40 @@ export type LoggedStep = {
   text: string;
 };
 
-// What TaskRoom.recordPush returns. known: the task and agent exist.
+/** What TaskRoom.recordPush returns. known: the task and agent exist. */
 export type PushRecordResult = { known: boolean; recorded: boolean; build: boolean };
 
+/** True once the agent's run has ended, however it ended. */
 export function isAgentDone(status: AgentStatus): boolean {
   return status === "done" || status === "failed" || status === "timeout";
 }
 
+/** A task-level error for the client, with an optional machine-readable code. */
 export interface TaskError {
   error: string;
   code?: string;
 }
 
-// Errors do not keep their fields across Durable Object RPC, so TaskRoom returns these instead.
+/** Errors do not keep their fields across Durable Object RPC, so TaskRoom returns these instead. */
 export type CreateTaskResult =
   | { ok: true; task: Task; tokens: Record<string, string> }
   | { ok: false; status: number; error: TaskError };
 
+/** What TaskRoom.run returns over RPC: the started task, or why it could not start. */
 export type RunTaskResult = { ok: true; task: Task } | { ok: false; status: number; error: TaskError };
 
+/** A fresh random task id, `t-` and 8 hex digits. */
 export function newTaskId(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(4));
   return `t-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
+/** True when `id` has the task id shape. */
 export function isTaskId(id: string): boolean {
   return TASK_ID_PATTERN.test(id);
 }
 
-// Returns the checked input, or an error message for the client.
+/** Returns the checked input, or an error message for the client. */
 export function parseCreateTask(body: unknown): CreateTaskInput | string {
   if (typeof body !== "object" || body === null || Array.isArray(body)) return "Body must be a JSON object";
   const { repo, template, prompt, agents = MIN_AGENTS } = body as Record<string, unknown>;
@@ -177,22 +198,27 @@ export function parseCreateTask(body: unknown): CreateTaskInput | string {
   return typeof repo === "string" ? { repo, prompt, agents } : { template: template as string, prompt, agents };
 }
 
+/** The source repo name of a template task: the template name plus the task id. */
 export function sourceName(template: string, taskId: string): string {
   return `${template}-${taskId}`;
 }
 
+/** A fork with its write token, which stays in the TaskRoom. */
 export interface ForkWithToken extends ForkSlot {
   token: string;
 }
 
+/** What making the forks produced: the source repo, its head, and each agent's fork. */
 export interface MadeForks {
   source: string;
   forks: ForkWithToken[];
   base: string | undefined; // source head hash after the agent forks are made; undefined if unreadable or empty
 }
 
-// The source repo of a task: the given repo, or a fresh fork of the template.
-// If an agent fork fails, deletes the forks made so far (and a fresh source) and throws the first error.
+/**
+ * The source repo of a task: the given repo, or a fresh fork of the template.
+ * If an agent fork fails, deletes the forks made so far (and a fresh source) and throws the first error.
+ */
 export async function makeForks(artifacts: Artifacts, task: NewTask, sleep?: (ms: number) => Promise<void>): Promise<MadeForks> {
   if (task.template === undefined) {
     const forks = await forkAgents(artifacts, task.id, task.repo, task.agents, sleep);
@@ -214,7 +240,7 @@ export async function makeForks(artifacts: Artifacts, task: NewTask, sleep?: (ms
   }
 }
 
-// The head commit hash of a repo's default branch, or undefined when unreadable or empty.
+/** The head commit hash of a repo's default branch, or undefined when unreadable or empty. */
 async function headOf(artifacts: Artifacts, source: string): Promise<string | undefined> {
   try {
     return (await latestCommit(artifacts, source))?.hash;
@@ -223,7 +249,7 @@ async function headOf(artifacts: Artifacts, source: string): Promise<string | un
   }
 }
 
-// Makes one fork per agent, one at a time, because a source repo can be busy while it forks.
+/** Makes one fork per agent, one at a time, because a source repo can be busy while it forks. */
 async function forkAgents(artifacts: Artifacts, taskId: string, source: string, agents: number, sleep?: (ms: number) => Promise<void>): Promise<ForkWithToken[]> {
   const forks: ForkWithToken[] = [];
   try {
@@ -243,7 +269,7 @@ async function forkAgents(artifacts: Artifacts, taskId: string, source: string, 
   }
 }
 
-// Maps a failure to an HTTP status and a message for the client.
+/** Maps a failure to an HTTP status and a message for the client. */
 export function describeFailure(cause: unknown, repo: string): { status: number; error: TaskError } {
   if (isArtifactsError(cause, "NOT_FOUND")) {
     return { status: 404, error: { error: `Repo not found: ${repo}`, code: cause.code } };
@@ -252,8 +278,10 @@ export function describeFailure(cause: unknown, repo: string): { status: number;
   return { status: 500, error: { error: String(cause) } };
 }
 
-// Records one agent's end. Returns false when the agent already ended (alarm retries repeat it).
-// The task finishes when every agent has ended.
+/**
+ * Records one agent's end. Returns false when the agent already ended (alarm retries repeat it).
+ * The task finishes when every agent has ended.
+ */
 export function applyOutcome(task: Task, agent: string, outcome: AgentOutcome, now: string): boolean {
   const slot = slotOf(task, agent);
   if (slot === undefined || isAgentDone(slot.status)) return false;
@@ -263,8 +291,10 @@ export function applyOutcome(task: Task, agent: string, outcome: AgentOutcome, n
   return true;
 }
 
-// Records whether each sandbox started. Only agents still "starting" change, so an end that
-// arrived first is kept.
+/**
+ * Records whether each sandbox started. Only agents still "starting" change, so an end that
+ * arrived first is kept.
+ */
 export function applyStarts(task: Task, starts: { agent: string; error?: string }[], now: string): void {
   for (const start of starts) {
     const slot = slotOf(task, start.agent);
@@ -278,9 +308,11 @@ export function applyStarts(task: Task, starts: { agent: string; error?: string 
   finishIfAllDone(task, now);
 }
 
-// Records a push once per `after` commit (event retries repeat it). The newest recorded push
-// becomes the head and is appended to the log. Any task status, because the runner's last push
-// lands after the agent ends.
+/**
+ * Records a push once per `after` commit (event retries repeat it). The newest recorded push
+ * becomes the head and is appended to the log. Any task status, because the runner's last push
+ * lands after the agent ends.
+ */
 export function applyPush(task: Task, push: PushInput, now: string): boolean {
   const slot = slotOf(task, push.agent);
   if (slot === undefined) return false;
@@ -301,13 +333,13 @@ export function applyPush(task: Task, push: PushInput, now: string): boolean {
   return true;
 }
 
-// True when commit is the agent's newest head and has no saved preview yet.
+/** True when commit is the agent's newest head and has no saved preview yet. */
 export function needsPreview(task: Task, agent: string, commit: string): boolean {
   const push = slotOf(task, agent)?.push;
   return push !== undefined && push.head === commit && push.preview?.commit !== commit;
 }
 
-// Saves a preview only for the agent's newest head, so an older build never replaces a newer one.
+/** Saves a preview only for the agent's newest head, so an older build never replaces a newer one. */
 export function applyPreview(task: Task, agent: string, preview: PreviewInput, now: string): boolean {
   const push = slotOf(task, agent)?.push;
   if (push === undefined || push.head !== preview.commit) return false;
@@ -315,14 +347,14 @@ export function applyPreview(task: Task, agent: string, preview: PreviewInput, n
   return true;
 }
 
-// Saves the base preview only when it was built from the task's base commit.
+/** Saves the base preview only when it was built from the task's base commit. */
 export function applyBasePreview(task: Task, preview: PreviewInput, now: string): boolean {
   if (task.baseCommit === undefined || task.baseCommit !== preview.commit) return false;
   task.basePreview = { url: preview.url, commit: preview.commit, at: now };
   return true;
 }
 
-// The PushWorkflow params for the base preview, or undefined without a base commit.
+/** The PushWorkflow params for the base preview, or undefined without a base commit. */
 export function baseRequest(task: Task): BaseRequest | undefined {
   if (task.baseCommit === undefined) return undefined;
   return { kind: "base", taskId: task.id, repo: task.repo, commit: task.baseCommit };
@@ -339,19 +371,19 @@ function finishIfAllDone(task: Task, now: string): void {
   }
 }
 
-// True only for the change that made the task finished, so the room starts one judge run.
+/** True only for the change that made the task finished, so the room starts one judge run. */
 export function justFinished(before: TaskStatus, task: Task): boolean {
   return before !== "finished" && task.status === "finished";
 }
 
-// Saves the verdict once. Returns false, and leaves the task unchanged, when it already has one.
+/** Saves the verdict once. Returns false, and leaves the task unchanged, when it already has one. */
 export function saveVerdict(task: Task, verdict: Verdict): boolean {
   if (task.verdict !== undefined) return false;
   task.verdict = verdict;
   return true;
 }
 
-// The Workflow params from task state and the claim board. Every agent slot is judged.
+/** The Workflow params from task state and the claim board. Every agent slot is judged. */
 export function judgeInput(task: Task, board: ClaimBoard): JudgeInput {
   return {
     taskId: task.id,
@@ -372,14 +404,16 @@ export function judgeInput(task: Task, board: ClaimBoard): JudgeInput {
   };
 }
 
-// The repos a purge deletes: every agent fork, and the source repo when a template made it for
-// this task. A source given as `repo` is shared with other tasks, so it stays.
+/**
+ * The repos a purge deletes: every agent fork, and the source repo when a template made it for
+ * this task. A source given as `repo` is shared with other tasks, so it stays.
+ */
 export function purgeRepos(task: Task): string[] {
   const forks = task.agents.map((slot) => slot.fork);
   return task.template === undefined ? forks : [...forks, task.repo];
 }
 
-// Why a task may not be purged now, or undefined when it may. Agents still push to a running task's forks.
+/** Why a task may not be purged now, or undefined when it may. Agents still push to a running task's forks. */
 export function purgeRefusal(task: Task | undefined, now: number = Date.now()): string | undefined {
   if (task === undefined) return undefined;
   if (task.status === "creating") return "Task is creating";
@@ -389,18 +423,22 @@ export function purgeRefusal(task: Task | undefined, now: number = Date.now()): 
   return undefined;
 }
 
-// The watchdog: a running race whose agents have not all ended this long after it started has
-// stalled (a sandbox lost track of its agent, for example when a deploy reset it mid-start).
+/**
+ * The watchdog: a running race whose agents have not all ended this long after it started has
+ * stalled (a sandbox lost track of its agent, for example when a deploy reset it mid-start).
+ */
 export const WATCHDOG_MS = AGENT_TIME_LIMIT_MS + 4 * 60 * 1_000;
 
-// True when a running race is past its watchdog time.
+/** True when a running race is past its watchdog time. */
 export function isStalled(task: Task, now: number): boolean {
   const started = task.startedAt === undefined ? NaN : Date.parse(task.startedAt);
   return task.status === "running" && Number.isFinite(started) && now >= started + WATCHDOG_MS;
 }
 
-// The outcome the watchdog gives each agent that never ended. Its pushes are kept: the judge
-// scores whatever the fork holds.
+/**
+ * The outcome the watchdog gives each agent that never ended. Its pushes are kept: the judge
+ * scores whatever the fork holds.
+ */
 export function stalledOutcomes(task: Task): { agent: string; outcome: AgentOutcome }[] {
   return task.agents
     .filter((slot) => !isAgentDone(slot.status))
@@ -415,7 +453,7 @@ export function stalledOutcomes(task: Task): { agent: string; outcome: AgentOutc
     }));
 }
 
-// Why an agent may not use the claim board now, or undefined when it may.
+/** Why an agent may not use the claim board now, or undefined when it may. */
 export function claimRefusal(task: Task | undefined, agent: string): { status: number; error: string } | undefined {
   if (task === undefined) return { status: 404, error: "not found" };
   if (task.status !== "ready" && task.status !== "running") return { status: 409, error: `Task is ${task.status}` };

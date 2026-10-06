@@ -10,7 +10,7 @@ interface Template {
   prompt: string;
 }
 
-// The demo apps (demo/README.md) and their sample tasks.
+/** The demo apps (demo/README.md) and their sample tasks. */
 const TEMPLATES: [Template, ...Template[]] = [
   {
     id: "thunderdome-bugs",
@@ -61,25 +61,45 @@ function showError(text: string | undefined): void {
   box.textContent = text ?? "";
 }
 
+/** Picks a demo app. An edited task is kept; only the sample task is swapped for the new app's. */
+function choose(t: Template): void {
+  const prompt = byId("prompt", HTMLTextAreaElement);
+  if (TEMPLATES.some((x) => x.prompt === prompt.value.trim()) || prompt.value.trim() === "") prompt.value = t.prompt;
+  chosen = t;
+  renderTemplates();
+  renderCount();
+}
+
+/** Arrow keys move the choice in the radio group, as the ARIA radio group pattern asks. */
+const ARROW_STEP: Readonly<Record<string, number>> = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+
+/**
+ * Draws the demo-app cards as an ARIA radio group with a roving tabindex: only the chosen card
+ * is in the tab order, and the arrow keys move the choice and the focus together.
+ */
 function renderTemplates(): void {
-  byId("templates").replaceChildren(
-    ...TEMPLATES.map((t) => {
-      const card = el("button", `template${t === chosen ? " on" : ""}`);
-      card.type = "button";
-      card.setAttribute("role", "radio");
-      card.setAttribute("aria-checked", String(t === chosen));
-      card.append(el("b", undefined, t.title), el("span", undefined, t.blurb), el("code", undefined, t.id.replace(/^thunderdome-/, "demo: ")));
-      card.addEventListener("click", () => {
-        const prompt = byId("prompt", HTMLTextAreaElement);
-        // Keep an edited task; swap only the sample one.
-        if (TEMPLATES.some((x) => x.prompt === prompt.value.trim()) || prompt.value.trim() === "") prompt.value = t.prompt;
-        chosen = t;
-        renderTemplates();
-        renderCount();
-      });
-      return card;
-    }),
-  );
+  const group = byId("templates");
+  const focused = group.contains(document.activeElement);
+  const cards = TEMPLATES.map((t, i) => {
+    const on = t === chosen;
+    const card = el("button", `template${on ? " on" : ""}`);
+    card.type = "button";
+    card.tabIndex = on ? 0 : -1;
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", String(on));
+    card.append(el("b", undefined, t.title), el("span", undefined, t.blurb), el("code", undefined, t.id.replace(/^thunderdome-/, "demo: ")));
+    card.addEventListener("click", () => choose(t));
+    card.addEventListener("keydown", (event) => {
+      const step = ARROW_STEP[event.key];
+      if (step === undefined) return;
+      event.preventDefault();
+      const next = TEMPLATES[(i + step + TEMPLATES.length) % TEMPLATES.length];
+      if (next !== undefined) choose(next);
+    });
+    return card;
+  });
+  group.replaceChildren(...cards);
+  if (focused) cards[TEMPLATES.indexOf(chosen)]?.focus();
 }
 
 function renderCount(): void {

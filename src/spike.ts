@@ -8,12 +8,15 @@ function outboundFor(remote: string, token: string): OutboundProps {
   return { gitHost: new URL(remote).hostname, gitToken: token };
 }
 
+/** True when `app` is one of the demo apps packed from demo/. */
 export function isDemoApp(app: string): boolean {
   return Object.hasOwn(DEMO_APPS, app);
 }
 
-// Creates a repo (thunderdome-sample by default) and pushes a demo app (demo/<app>) into it, once.
-// Seed a template repo here, then create tasks with { template } so races never change it.
+/**
+ * Creates a repo (thunderdome-sample by default) and pushes a demo app (demo/<app>) into it, once.
+ * Seed a template repo here, then create tasks with { template } so races never change it.
+ */
 export async function seedSample(env: Env, name = SAMPLE_REPO, app = DEFAULT_APP) {
   if (!isRepoName(name)) throw new Error(`Invalid repo name: ${name}`);
   const files = DEMO_APPS[app];
@@ -29,7 +32,7 @@ export async function seedSample(env: Env, name = SAMPLE_REPO, app = DEFAULT_APP
   return { repo: name, app, head, seeded: true };
 }
 
-// Seed (if needed) → fork → clone in a sandbox → commit → push → read the commit back.
+/** Seed (if needed) → fork → clone in a sandbox → commit → push → read the commit back. */
 export async function runDay1(env: Env) {
   const seed = await seedSample(env);
   const name = `spike-${Date.now().toString(36)}`;

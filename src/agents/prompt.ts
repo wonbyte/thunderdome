@@ -1,11 +1,16 @@
-import type { RaceMemory } from "../room/races";
-
 // What each agent is told. The same model runs every agent; the style makes the race real.
 
-// Each id is the robot's name, lowercase; its style is in AGENT_STYLES.
+import type { RaceMemory } from "../room/races";
+
+/** Each id is the robot's name, lowercase; its style is in AGENT_STYLES. */
 export const AGENT_NAMES = ["ponder", "zippy", "testy", "snip", "sparkle"] as const;
+/** The id of one of the robots. */
 export type AgentName = (typeof AGENT_NAMES)[number];
 
+/**
+ * Each robot's working style, the first line of its system prompt. The styles make the same model
+ * race in different ways.
+ */
 export const AGENT_STYLES: Record<AgentName, string> = {
   ponder:
     "You are Ponder, the careful agent. Read the code and the tests before you change anything. " +
@@ -24,17 +29,20 @@ export const AGENT_STYLES: Record<AgentName, string> = {
     "Small clean-ups next to your change are fine; keep the diff focused.",
 };
 
-// Where an agent puts the tests it adds: a file of its own, so no two agents ever write the same
-// test file, and the fusion round can add a losing agent's tests to the winner's fix.
+/**
+ * Where an agent puts the tests it adds: a file of its own, so no two agents ever write the same
+ * test file, and the fusion round can add a losing agent's tests to the winner's fix.
+ */
 export function testFileOf(agent: AgentName): string {
   return `test/${agent}.test.ts`;
 }
 
+/** True when `name` is one of the robots in AGENT_NAMES. */
 export function isAgentName(name: string): name is AgentName {
   return (AGENT_NAMES as readonly string[]).includes(name);
 }
 
-// The system prompt add-on: the style plus the rules every agent follows.
+/** The system prompt add-on: the style plus the rules every agent follows. */
 export function systemPrompt(agent: AgentName, timeLimitMinutes: number, memory: readonly RaceMemory[] = []): string {
   const lessons = memoryText(memory);
   return [
@@ -64,8 +72,10 @@ export function systemPrompt(agent: AgentName, timeLimitMinutes: number, memory:
   ].join("\n\n");
 }
 
-// Earlier races on this app and why the judge picked each winner. Past prompts came from other
-// users, so each is quoted as JSON and marked as a record, never an instruction.
+/**
+ * Earlier races on this app and why the judge picked each winner. Past prompts came from other
+ * users, so each is quoted as JSON and marked as a record, never an instruction.
+ */
 export function memoryText(memory: readonly RaceMemory[]): string | undefined {
   if (memory.length === 0) return undefined;
   const lines = memory.map((m) => {

@@ -8,6 +8,7 @@ import { CommandError, REPO_DIR } from "../sandbox/ThunderdomeSandbox";
 import type { OutboundProps } from "../sandbox/outbound";
 import { basePreviewName, parseBaseRequest, parsePushEvent, PREVIEW_CONFIG_PATH, previewConfig, previewName, previewUrl, type BaseRequest } from "./push";
 
+/** The compatibility date of every Workers Preview the push Workflow builds. */
 export const PREVIEW_COMPATIBILITY_DATE = "2026-09-15";
 
 const BUILD_STEP = {
@@ -16,11 +17,12 @@ const BUILD_STEP = {
 } as const;
 const TOKEN_TTL_S = 600;
 const WORKSPACE = "/workspace";
-// wrangler needs a token; the Outbound Worker replaces the auth header with the real one.
+/** wrangler needs a token; the Outbound Worker replaces the auth header with the real one. */
 const API_TOKEN_PLACEHOLDER = "provided-by-worker";
 
 type Sandbox = ReturnType<Env["SANDBOX"]["getByName"]>;
 
+/** What the push Workflow did with one event. */
 export type PushOutput =
   | { status: "ignored" }
   | { status: "recorded"; taskId: string; agent: string; after: string }
@@ -29,14 +31,14 @@ export type PushOutput =
   | { status: "base-previewed"; taskId: string; commit: string; url: string; saved: boolean }
   | { status: "base-preview-failed"; taskId: string; commit: string; error: string };
 
-// The TaskRoom calls this Workflow makes.
+/** The TaskRoom calls this Workflow makes. */
 interface PushRoom {
   recordPush(push: PushInput): Promise<PushRecordResult>;
   savePreview(agent: string, preview: PreviewInput): Promise<boolean>;
   saveBasePreview(preview: PreviewInput): Promise<boolean>;
 }
 
-// What one preview build needs.
+/** What one preview build needs. */
 interface PreviewBuild {
   repo: string;
   commit: string;
@@ -44,8 +46,12 @@ interface PreviewBuild {
   sandboxName: string;
 }
 
-// The payload is the Artifacts event itself, or a base request from the TaskRoom.
+/**
+ * The push Workflow: records each fork push in its TaskRoom and builds the push's Workers Preview.
+ * The payload is the Artifacts event itself, or a base request from the TaskRoom for the source's preview.
+ */
 export class PushWorkflow extends WorkflowEntrypoint<Env> {
+  /** Records one push, or a base request, and builds its preview. */
   override async run(event: WorkflowEvent<unknown>, step: WorkflowStep): Promise<PushOutput> {
     const base = parseBaseRequest(event.payload);
     if (base !== undefined) return this.#runBase(base, step);
@@ -75,7 +81,7 @@ export class PushWorkflow extends WorkflowEntrypoint<Env> {
     return { status: "previewed", taskId, agent, after, url, saved };
   }
 
-  // Builds the base preview and saves it on the task. A failed build is returned, never thrown.
+  /** Builds the base preview and saves it on the task. A failed build is returned, never thrown. */
   async #runBase(request: BaseRequest, step: WorkflowStep): Promise<PushOutput> {
     const { taskId, repo, commit } = request;
     let url: string;
@@ -101,8 +107,10 @@ function room(env: Env, taskId: string): PushRoom {
   return env.TASK_ROOM.getByName(taskId);
 }
 
-// Builds the preview of exactly `commit` in its own sandbox (one per build, so overlapping
-// builds never restart each other's container) and returns its URL.
+/**
+ * Builds the preview of exactly `commit` in its own sandbox (one per build, so overlapping
+ * builds never restart each other's container) and returns its URL.
+ */
 async function buildPreview(env: Env, build: PreviewBuild): Promise<string> {
   const { remote, token } = await forkAccess(env.ARTIFACTS, build.repo);
   const props: OutboundProps = {
@@ -132,7 +140,7 @@ async function buildPreview(env: Env, build: PreviewBuild): Promise<string> {
   }
 }
 
-// The repo's remote and a short-lived read token for it.
+/** The repo's remote and a short-lived read token for it. */
 async function forkAccess(artifacts: Artifacts, name: string): Promise<{ remote: string; token: string }> {
   using repo = await artifacts.get(name);
   const info = await repo.info();

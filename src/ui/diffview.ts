@@ -1,10 +1,13 @@
 // A unified diff split into files and typed lines for the diff viewer. Pure, like board.ts.
 
+/** What a diff line is: added, removed, context, a hunk header, or a meta line. */
 export type DiffLineKind = "add" | "del" | "ctx" | "hunk" | "meta";
+/** One typed diff line, without its +/- prefix. */
 export interface DiffLine {
   kind: DiffLineKind;
   text: string;
 }
+/** One file of a diff: its path, its added and removed line counts, and its lines. */
 export interface DiffFile {
   path: string;
   added: number;
@@ -14,7 +17,7 @@ export interface DiffFile {
 
 const HEADER = /^diff --git a\/(.+) b\/(.+)$/;
 
-// Files in diff order. Lines before the first "diff --git" are ignored.
+/** Files in diff order. Lines before the first "diff --git" are ignored. */
 export function parseDiff(diff: string): DiffFile[] {
   const files: DiffFile[] = [];
   let file: DiffFile | undefined;

@@ -4,12 +4,14 @@ import { applyEvent, emptyBoard } from "./board";
 import type { Board, BoardEvent, WireAgent, WireClaim, WireClaimBoard, WireStep, WireTask } from "./board";
 import { pushDots } from "./gitgraph";
 
+/** A live event at the time it happened. */
 export interface TimedEvent {
   at: number;
   event: BoardEvent;
   approx?: boolean; // the time is estimated (earlier pushes only keep their count)
 }
 
+/** A recorded race as timed events, oldest first. */
 export interface Timeline {
   taskId: string;
   start: number; // when the replay begins (task created)
@@ -25,7 +27,7 @@ const ms = (iso: string | undefined): number | undefined => {
 
 const RELEASED = /^released\s+(.+)$/;
 
-// The task as it looked when it was created: forks made, nothing run yet.
+/** The task as it looked when it was created: forks made, nothing run yet. */
 function createdTask(task: WireTask): WireTask {
   const { verdict: _v, basePreview: _b, finishedAt: _f, startedAt: _s, ...rest } = task;
   return {
@@ -45,7 +47,7 @@ function runningTask(task: WireTask): WireTask {
   };
 }
 
-// Claims that share a time and agent were one claim call.
+/** Claims that share a time and agent were one claim call. */
 function claimEvents(taskId: string, history: WireClaim[]): TimedEvent[] {
   const groups = new Map<string, WireClaim[]>();
   for (const claim of history) {
@@ -70,7 +72,7 @@ function claimEvents(taskId: string, history: WireClaim[]): TimedEvent[] {
   });
 }
 
-// A claim step "released a, b" is the agent letting go of those files.
+/** A claim step "released a, b" is the agent letting go of those files. */
 function releaseEvents(taskId: string, steps: WireStep[]): TimedEvent[] {
   return steps.flatMap((step): TimedEvent[] => {
     const files = step.kind === "claim" ? RELEASED.exec(step.text.trim())?.[1] : undefined;
@@ -80,7 +82,7 @@ function releaseEvents(taskId: string, steps: WireStep[]): TimedEvent[] {
   });
 }
 
-// One event per push, with the agent's running commit count. Older tasks get estimated times.
+/** One event per push, with the agent's running commit count. Older tasks get estimated times. */
 function pushEvents(taskId: string, task: WireTask): TimedEvent[] {
   const totals = new Map<string, { commits: number; pushes: number }>();
   return [...pushDots(task)]
@@ -97,6 +99,7 @@ function pushEvents(taskId: string, task: WireTask): TimedEvent[] {
     });
 }
 
+/** Rebuilds the race's live events from the task, its steps and its claim history, with their times. */
 export function buildTimeline(task: WireTask, steps: WireStep[], claims: WireClaimBoard): Timeline {
   const taskId = task.id;
   const startedAt = ms(task.startedAt);
@@ -134,7 +137,7 @@ export function buildTimeline(task: WireTask, steps: WireStep[], claims: WireCla
   return { taskId, start, end: sorted.at(-1)?.at ?? start, events: sorted };
 }
 
-// The board after every event at or before `t`. Each event uses its own time as `now`.
+/** The board after every event at or before `t`. Each event uses its own time as `now`. */
 export function boardAt(timeline: Timeline, t: number): Board {
   let board = emptyBoard(timeline.taskId);
   for (const { at, event } of timeline.events) {
@@ -144,7 +147,7 @@ export function boardAt(timeline: Timeline, t: number): Board {
   return board;
 }
 
-// Recorded claims have no clash list; it comes from who held each file at that moment.
+/** Recorded claims have no clash list; it comes from who held each file at that moment. */
 function withClashes(board: Board, event: BoardEvent): BoardEvent {
   if (event.kind !== "claim" || !event.result.ok) return event;
   const clashes = event.result.claimed.flatMap((file) => {
@@ -154,7 +157,7 @@ function withClashes(board: Board, event: BoardEvent): BoardEvent {
   return { ...event, result: { ...event.result, clashes } };
 }
 
-// The steps a replay has reached by `t`.
+/** The steps a replay has reached by `t`. */
 export function stepsAt(steps: WireStep[], t: number): WireStep[] {
   return steps.filter((step) => (ms(step.at) ?? Infinity) <= t);
 }

@@ -1,3 +1,6 @@
+// The ThunderdomeSandbox container Durable Object: clones a fork, runs an agent in the background
+// and reports its steps, and runs git and tests for the judge, the fusion round and shipping.
+
 import { Files, SandboxFileError } from "@cloudflare/sandbox";
 import { DurableObject } from "cloudflare:workers";
 
@@ -7,12 +10,13 @@ import type { AgentName } from "../agents/prompt";
 import { retry } from "../retry";
 import type { Outbound, OutboundProps } from "./outbound";
 
+/** Where a sandbox clones the repo it works on. */
 export const REPO_DIR = "/workspace/repo";
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1_000;
 const PROPS_KEY = "outbound-props";
 const CA_PATH = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
 
-// Agent run files live outside the repo, so they stay out of the diff.
+/** Agent run files live outside the repo, so they stay out of the diff. */
 const RUN_DIR = "/workspace/run";
 const EVENTS_PATH = `${RUN_DIR}/events.jsonl`;
 const STDERR_PATH = `${RUN_DIR}/stderr.log`;
@@ -20,26 +24,28 @@ const EXIT_PATH = `${RUN_DIR}/exit-code`;
 const PID_PATH = `${RUN_DIR}/pid`;
 const RUN_KEY = "agent-run";
 const READ_CHUNK_BYTES = 1 << 20;
-// Output goes to files, so the agent keeps running after the request that started it ends.
-// setsid gives the agent its own process group, so a timeout stops it and its children.
+/**
+ * Output goes to files, so the agent keeps running after the request that started it ends.
+ * setsid gives the agent its own process group, so a timeout stops it and its children.
+ */
 const RUN_SCRIPT = `echo $$ > ${PID_PATH}
 "$@" > ${EVENTS_PATH} 2> ${STDERR_PATH}
 printf '%s\\n' "$?" > ${EXIT_PATH}.tmp && mv ${EXIT_PATH}.tmp ${EXIT_PATH}`;
 
-// What the alarm needs to follow one agent run.
+/** What the alarm needs to follow one agent run. */
 interface AgentRun {
   taskId: string;
   agent: AgentName;
   defaultBranch: string;
   deadline: number;
-  // The fork head before the agent started.
+  /** The fork head before the agent started. */
   base: string;
-  // Bytes of EVENTS_PATH already turned into steps.
+  /** Bytes of EVENTS_PATH already turned into steps. */
   offset: number;
   result?: RunResult;
 }
 
-// exec() does not inherit start() env. Intercepted HTTPS is signed by this CA.
+/** exec() does not inherit start() env. Intercepted HTTPS is signed by this CA. */
 const TRUST_ENV = {
   NODE_EXTRA_CA_CERTS: CA_PATH,
   GIT_SSL_CAINFO: CA_PATH,
@@ -47,12 +53,14 @@ const TRUST_ENV = {
   SSL_CERT_FILE: CA_PATH,
 };
 
+/** The exit code and output of one command in the container. */
 export interface CommandResult {
   exitCode: number;
   stdout: string;
   stderr: string;
 }
 
+/** A command that exited non-zero, with its argv and output. */
 export class CommandError extends Error {
   constructor(
     readonly argv: string[],
@@ -67,7 +75,7 @@ interface ThunderdomeSandboxState extends DurableObjectState {
   readonly exports: Cloudflare.Exports & { readonly Outbound: LoopbackForExport<typeof Outbound> };
 }
 
-// One sandbox per agent fork. It can reach only that fork's git host, plus the model API when it runs an agent.
+/** One sandbox per agent fork. It can reach only that fork's git host, plus the model API when it runs an agent. */
 export class ThunderdomeSandbox extends DurableObject<Env> {
   readonly #state: ThunderdomeSandboxState;
   readonly #container: Container;
@@ -85,8 +93,10 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     }
   }
 
-  // Starts the container for one git host and token. A new token restarts the container,
-  // because outbound intercepts last for one container run.
+  /**
+   * Starts the container for one git host and token. A new token restarts the container,
+   * because outbound intercepts last for one container run.
+   */
   async ensureStarted(props: OutboundProps): Promise<void> {
     const same = JSON.stringify(this.ctx.storage.kv.get(PROPS_KEY)) === JSON.stringify(props);
     if (this.#container.running && same) return;
@@ -104,7 +114,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     this.ctx.storage.kv.put(PROPS_KEY, props);
   }
 
-  // Makes the first commit of a new repo from a set of files and pushes it.
+  /** Makes the first commit of a new repo from a set of files and pushes it. */
   async seed(props: OutboundProps, remote: string, files: Record<string, string>): Promise<string> {
     await this.ensureStarted(props);
     await this.#files.remove(REPO_DIR, { recursive: true, force: true });
@@ -122,18 +132,19 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     return (await this.#must(["git", "rev-parse", "HEAD"])).stdout.trim();
   }
 
-  // Clones a fork into REPO_DIR, replacing any earlier clone.
+  /** Clones a fork into REPO_DIR, replacing any earlier clone. */
   async clone(props: OutboundProps, remote: string): Promise<void> {
     await this.ensureStarted(props);
     await this.#files.remove(REPO_DIR, { recursive: true, force: true });
     await this.#must(["git", "clone", "--", remote, REPO_DIR], "/workspace");
   }
 
+  /** Writes a file; a relative path is under the repo clone. */
   async writeFile(path: string, content: string): Promise<void> {
     await this.#files.writeFile(path, content, { cwd: REPO_DIR });
   }
 
-  // Commits every change in REPO_DIR and pushes it. Returns the new commit hash.
+  /** Commits every change in REPO_DIR and pushes it. Returns the new commit hash. */
   async commitAndPush(message: string): Promise<string> {
     await this.#must(["git", "add", "--all"]);
     await this.#must(["git", "commit", "--message", message]);
@@ -141,7 +152,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     return (await this.#must(["git", "rev-parse", "HEAD"])).stdout.trim();
   }
 
-  // Clones the fork and starts the agent in the background. The alarm follows it from here.
+  /** Clones the fork and starts the agent in the background. The alarm follows it from here. */
   async startAgent(spec: AgentSpec): Promise<{ base: string }> {
     if (this.ctx.storage.kv.get(RUN_KEY) !== undefined) throw new Error(`An agent already runs in ${spec.fork}`);
     const props: OutboundProps = {
@@ -180,7 +191,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     return { base };
   }
 
-  // Sends new steps to the TaskRoom, and ends the run when the agent exits or time runs out.
+  /** Sends new steps to the TaskRoom, and ends the run when the agent exits or time runs out. */
   override async alarm(): Promise<void> {
     const run = this.ctx.storage.kv.get<AgentRun>(RUN_KEY);
     if (run === undefined) return;
@@ -204,6 +215,10 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     await this.stop();
   }
 
+  /**
+   * Runs argv in the container and returns its exit code and output. A non-zero exit is not an
+   * error here.
+   */
   async exec(argv: string[], cwd: string = REPO_DIR, env: Record<string, string> = {}): Promise<CommandResult> {
     const output = await this.#execRaw(argv, cwd, env);
     const decoder = new TextDecoder();
@@ -214,6 +229,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     };
   }
 
+  /** Forgets the outbound props and stops the container. */
   async stop(): Promise<void> {
     this.ctx.storage.kv.delete(PROPS_KEY);
     if (this.#container.running) await this.#container.destroy();
@@ -230,7 +246,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     return result;
   }
 
-  // Reads the complete new lines of the agent's output and sends their steps to the TaskRoom.
+  /** Reads the complete new lines of the agent's output and sends their steps to the TaskRoom. */
   async #flushSteps(run: AgentRun): Promise<void> {
     const steps: Step[] = [];
     for (;;) {
@@ -273,7 +289,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     await this.exec(["bash", "-c", 'kill -TERM -- -"$1"; sleep 2; kill -KILL -- -"$1" 2>/dev/null; true', "stop", pid.trim()], "/");
   }
 
-  // Commits what the agent left, pushes the fork, and says how the run ended.
+  /** Commits what the agent left, pushes the fork, and says how the run ended. */
   async #endRun(run: AgentRun, forced?: "timeout"): Promise<AgentOutcome> {
     const outcome: AgentOutcome = { end: forced ?? "done", pushed: false, costUsd: run.result?.costUsd, turns: run.result?.turns };
     if (run.result !== undefined) outcome.summary = clip(run.result.text, 2_000);

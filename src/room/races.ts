@@ -4,17 +4,20 @@ import type { DecidedBy } from "../judge/why";
 import type { Claim } from "./claims";
 import type { Task, TaskStatus } from "./task";
 
-// Summaries the index keeps, and how many GET /tasks returns.
+/** Summaries the index keeps, and how many GET /tasks returns. */
 export const RACE_INDEX_MAX = 200;
+/** Summaries one GET /tasks page returns. */
 export const RACE_LIST_LIMIT = 50;
 
-// Past races a new race remembers, and the characters of each past prompt it keeps.
+/** Past races a new race remembers, and the characters of each past prompt it keeps. */
 export const MEMORY_MAX = 3;
+/** Characters of each remembered prompt that a new race keeps. */
 export const MEMORY_PROMPT_MAX = 200;
 
+/** One robot's total in a race summary. */
 export type RaceScore = { agent: string; total: number };
 
-// What a new race is told about one earlier judged race on the same app.
+/** What a new race is told about one earlier judged race on the same app. */
 export interface RaceMemory {
   id: string;
   prompt: string; // clipped to MEMORY_PROMPT_MAX
@@ -24,6 +27,7 @@ export interface RaceMemory {
   commit?: string; // the winner's merge, only when it landed in the repo the new race forks
 }
 
+/** One race in the gallery: enough to draw its card and the leaderboard without loading the task. */
 export interface RaceSummary {
   id: string;
   prompt: string;
@@ -43,7 +47,7 @@ export interface RaceSummary {
   clash: boolean;
 }
 
-// The summary of one task. Optional fields appear only when the task has them.
+/** The summary of one task. Optional fields appear only when the task has them. */
 export function summaryOf(task: Task, history: Claim[]): RaceSummary {
   const v = task.verdict;
   return {
@@ -66,7 +70,7 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
   };
 }
 
-// True when some file was claimed by two or more different agents.
+/** True when some file was claimed by two or more different agents. */
 function hasClash(history: Claim[]): boolean {
   const agentsByFile = new Map<string, Set<string>>();
   for (const claim of history) {
@@ -78,17 +82,21 @@ function hasClash(history: Claim[]): boolean {
   return false;
 }
 
-// A new list with summary in place of any entry with its id, newest first, at most max long.
-// The new summary goes first, so the stable sort keeps it ahead of entries with the same createdAt.
+/**
+ * A new list with summary in place of any entry with its id, newest first, at most max long.
+ * The new summary goes first, so the stable sort keeps it ahead of entries with the same createdAt.
+ */
 export function upsertRace(list: readonly RaceSummary[], summary: RaceSummary, max: number = RACE_INDEX_MAX): RaceSummary[] {
   return [summary, ...list.filter((race) => race.id !== summary.id)]
     .toSorted((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
     .slice(0, Math.max(0, max));
 }
 
-// The newest judged races with a winner on the same app as a new race: the same template, or for
-// a race on a given repo, the same repo. A template race forks a fresh copy, so its winner's code
-// is not in the new race's repo; only a same-repo memory names the merge commit.
+/**
+ * The newest judged races with a winner on the same app as a new race: the same template, or for
+ * a race on a given repo, the same repo. A template race forks a fresh copy, so its winner's code
+ * is not in the new race's repo; only a same-repo memory names the merge commit.
+ */
 export function raceMemory(races: readonly RaceSummary[], app: { id: string; template?: string; repo: string }): RaceMemory[] {
   const same = (r: RaceSummary): boolean => (app.template === undefined ? r.template === undefined && r.repo === app.repo : r.template === app.template);
   return races
