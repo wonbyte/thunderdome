@@ -11,7 +11,7 @@ const readyTask = (input: NewTask): Task => ({
   prompt: input.prompt,
   status: "ready",
   createdAt: "2026-10-05T00:00:00.000Z",
-  agents: (["careful", "fast", "tester"] as const).map((name) => ({ name, fork: `${input.id}-${name}`, remote: `https://git.test/${name}.git`, defaultBranch: "main", status: "idle" as const })),
+  agents: (["ponder", "zippy", "testy"] as const).map((name) => ({ name, fork: `${input.id}-${name}`, remote: `https://git.test/${name}.git`, defaultBranch: "main", status: "idle" as const })),
 });
 
 interface Fakes {
@@ -36,7 +36,7 @@ function fakeEnv(fakes: Fakes = {}) {
         (async (input: NewTask): Promise<CreateTaskResult> => {
           const task = readyTask(input);
           created.push(task);
-          return { ok: true, task, tokens: { careful: "secret-k1", fast: "secret-k2", tester: "secret-k3" } };
+          return { ok: true, task, tokens: { ponder: "secret-k1", zippy: "secret-k2", testy: "secret-k3" } };
         }),
     ),
     run: vi.fn(fakes.run ?? (async (): Promise<RunTaskResult> => ({ ok: true, task: { ...created[0]!, status: "running" } }))),

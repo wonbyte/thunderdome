@@ -157,7 +157,7 @@ async function submit(event: SubmitEvent): Promise<void> {
 
 function main(): void {
   const bots = byId("hero-bots");
-  for (const agent of ["careful", "fast", "tester"]) {
+  for (const agent of ["ponder", "zippy", "testy"]) {
     const bot = el("div", "hero-bot");
     bot.innerHTML = robotSvg(AGENT_COLORS[agent] ?? "#8b8d98"); // sprites.ts output only
     bots.append(bot);

@@ -5,13 +5,13 @@ import type { ForkDiff, JudgeDeps, JudgeFork, JudgeInput, TestRun } from "../src
 import { fakeScorer } from "../src/judge/scorer";
 
 export const TASK_ID = "t-0123abcd";
-export const DEFAULT_AGENTS = ["careful", "fast", "lean"];
+export const DEFAULT_AGENTS = ["ponder", "zippy", "snip"];
 
 // Default test results per agent; other agents pass 5/10.
 const TESTS: Record<string, TestRun> = {
-  careful: { passed: 10, total: 10 },
-  fast: { passed: 7, total: 10 },
-  lean: { passed: 4, total: 10 },
+  ponder: { passed: 10, total: 10 },
+  zippy: { passed: 7, total: 10 },
+  snip: { passed: 4, total: 10 },
 };
 
 export function fakeFork(agent: string, overrides: Partial<JudgeFork> = {}): JudgeFork {

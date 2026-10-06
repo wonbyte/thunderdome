@@ -94,8 +94,8 @@ function shipInput(): ShipInput {
     taskId: "t1",
     prompt: "Say where two comes from",
     source: { name: "source", remote: join(root, "source.git"), defaultBranch: "main" },
-    forks: [{ agent: "fast", name: "fork", remote: join(root, "fork.git"), defaultBranch: "main" }],
-    winner: "fast",
+    forks: [{ agent: "zippy", name: "fork", remote: join(root, "fork.git"), defaultBranch: "main" }],
+    winner: "zippy",
     why: "Fast won.",
   };
 }
@@ -119,29 +119,29 @@ describe("conflict race with real git", () => {
   it("ships the first green resolution as a merge of the source head and the winner", async () => {
     const sourceHead = await git(join(root, "source.git"), "rev-parse", "main");
     const winnerHead = await git(join(root, "fork.git"), "rev-parse", "main");
-    const result = await shipTask(shipDeps({ careful: { resolveAfter: 150 }, fast: "leave", tester: { resolveAfter: 20 } }), shipInput());
+    const result = await shipTask(shipDeps({ ponder: { resolveAfter: 150 }, zippy: "leave", testy: { resolveAfter: 20 } }), shipInput());
 
     expect(result.status).toBe("merged");
     expect(result.resolve?.files).toEqual(["app.txt"]);
-    expect(result.resolve?.chosen).toBe("tester");
+    expect(result.resolve?.chosen).toBe("testy");
     const status = Object.fromEntries((result.resolve?.attempts ?? []).map((a) => [a.agent, a.status]));
-    expect(status).toEqual({ careful: "green", fast: "unresolved", tester: "green" });
+    expect(status).toEqual({ ponder: "green", zippy: "unresolved", testy: "green" });
 
     const source = join(root, "source.git");
     expect(await git(source, "rev-parse", "main")).toBe(result.commit);
     expect(await git(source, "rev-parse", "main^1", "main^2")).toBe(`${sourceHead}\n${winnerHead}`);
     expect(await git(source, "show", "main:app.txt")).toBe(RESOLVED.trimEnd());
     const message = await git(source, "log", "-1", "--format=%B", "main");
-    expect(message).toMatch(/^Thunderdome: ship fast's fork for task t1\n\nFast won\.\n\nThe source changed during the race, so the merge conflicted in app\.txt\. tester resolved it in \d+ s; tests 1\/1\.$/);
-    // careful's resolution is kept as a branch; fast made no commit.
-    expect(result.resolve?.kept).toEqual(["thunderdome/t1/resolve-careful"]);
-    expect(await git(source, "show", "thunderdome/t1/resolve-careful:app.txt")).toBe(RESOLVED.trimEnd());
-    expect(await git(source, "branch", "--list")).not.toContain("resolve-fast");
+    expect(message).toMatch(/^Thunderdome: ship zippy's fork for task t1\n\nFast won\.\n\nThe source changed during the race, so the merge conflicted in app\.txt\. testy resolved it in \d+ s; tests 1\/1\.$/);
+    // ponder's resolution is kept as a branch; zippy made no commit.
+    expect(result.resolve?.kept).toEqual(["thunderdome/t1/resolve-ponder"]);
+    expect(await git(source, "show", "thunderdome/t1/resolve-ponder:app.txt")).toBe(RESOLVED.trimEnd());
+    expect(await git(source, "branch", "--list")).not.toContain("resolve-zippy");
   });
 
   it("stays \"conflict\" and pushes nothing when no resolver passes", async () => {
     const before = await git(join(root, "source.git"), "rev-parse", "main");
-    const result = await shipTask(shipDeps({ careful: "leave", fast: "leave", tester: "leave" }), shipInput());
+    const result = await shipTask(shipDeps({ ponder: "leave", zippy: "leave", testy: "leave" }), shipInput());
     expect(result.status).toBe("conflict");
     expect(result.resolve?.attempts.map((a) => a.status)).toEqual(["unresolved", "unresolved", "unresolved"]);
     expect(result.resolve?.attempts[0]?.note).toBe("conflict markers left in: app.txt");

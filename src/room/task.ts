@@ -10,6 +10,7 @@ import type { BaseRequest } from "../push/push"; // type-only: push.ts imports i
 import { retry } from "../retry";
 import type { ShipResult } from "../ship/ship";
 import { claimsOf, type ClaimBoard } from "./claims";
+import type { RaceMemory } from "./races";
 
 // A task with N agents uses the first N names.
 export { AGENT_NAMES };
@@ -98,6 +99,7 @@ export interface Verdict {
   ship: ShipResult;
   scores?: VerdictScore[]; // ranked order; missing on older verdicts
   decidedBy?: DecidedBy; // missing with no winner or no eligible runner-up
+  headline?: string; // the judge's one-line reason; missing with no winner or no eligible runner-up
 }
 
 export interface Task {
@@ -114,6 +116,7 @@ export interface Task {
   verdict?: Verdict;
   baseCommit?: string; // the source head when the forks were made; the base preview is built from it
   basePreview?: Preview; // the "before" preview of the source at baseCommit
+  memory?: RaceMemory[]; // earlier races on the same app, told to every agent; missing = none
 }
 
 // A type alias, not an interface, so it fits the SQL row type.

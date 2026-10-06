@@ -19,6 +19,21 @@ containers, Durable Objects, Workflows, Workers Previews, Workers AI (Clef), Bro
 and Workers static assets. See [PLAN.md](PLAN.md) for the build plan and [docs/api-notes.md](docs/api-notes.md)
 for the platform APIs we use.
 
+## Quickstart
+
+No setup needed: the live deploy runs races for anyone.
+
+1. Open **[thunderdome.git-bc1.workers.dev/play](https://thunderdome.git-bc1.workers.dev/play)**.
+2. Pick a demo app (`bugs`, `ui` or `clash`) and type a task, for example *"Make the shop page a
+   responsive grid of product cards"*. Press start.
+3. Watch Ponder, Zippy and Testy race live. In 2 to 4 minutes the judge picks a winner, merges it,
+   and says why. Click a robot to see its code; open **replay** to watch it again.
+4. Every race is in the **[gallery](https://thunderdome.git-bc1.workers.dev/races)**, with a
+   leaderboard and the judge's reason for each winner.
+
+To run your own copy, see [Run it yourself](#run-it-yourself): one Cloudflare account on the
+Workers Paid plan, an Anthropic API key, then `npm install`, your account id in `wrangler.jsonc`, three secrets and `npm run deploy`.
+
 ## How it works
 
 ```mermaid
@@ -47,9 +62,10 @@ flowchart LR
    fork gets its own write token. A demo template is first forked into a fresh source repo, so
    the template never changes.
 2. **Race.** Each agent runs Claude Code in its own Sandbox container, with its own style
-   (careful, fast, tester). Before editing, it claims files on the TaskRoom's claim board; a
+   (Ponder is careful, Zippy is fast, Testy writes the test first). Before editing, it claims files on the TaskRoom's claim board; a
    file another agent holds becomes a shared claim (a clash), which costs claim points when another
-   agent did the task without that file. Agents
+   agent did the task without that file. Each agent is also told what earlier races on the same
+   app taught: the task, who won and the judge's reason (see [Race memory](#race-memory)). Agents
    push to their fork as they work. Tokens stay outside the sandbox: the outbound proxy adds them.
 3. **Push events.** Each push fires an Artifacts `repo.pushed` event into the `thunderdome-push`
    Workflow. It records the push on the TaskRoom (the git graph) and builds a Workers Preview
@@ -206,7 +222,7 @@ What it does not do yet:
   `/` at two widths, and Clef's look scores for nearly identical pages differ by tenths of a level.
 - A task with one obvious answer makes the agents write the same fix. In both `bugs` races on Oct 5
   all three diffs were the same code (one differed only in the order of an import). The judge
-  fingerprints each diff's changed lines and says so ("wrote the same fix; careful finished first"),
+  fingerprints each diff's changed lines and says so ("wrote the same fix; ponder finished first"),
   but nothing in the code can pick a winner then. `clash-full` asks for more than its tests check,
   so its fixes differ; it is the race to watch.
 - Clef's task fit and clarity scores for different but similar fixes are often within a point, so
@@ -250,7 +266,7 @@ Pass: the first call returns `201` with `"status": "ready"` and 3 agents, each w
 ### Run the race
 
 Start the agents of a `ready` task. Each agent runs Claude Code in its own sandbox, with its
-own style (`careful`, `fast`, `tester`, `lean`, `tidy`), for at most 8 minutes. Agents commit
+own style (`ponder` careful, `zippy` fast, `testy` test-first, `snip` lean, `sparkle` tidy), for at most 8 minutes. Agents commit
 and push to their fork after each working step. When an agent ends, the sandbox commits what
 is left, pushes the fork, and reports `DONE` to the TaskRoom.
 
@@ -351,6 +367,19 @@ curl -X POST https://thunderdome.<your-subdomain>.workers.dev/admin/purge \
   -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" -d '{}'
 ```
 
+### Race memory
+
+Context carries from one race to the next. When a race is created, the TaskRoom looks up the
+newest 3 judged races on the same app (the same demo template, or the same repo) in the
+RaceIndex. Every agent's system prompt then lists each one: the task, the winner and the judge's
+one-line reason. For a race on a shared repo, it also names the winner's merge commit, which is
+already in the repo the agents fork. The race page shows this under the task ("Remembers"), and
+the gallery shows each race's reason.
+
+Past prompts come from other users, so each is quoted as JSON and the agents are told the list
+is a record of what the judge rewarded, not instructions. Each prompt is cut to 200 characters.
+The code is `raceMemory` in `src/room/races.ts` and `memoryText` in `src/agents/prompt.ts`.
+
 ### Live previews
 
 Every push to a fork's `main` builds a Workers Preview of exactly that commit. The previews
@@ -396,7 +425,7 @@ the verdict on the task.
 
 If the source moved on during the race (another race shipped first, or someone pushed), the
 winner's merge can conflict. Then the ship starts a **conflict race**: a second sandbox clones
-the source, adds one `git worktree` per resolver (careful, fast, tester), starts the same merge in
+the source, adds one `git worktree` per resolver (Ponder, Zippy and Testy again), starts the same merge in
 each, and runs Claude Code in all of them at once. Each resolution is checked (no conflict markers left, and
 a real merge of the source head and the winner), then tested and committed. The one that finished
 first with all its tests passing is pushed as the merge commit, with a line under the why on who resolved it.
@@ -456,7 +485,7 @@ It returns `{ agent, diff, clipped }`, where `clipped` is true when the diff was
 `{ "error": "not found" }` before the judge saved one. Other methods get `405`.
 
 ```sh
-curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/forks/careful/diff
+curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/forks/ponder/diff
 ```
 
 ### Run your own race
@@ -502,7 +531,7 @@ without changing that file. A clash every fork needed costs nothing. You can use
 ```sh
 curl -X POST https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/claims \
   -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" \
-  -d '{"agent":"careful","files":["src/text.ts"]}'
+  -d '{"agent":"ponder","files":["src/text.ts"]}'
 
 curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/claims \
   -H "authorization: Bearer $ADMIN_TOKEN"

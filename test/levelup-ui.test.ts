@@ -17,7 +17,7 @@ function task(): WireTask {
     startedAt: iso(0),
     agents: [
       {
-        name: "careful",
+        name: "ponder",
         status: "done",
         startedAt: iso(0),
         endedAt: iso(80),
@@ -32,29 +32,29 @@ function task(): WireTask {
           ],
         },
       },
-      { name: "fast", status: "done", startedAt: iso(0), endedAt: iso(50), push: { commits: 4, pushes: 2, lastPushAt: iso(40), head: "f2" } },
+      { name: "zippy", status: "done", startedAt: iso(0), endedAt: iso(50), push: { commits: 4, pushes: 2, lastPushAt: iso(40), head: "f2" } },
     ],
-    verdict: { winner: "careful", why: "", judgedAt: iso(100), ship: { status: "merged", commit: "abcdef1234567" } },
+    verdict: { winner: "ponder", why: "", judgedAt: iso(100), ship: { status: "merged", commit: "abcdef1234567" } },
   };
 }
 
 describe("git graph", () => {
   it("U15 pushDots uses the push log, and estimates older tasks from the count", () => {
     const dots = pushDots(task());
-    expect(dots.filter((d) => d.agent === "careful")).toEqual([
-      { agent: "careful", at: T0 + 20_000, commits: 1, commit: "c1aaaaaaaa", message: "first" },
-      { agent: "careful", at: T0 + 60_000, commits: 2, commit: "c2bbbbbbbb" },
+    expect(dots.filter((d) => d.agent === "ponder")).toEqual([
+      { agent: "ponder", at: T0 + 20_000, commits: 1, commit: "c1aaaaaaaa", message: "first" },
+      { agent: "ponder", at: T0 + 60_000, commits: 2, commit: "c2bbbbbbbb" },
     ]);
-    const fast = dots.filter((d) => d.agent === "fast");
-    expect(fast.map((d) => d.at)).toEqual([T0 + 20_000, T0 + 40_000]);
-    expect(fast.map((d) => d.commits)).toEqual([2, 2]);
-    expect(fast.map((d) => d.approx)).toEqual([true, undefined]);
-    expect(fast[1]?.commit).toBe("f2");
+    const zippy = dots.filter((d) => d.agent === "zippy");
+    expect(zippy.map((d) => d.at)).toEqual([T0 + 20_000, T0 + 40_000]);
+    expect(zippy.map((d) => d.commits)).toEqual([2, 2]);
+    expect(zippy.map((d) => d.approx)).toEqual([true, undefined]);
+    expect(zippy[1]?.commit).toBe("f2");
   });
 
   it("U16 gitGraph places dots and lanes by time and merges the winner only once judged", () => {
     const t = task();
-    const input = { agents: ["careful", "fast"], start: T0, ends: { careful: T0 + 80_000, fast: T0 + 50_000 }, dots: pushDots(t), merge: mergeOf(t), domainEnd: T0 + 100_000 };
+    const input = { agents: ["ponder", "zippy"], start: T0, ends: { ponder: T0 + 80_000, zippy: T0 + 50_000 }, dots: pushDots(t), merge: mergeOf(t), domainEnd: T0 + 100_000 };
     const mid = gitGraph({ ...input, t: T0 + 45_000 });
     expect(mid.merge).toBeUndefined();
     expect(mid.nowX).toBeCloseTo(0.45);
@@ -64,7 +64,7 @@ describe("git graph", () => {
     expect(mid.lanes[0]?.endX).toBeCloseTo(0.45);
     expect(mid.lanes[1]?.dots).toHaveLength(2);
     const done = gitGraph({ ...input, t: T0 + 100_000 });
-    expect(done.merge).toEqual({ agent: "careful", x: 1, commit: "abcdef1" });
+    expect(done.merge).toEqual({ agent: "ponder", x: 1, commit: "abcdef1" });
     expect(done.lanes.map((l) => [l.ended, l.won, l.endX])).toEqual([
       [true, true, 0.8],
       [true, false, 0.5],
@@ -75,18 +75,18 @@ describe("git graph", () => {
 
 describe("leaderboard", () => {
   const races: RaceRow[] = [
-    { id: "t-00000001", agents: ["careful", "fast", "tester"], winner: "fast", clash: true, decidedBy: "claims", scores: [{ agent: "fast", total: 90 }, { agent: "careful", total: 91 }, { agent: "tester", total: 70 }], startedAt: iso(0), finishedAt: iso(100) },
-    { id: "t-00000002", agents: ["careful", "fast", "tester"], winner: "careful", decidedBy: "code", scores: [{ agent: "careful", total: 95 }, { agent: "fast", total: 80 }, { agent: "tester", total: 60 }], startedAt: iso(0), finishedAt: iso(200) },
-    { id: "t-00000003", agents: ["careful", "fast", "tester"], winner: "fast", clash: true },
-    { id: "t-00000004", agents: ["careful", "fast", "tester"] }, // still running
+    { id: "t-00000001", agents: ["ponder", "zippy", "testy"], winner: "zippy", clash: true, decidedBy: "claims", scores: [{ agent: "zippy", total: 90 }, { agent: "ponder", total: 91 }, { agent: "testy", total: 70 }], startedAt: iso(0), finishedAt: iso(100) },
+    { id: "t-00000002", agents: ["ponder", "zippy", "testy"], winner: "ponder", decidedBy: "code", scores: [{ agent: "ponder", total: 95 }, { agent: "zippy", total: 80 }, { agent: "testy", total: 60 }], startedAt: iso(0), finishedAt: iso(200) },
+    { id: "t-00000003", agents: ["ponder", "zippy", "testy"], winner: "zippy", clash: true },
+    { id: "t-00000004", agents: ["ponder", "zippy", "testy"] }, // still running
   ];
 
   it("U17 standings rank by wins and average only the races with scores", () => {
     const rows = standings(races);
     expect(rows.map((r) => [r.agent, r.name, r.races, r.wins])).toEqual([
-      ["fast", "Zippy", 3, 2],
-      ["careful", "Ponder", 3, 1],
-      ["tester", "Testy", 3, 0],
+      ["zippy", "Zippy", 3, 2],
+      ["ponder", "Ponder", 3, 1],
+      ["testy", "Testy", 3, 0],
     ]);
     expect(rows[0]?.avgScore).toBe(85);
     expect(rows[1]?.avgScore).toBe(93);

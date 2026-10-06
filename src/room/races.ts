@@ -8,12 +8,26 @@ import type { Task, TaskStatus } from "./task";
 export const RACE_INDEX_MAX = 200;
 export const RACE_LIST_LIMIT = 50;
 
+// Past races a new race remembers, and the characters of each past prompt it keeps.
+export const MEMORY_MAX = 3;
+export const MEMORY_PROMPT_MAX = 200;
+
 export type RaceScore = { agent: string; total: number };
+
+// What a new race is told about one earlier judged race on the same app.
+export interface RaceMemory {
+  id: string;
+  prompt: string; // clipped to MEMORY_PROMPT_MAX
+  winner: string;
+  headline?: string; // the judge's one-line reason
+  commit?: string; // the winner's merge, only when it landed in the repo the new race forks
+}
 
 export interface RaceSummary {
   id: string;
   prompt: string;
   template?: string;
+  repo?: string; // the source repo; missing on older summaries
   status: TaskStatus;
   createdAt: string;
   startedAt?: string;
@@ -22,6 +36,8 @@ export interface RaceSummary {
   winner?: string | null; // only once judged
   scores?: RaceScore[]; // ranked order, only when the verdict has scores
   decidedBy?: DecidedBy; // only when the verdict has it
+  headline?: string; // the judge's one-line reason, only when the verdict has it
+  commit?: string; // the merge commit, only when the winner merged
   clash: boolean;
 }
 
@@ -32,6 +48,7 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     id: task.id,
     prompt: task.prompt,
     ...(task.template === undefined ? {} : { template: task.template }),
+    repo: task.repo,
     status: task.status,
     createdAt: task.createdAt,
     ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
@@ -40,6 +57,8 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     ...(v === undefined ? {} : { winner: v.winner }),
     ...(v?.scores === undefined ? {} : { scores: v.scores.map(({ agent, total }) => ({ agent, total })) }),
     ...(v?.decidedBy === undefined ? {} : { decidedBy: v.decidedBy }),
+    ...(v?.headline === undefined ? {} : { headline: v.headline }),
+    ...(v?.ship.status === "merged" && v.ship.commit !== undefined ? { commit: v.ship.commit } : {}),
     clash: hasClash(history),
   };
 }
@@ -62,4 +81,21 @@ export function upsertRace(list: readonly RaceSummary[], summary: RaceSummary, m
   return [summary, ...list.filter((race) => race.id !== summary.id)]
     .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
     .slice(0, Math.max(0, max));
+}
+
+// The newest judged races with a winner on the same app as a new race: the same template, or for
+// a race on a given repo, the same repo. A template race forks a fresh copy, so its winner's code
+// is not in the new race's repo; only a same-repo memory names the merge commit.
+export function raceMemory(races: readonly RaceSummary[], app: { id: string; template?: string; repo: string }): RaceMemory[] {
+  const same = (r: RaceSummary): boolean => (app.template === undefined ? r.template === undefined && r.repo === app.repo : r.template === app.template);
+  return races
+    .filter((r) => r.id !== app.id && typeof r.winner === "string" && same(r))
+    .slice(0, MEMORY_MAX)
+    .map((r) => ({
+      id: r.id,
+      prompt: r.prompt.length <= MEMORY_PROMPT_MAX ? r.prompt : `${r.prompt.slice(0, MEMORY_PROMPT_MAX - 1)}…`,
+      winner: r.winner as string,
+      ...(r.headline === undefined ? {} : { headline: r.headline }),
+      ...(app.template === undefined && r.commit !== undefined ? { commit: r.commit } : {}),
+    }));
 }

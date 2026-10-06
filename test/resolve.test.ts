@@ -18,12 +18,12 @@ import {
 const req: ConflictRequest = {
   taskId: "t1",
   prompt: "Add a discount code",
-  winner: "fast",
-  winnerRemote: "https://git.test/git/thunderdome/t1-fast.git",
+  winner: "zippy",
+  winnerRemote: "https://git.test/git/thunderdome/t1-zippy.git",
   winnerBranch: "main",
   base: "base0",
   theirs: "their1",
-  message: "Thunderdome: ship fast's fork for task t1\n\nFast passed every test.",
+  message: "Thunderdome: ship zippy's fork for task t1\n\nFast passed every test.",
   files: ["src/cart.ts"],
 };
 
@@ -90,8 +90,8 @@ describe("raceConflict", () => {
     await raceConflict(deps, req);
     // Claude Code's output goes to a log outside the worktree, so it is never committed.
     const claude = calls.find((c) => c.argv.includes("claude"));
-    expect(claude?.argv.slice(0, 5)).toEqual(["/bin/sh", "-c", 'log="$1"; shift; "$@" > "$log" 2>&1', "resolve", "/workspace/resolve-logs/careful.jsonl"]);
-    for (const name of ["careful", "fast", "tester"]) {
+    expect(claude?.argv.slice(0, 5)).toEqual(["/bin/sh", "-c", 'log="$1"; shift; "$@" > "$log" 2>&1', "resolve", "/workspace/resolve-logs/ponder.jsonl"]);
+    for (const name of ["ponder", "zippy", "testy"]) {
       const dir = `${RESOLVE_DIR}/${name}`;
       expect(calls).toContainEqual({ argv: ["git", "worktree", "add", "--detach", dir, "base0"], cwd: "/workspace/repo" });
       expect(calls.find((c) => c.cwd === dir && c.argv[1] === "merge")?.argv).toEqual(["git", "merge", "--no-ff", "--no-commit", "their1"]);
@@ -101,24 +101,24 @@ describe("raceConflict", () => {
   });
 
   it("ships the first green resolution and bundles every committed attempt", async () => {
-    const { deps, calls } = fakeRace({ careful: { finishAt: 90_000 }, fast: { finishAt: 40_000, tests: [2, 3] }, tester: { finishAt: 60_000 } });
+    const { deps, calls } = fakeRace({ ponder: { finishAt: 90_000 }, zippy: { finishAt: 40_000, tests: [2, 3] }, testy: { finishAt: 60_000 } });
     const race = await raceConflict(deps, req);
-    expect(race.chosen).toBe("tester");
+    expect(race.chosen).toBe("testy");
     expect(race.bundle).toBe("QlVORExF");
     const byName = Object.fromEntries(race.attempts.map((a) => [a.agent, a]));
-    expect(byName.fast).toMatchObject({ status: "red", commit: "merge-fast", tests: { passed: 2, total: 3 } });
-    expect(byName.tester).toMatchObject({ status: "green", commit: "merge-tester", costUsd: 0.05 });
+    expect(byName.zippy).toMatchObject({ status: "red", commit: "merge-zippy", tests: { passed: 2, total: 3 } });
+    expect(byName.testy).toMatchObject({ status: "green", commit: "merge-testy", costUsd: 0.05 });
     const bundle = calls.find((c) => c.argv[1] === "bundle")?.argv;
     expect(bundle).toEqual([
       "git", "bundle", "create", BUNDLE_PATH,
-      `${RESOLVE_REF_PREFIX}careful`, `${RESOLVE_REF_PREFIX}fast`, `${RESOLVE_REF_PREFIX}tester`,
+      `${RESOLVE_REF_PREFIX}ponder`, `${RESOLVE_REF_PREFIX}zippy`, `${RESOLVE_REF_PREFIX}testy`,
       "^base0", "^their1",
     ]);
     expect(JSON.parse(JSON.stringify(race))).toEqual(race);
   });
 
   it("does not commit a resolution with markers, a failed marker check, an aborted merge or a commit of its own", async () => {
-    const { deps, calls } = fakeRace({ careful: { leaves: "markers" }, fast: { leaves: "grepFails" }, tester: { leaves: "aborted" } });
+    const { deps, calls } = fakeRace({ ponder: { leaves: "markers" }, zippy: { leaves: "grepFails" }, testy: { leaves: "aborted" } });
     const race = await raceConflict(deps, req);
     expect(race.chosen).toBeUndefined();
     expect(race.bundle).toBeUndefined();
@@ -130,16 +130,16 @@ describe("raceConflict", () => {
     ]);
     expect(calls.some((c) => c.argv[1] === "commit" || c.argv[1] === "bundle")).toBe(false);
 
-    const own = await raceConflict(fakeRace({ careful: { leaves: "committed" } }).deps, req);
+    const own = await raceConflict(fakeRace({ ponder: { leaves: "committed" } }).deps, req);
     expect(own.attempts[0]).toMatchObject({ status: "unresolved", note: "HEAD moved: the resolver committed or switched branches" });
   });
 
   it("a broken attempt does not stop the others", async () => {
-    const race = await raceConflict(fakeRace({ careful: { claudeThrows: true }, fast: { tests: "none" } }).deps, req);
+    const race = await raceConflict(fakeRace({ ponder: { claudeThrows: true }, zippy: { tests: "none" } }).deps, req);
     expect(race.attempts.map((a) => a.status)).toEqual(["failed", "red", "green"]);
     expect(race.attempts[0]?.note).toBe("container gone");
     expect(race.attempts[1]?.note).toBe("the tests printed no summary");
-    expect(race.chosen).toBe("tester");
+    expect(race.chosen).toBe("testy");
   });
 
   it("throws when the shared setup fails", async () => {
@@ -152,22 +152,22 @@ describe("pickResolution", () => {
   const a = (agent: ResolverName, status: ResolveAttempt["status"], seconds: number, lines = 10): ResolveAttempt => ({ agent, status, seconds, lines });
 
   it("takes the earliest green, then the smaller change, then RESOLVERS order", () => {
-    expect(pickResolution([a("careful", "green", 50), a("fast", "red", 10), a("tester", "green", 40)])).toBe("tester");
-    expect(pickResolution([a("careful", "green", 40, 30), a("fast", "green", 40, 12), a("tester", "green", 40, 12)])).toBe("fast");
-    expect(pickResolution([a("careful", "red", 1), a("fast", "unresolved", 1), a("tester", "failed", 1)])).toBeUndefined();
+    expect(pickResolution([a("ponder", "green", 50), a("zippy", "red", 10), a("testy", "green", 40)])).toBe("testy");
+    expect(pickResolution([a("ponder", "green", 40, 30), a("zippy", "green", 40, 12), a("testy", "green", 40, 12)])).toBe("zippy");
+    expect(pickResolution([a("ponder", "red", 1), a("zippy", "unresolved", 1), a("testy", "failed", 1)])).toBeUndefined();
   });
 });
 
 describe("resolver messages", () => {
   it("adds how the conflict was resolved under the merge message", () => {
-    expect(resolvedMessage(req.message, "tester", 41, ["src/cart.ts", "test/cart.test.ts"], { passed: 5, total: 5 })).toBe(
-      "Thunderdome: ship fast's fork for task t1\n\nFast passed every test.\n\n" +
-        "The source changed during the race, so the merge conflicted in src/cart.ts, test/cart.test.ts. tester resolved it in 41 s; tests 5/5.\n",
+    expect(resolvedMessage(req.message, "testy", 41, ["src/cart.ts", "test/cart.test.ts"], { passed: 5, total: 5 })).toBe(
+      "Thunderdome: ship zippy's fork for task t1\n\nFast passed every test.\n\n" +
+        "The source changed during the race, so the merge conflicted in src/cart.ts, test/cart.test.ts. testy resolved it in 41 s; tests 5/5.\n",
     );
   });
 
   it("runs Claude Code under a hard timeout with the placeholder key, told not to commit or push", () => {
-    const { argv, env } = resolverCommand("careful", req, "claude-sonnet-5-5");
+    const { argv, env } = resolverCommand("ponder", req, "claude-sonnet-5-5");
     expect(argv.slice(0, 4)).toEqual(["timeout", "--kill-after=10", "300", "claude"]);
     expect(argv).toContain("--model");
     expect(argv.at(-1)).toContain("src/cart.ts");

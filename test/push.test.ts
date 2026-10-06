@@ -22,7 +22,7 @@ const OLDER = "b".repeat(40);
 function pushEvent(overrides: { source?: Record<string, unknown>; payload?: Record<string, unknown>; type?: string } = {}): unknown {
   return {
     type: overrides.type ?? "cf.artifacts.repo.pushed",
-    source: { namespace: "thunderdome", repoName: `${TASK}-fast`, ...overrides.source },
+    source: { namespace: "thunderdome", repoName: `${TASK}-zippy`, ...overrides.source },
     payload: {
       ref: "refs/heads/main",
       before: OLDER,
@@ -41,8 +41,8 @@ describe("parsePushEvent", () => {
   it("R3: a push event to a task fork names its task and agent; the source repo, other namespaces and other branches are ignored", () => {
     expect(parsePushEvent(pushEvent())).toEqual({
       taskId: TASK,
-      agent: "fast",
-      fork: `${TASK}-fast`,
+      agent: "zippy",
+      fork: `${TASK}-zippy`,
       ref: PUSH_REF,
       after: HEAD,
       commits: 2,
@@ -51,10 +51,10 @@ describe("parsePushEvent", () => {
     // The source repo and non-fork names.
     expect(parsePushEvent(pushEvent({ source: { repoName: "thunderdome-sample" } }))).toBeUndefined();
     expect(parsePushEvent(pushEvent({ source: { repoName: `${TASK}-boss` } }))).toBeUndefined();
-    expect(parsePushEvent(pushEvent({ source: { repoName: "t-xyz-fast" } }))).toBeUndefined();
+    expect(parsePushEvent(pushEvent({ source: { repoName: "t-xyz-zippy" } }))).toBeUndefined();
     // Other namespaces, unless asked for.
     expect(parsePushEvent(pushEvent({ source: { namespace: "other" } }))).toBeUndefined();
-    expect(parsePushEvent(pushEvent({ source: { namespace: "other" } }), "other")?.agent).toBe("fast");
+    expect(parsePushEvent(pushEvent({ source: { namespace: "other" } }), "other")?.agent).toBe("zippy");
     // Other branches and tags.
     expect(parsePushEvent(pushEvent({ payload: { ref: "refs/heads/dev" } }))).toBeUndefined();
     expect(parsePushEvent(pushEvent({ payload: { ref: "refs/tags/main" } }))).toBeUndefined();
@@ -106,8 +106,8 @@ describe("parseForkName", () => {
       expect(parseForkName(forkName(TASK, agent))).toEqual({ taskId: TASK, agent });
     }
     expect(parseForkName("thunderdome-sample")).toBeUndefined();
-    expect(parseForkName("careful")).toBeUndefined();
-    expect(parseForkName(`${TASK}-careful-x`)).toBeUndefined();
+    expect(parseForkName("ponder")).toBeUndefined();
+    expect(parseForkName(`${TASK}-ponder-x`)).toBeUndefined();
   });
 });
 
@@ -122,9 +122,9 @@ describe("previewName", () => {
       expect(name.length).toBeLessThanOrEqual(MAX_PREVIEW_NAME_LENGTH);
       expect(`${name}-${worker}`.length).toBeLessThanOrEqual(63);
     }
-    expect(previewName(TASK, "fast")).not.toBe(previewName(TASK, "lean"));
-    expect(() => previewName("T-0123ABCD", "fast")).toThrow();
-    expect(() => previewName("thunderdome-sample", "fast")).toThrow();
+    expect(previewName(TASK, "zippy")).not.toBe(previewName(TASK, "snip"));
+    expect(() => previewName("T-0123ABCD", "zippy")).toThrow();
+    expect(() => previewName("thunderdome-sample", "zippy")).toThrow();
     expect(() => previewName(TASK, "Boss" as AgentName)).toThrow();
   });
 });
@@ -188,7 +188,7 @@ describe("previewConfig", () => {
 
 describe("previewUrl", () => {
   it("R5: the preview URL is read from wrangler's JSON output, and bad output gives none", () => {
-    const url = "https://t-0123abcd-fast-thunderdome-sample.acct.workers.dev";
+    const url = "https://t-0123abcd-zippy-thunderdome-sample.acct.workers.dev";
     expect(previewUrl(JSON.stringify({ preview: { urls: [url, "https://other.dev"] } }))).toBe(url);
     expect(previewUrl(`  ${JSON.stringify({ preview: { urls: [url] } })}\n`)).toBe(url);
     // Log lines around the JSON.

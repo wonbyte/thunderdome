@@ -51,10 +51,10 @@ beforeEach(() => {
   tmp = mkdtempSync(join(tmpdir(), "autopush-"));
   env = {
     ...process.env,
-    GIT_AUTHOR_NAME: "Thunderdome tester",
-    GIT_AUTHOR_EMAIL: "tester@thunderdome.local",
-    GIT_COMMITTER_NAME: "Thunderdome tester",
-    GIT_COMMITTER_EMAIL: "tester@thunderdome.local",
+    GIT_AUTHOR_NAME: "Thunderdome testy",
+    GIT_AUTHOR_EMAIL: "testy@thunderdome.local",
+    GIT_COMMITTER_NAME: "Thunderdome testy",
+    GIT_COMMITTER_EMAIL: "testy@thunderdome.local",
     GIT_CONFIG_GLOBAL: "/dev/null",
     GIT_CONFIG_NOSYSTEM: "1",
     AUTOPUSH_STATE: statePath(),
@@ -76,7 +76,7 @@ describe("autopush hook", () => {
   it("P1: after a test-run Bash command with uncommitted changes, the hook commits and pushes them to the remote's main", () => {
     writeWork(workDir(), "src/a.ts", "export const a = 1;\n");
     expect(runHook(workDir(), hookInput("Bash", "npm test"))).toEqual({ status: 0, stdout: "" });
-    expect(remoteLog()).toEqual(["Thunderdome tester: work in progress (src/a.ts)", "first"]);
+    expect(remoteLog()).toEqual(["Thunderdome testy: work in progress (src/a.ts)", "first"]);
     expect(git(workDir(), ["status", "--porcelain"])).toBe("");
     const state = JSON.parse(readFileSync(statePath(), "utf8")) as { lastPushAt: unknown };
     expect(typeof state.lastPushAt).toBe("number");
@@ -102,7 +102,7 @@ describe("autopush hook", () => {
     expect(remoteLog()).toHaveLength(2);
     // A test run pushes regardless.
     expect(runHook(workDir(), hookInput("Bash", "npm run build && npx vitest run"))).toEqual({ status: 0, stdout: "" });
-    expect(remoteLog()[0]).toBe("Thunderdome tester: work in progress (src/b.ts)");
+    expect(remoteLog()[0]).toBe("Thunderdome testy: work in progress (src/b.ts)");
   }, SLOW);
 
   it("P3: with nothing new (clean tree, nothing unpushed) the hook makes no commit and no push", () => {
@@ -152,17 +152,17 @@ describe("autopush helpers", () => {
   });
 
   it("P4: the commit message names the agent and the changed files and is at most 120 characters", () => {
-    expect(commitMessage("careful", ["src/a.ts", "src/b.ts"])).toBe("Thunderdome careful: work in progress (src/a.ts, src/b.ts)");
-    expect(commitMessage("careful", [])).toBe("Thunderdome careful: work in progress");
+    expect(commitMessage("ponder", ["src/a.ts", "src/b.ts"])).toBe("Thunderdome ponder: work in progress (src/a.ts, src/b.ts)");
+    expect(commitMessage("ponder", [])).toBe("Thunderdome ponder: work in progress");
     const files = Array.from({ length: 30 }, (_, i) => `src/some/deeply/nested/folder/file-${i}.ts`);
-    const long = commitMessage("careful", files);
+    const long = commitMessage("ponder", files);
     expect(long.length).toBeLessThanOrEqual(120);
     expect(long.endsWith("…")).toBe(true);
-    expect(long.startsWith("Thunderdome careful: work in progress (")).toBe(true);
+    expect(long.startsWith("Thunderdome ponder: work in progress (")).toBe(true);
   });
 
   it("agentFromAuthor reads the agent from the author name", () => {
-    expect(agentFromAuthor("Thunderdome careful")).toBe("careful");
+    expect(agentFromAuthor("Thunderdome ponder")).toBe("ponder");
     expect(agentFromAuthor("Thunderdome")).toBe("agent");
     expect(agentFromAuthor("someone else")).toBe("agent");
     expect(agentFromAuthor(undefined)).toBe("agent");

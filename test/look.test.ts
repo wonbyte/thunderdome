@@ -52,9 +52,9 @@ const input = {
   task: "Make the shop page a dark grid",
   before: "https://base.test",
   forks: [
-    { agent: "careful", preview: "https://careful.test" },
-    { agent: "fast", preview: "https://fast.test" },
-    { agent: "tester" },
+    { agent: "ponder", preview: "https://ponder.test" },
+    { agent: "zippy", preview: "https://zippy.test" },
+    { agent: "testy" },
   ],
 };
 
@@ -66,40 +66,40 @@ describe("judgeLook", () => {
   });
 
   it("screenshots the before page once and each fork at desktop and phone width, then scores each fork", async () => {
-    const { deps, shots, bodies } = fakeDeps({ levels: { careful: [4, 3], fast: [2, 4] } });
+    const { deps, shots, bodies } = fakeDeps({ levels: { ponder: [4, 3], zippy: [2, 4] } });
     const result = await judgeLook(deps, input);
     // The before page first, then the forks at once.
     expect(shots[0]).toEqual({ url: "https://base.test", viewport: DESKTOP });
     expect(shots.slice(1)).toEqual(expect.arrayContaining([
-      { url: "https://careful.test", viewport: DESKTOP },
-      { url: "https://careful.test", viewport: PHONE },
-      { url: "https://fast.test", viewport: DESKTOP },
-      { url: "https://fast.test", viewport: PHONE },
+      { url: "https://ponder.test", viewport: DESKTOP },
+      { url: "https://ponder.test", viewport: PHONE },
+      { url: "https://zippy.test", viewport: DESKTOP },
+      { url: "https://zippy.test", viewport: PHONE },
     ]));
     expect(shots).toHaveLength(5);
     expect(result.judged).toBe(true);
     expect(result.forks).toEqual([
-      { agent: "careful", look: combineLook(1, 0.75), fit: 1, quality: 0.75 },
-      { agent: "fast", look: combineLook(0.5, 1), fit: 0.5, quality: 1 },
-      { agent: "tester", look: 0, error: "no preview of its final commit" },
+      { agent: "ponder", look: combineLook(1, 0.75), fit: 1, quality: 0.75 },
+      { agent: "zippy", look: combineLook(0.5, 1), fit: 0.5, quality: 1 },
+      { agent: "testy", look: 0, error: "no preview of its final commit" },
     ]);
     // The look request carries before, desktop and phone, and says which is which.
-    const careful = bodies.find((b) => (b.images as { base64: string }[] | undefined)?.some((i) => i.base64.includes("careful")))!;
-    expect((careful.images as { base64: string }[]).map((i) => i.base64)).toEqual([
+    const ponder = bodies.find((b) => (b.images as { base64: string }[] | undefined)?.some((i) => i.base64.includes("ponder")))!;
+    expect((ponder.images as { base64: string }[]).map((i) => i.base64)).toEqual([
       "jpeg:https://base.test:1280",
-      "jpeg:https://careful.test:1280",
-      "jpeg:https://careful.test:390",
+      "jpeg:https://ponder.test:1280",
+      "jpeg:https://ponder.test:390",
     ]);
-    expect((careful.state as { screenshots: string[] }).screenshots[0]).toBe("Image 1 is the page before the change, at desktop width.");
-    expect(careful.questions).toBe(LOOK_QUESTIONS);
+    expect((ponder.state as { screenshots: string[] }).screenshots[0]).toBe("Image 1 is the page before the change, at desktop width.");
+    expect(ponder.questions).toBe(LOOK_QUESTIONS);
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   });
 
   it("gives a fork whose page does not load 0 look points, and still judges the others", async () => {
-    const { deps } = fakeDeps({ broken: ["fast"] });
+    const { deps } = fakeDeps({ broken: ["zippy"] });
     const result = await judgeLook(deps, input);
     expect(result.judged).toBe(true);
-    expect(result.forks[1]).toMatchObject({ agent: "fast", look: 0 });
+    expect(result.forks[1]).toMatchObject({ agent: "zippy", look: 0 });
     expect(result.forks[1]?.error).toContain("the preview did not load");
   });
 
@@ -113,7 +113,7 @@ describe("judgeLook", () => {
   });
 
   it("does not judge on look when no fork could be judged", async () => {
-    const result = await judgeLook(fakeDeps({ broken: ["careful", "fast"] }).deps, input);
+    const result = await judgeLook(fakeDeps({ broken: ["ponder", "zippy"] }).deps, input);
     expect(result.judged).toBe(false);
     expect(result.forks.every((f) => f.look === 0)).toBe(true);
   });
@@ -147,17 +147,17 @@ describe("readyPreviews", () => {
     baseCommit: "b0",
     basePreview: { url: "https://base.test", commit: "b0", at: "x" },
     agents: [
-      { name: "careful", push: { head: "c2", preview: { url: "https://careful.test", commit: "c2", at: "x" } } },
-      { name: "fast", push: { head: "f2", preview: { url: "https://fast.test", commit: "f1", at: "x" } } },
-      { name: "tester" },
+      { name: "ponder", push: { head: "c2", preview: { url: "https://ponder.test", commit: "c2", at: "x" } } },
+      { name: "zippy", push: { head: "f2", preview: { url: "https://zippy.test", commit: "f1", at: "x" } } },
+      { name: "testy" },
     ],
   } as unknown as Task;
 
   it("uses only previews built from each fork's final commit, and names the forks still waiting", () => {
     expect(readyPreviews(task)).toEqual({
       before: "https://base.test",
-      forks: [{ agent: "careful", preview: "https://careful.test" }, { agent: "fast" }, { agent: "tester" }],
-      waiting: ["fast"],
+      forks: [{ agent: "ponder", preview: "https://ponder.test" }, { agent: "zippy" }, { agent: "testy" }],
+      waiting: ["zippy"],
     });
     const stale = { ...task, basePreview: { url: "https://old.test", commit: "zz", at: "x" } } as Task;
     expect(readyPreviews(stale).before).toBeUndefined();

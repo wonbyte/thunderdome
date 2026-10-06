@@ -5,7 +5,7 @@ import { clip, parseEvent, resultOf, type RunResult } from "../agents/events";
 import { PLACEHOLDER_API_KEY } from "../agents/runner";
 import { parseNumstat, parseTestSummary, testCommand, type TestRun } from "../judge/judge";
 
-export const RESOLVERS = ["careful", "fast", "tester"] as const;
+export const RESOLVERS = ["ponder", "zippy", "testy"] as const;
 export type ResolverName = (typeof RESOLVERS)[number];
 export const RESOLVE_TIME_S = 5 * 60;
 export const RESOLVE_TEST_TIMEOUT_S = 180;
@@ -68,9 +68,9 @@ const SHIP_ENV = {
 };
 
 const RESOLVER_STYLES: Record<ResolverName, string> = {
-  careful: "You are the careful resolver. Read both sides of every conflict and the tests before you edit.",
-  fast: "You are the fast resolver. Go straight to the most likely resolution, then run the tests once.",
-  tester: "You are the test-first resolver. Run the tests early, then resolve until they all pass.",
+  ponder: "You are Ponder, the careful resolver. Read both sides of every conflict and the tests before you edit.",
+  zippy: "You are Zippy, the fast resolver. Go straight to the most likely resolution, then run the tests once.",
+  testy: "You are Testy, the test-first resolver. Run the tests early, then resolve until they all pass.",
 };
 
 export function resolverPrompt(name: ResolverName, minutes: number): string {

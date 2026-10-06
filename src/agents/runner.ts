@@ -1,5 +1,6 @@
 // How one agent runs in one sandbox: its command line, its time limit, and what it reports.
 import { thunderdomeApiBase, MODEL_API_HOST } from "../sandbox/policy";
+import type { RaceMemory } from "../room/races";
 import { systemPrompt, type AgentName } from "./prompt";
 
 export const AGENT_TIME_LIMIT_MS = 8 * 60 * 1_000;
@@ -39,6 +40,8 @@ export interface AgentSpec {
   deadline: number;
   // Empty means Claude Code picks its default model.
   model: string;
+  // Earlier races on the same app; missing = none.
+  memory?: RaceMemory[];
 }
 
 export type AgentEnd = "done" | "failed" | "timeout";
@@ -68,7 +71,7 @@ export function agentCommand(spec: AgentSpec): { argv: string[]; env: Record<str
       "--no-session-persistence",
       ...model,
       "--append-system-prompt",
-      systemPrompt(spec.agent, minutes),
+      systemPrompt(spec.agent, minutes, spec.memory),
       "--settings",
       JSON.stringify(autopushSettings()),
       "--",

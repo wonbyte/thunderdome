@@ -37,7 +37,7 @@ function wireTask(status: WireTask["agents"][number]["status"] = "running"): Wir
     prompt: "Fix the bug",
     status: "running",
     startedAt: "2025-01-01T00:00:00.000Z",
-    agents: ["careful", "fast", "tester"].map((name) => ({ name, status })),
+    agents: ["ponder", "zippy", "testy"].map((name) => ({ name, status })),
   };
 }
 
@@ -87,8 +87,8 @@ describe("board", () => {
     for (const [kind, text, action] of cases) {
       expect(actionForStep({ kind, text }), `${kind} ${text}`).toBe(action);
     }
-    expect(colorFor("careful")).toBe("#d97757");
-    expect(colorFor("tidy")).toBe(AGENT_COLORS.tidy);
+    expect(colorFor("ponder")).toBe("#d97757");
+    expect(colorFor("sparkle")).toBe(AGENT_COLORS.sparkle);
     expect(colorFor("someone")).toBe(FALLBACK_COLOR);
     expect(colorFor("toString")).toBe(FALLBACK_COLOR);
   });
@@ -97,104 +97,104 @@ describe("board", () => {
     const task = wireTask();
     const board = initBoard(task, [], { active: [], history: [] }, now);
     expect(board.fighters.map((f) => [f.agent, f.color, f.action, f.status])).toEqual([
-      ["careful", "#d97757", "idle", "running"],
-      ["fast", "#e5484d", "idle", "running"],
-      ["tester", "#3e8ed0", "idle", "running"],
+      ["ponder", "#d97757", "idle", "running"],
+      ["zippy", "#e5484d", "idle", "running"],
+      ["testy", "#3e8ed0", "idle", "running"],
     ]);
     const frozen = JSON.stringify(board);
 
     const long = `Bash npm test ${"x ".repeat(100)}`;
-    let next = applyEvent(board, { kind: "steps", taskId: id, agent: "careful", steps: [step(1, "careful", "tool", "Read a.ts"), step(2, "careful", "tool", long)] }, later);
-    expect(fighter(next, "careful")).toMatchObject({ action: "charge", actionAt: later });
-    expect(fighter(next, "careful").lastStep).toHaveLength(STEP_TEXT_MAX);
-    expect(fighter(next, "careful").lastStep?.endsWith("…")).toBe(true);
+    let next = applyEvent(board, { kind: "steps", taskId: id, agent: "ponder", steps: [step(1, "ponder", "tool", "Read a.ts"), step(2, "ponder", "tool", long)] }, later);
+    expect(fighter(next, "ponder")).toMatchObject({ action: "charge", actionAt: later });
+    expect(fighter(next, "ponder").lastStep).toHaveLength(STEP_TEXT_MAX);
+    expect(fighter(next, "ponder").lastStep?.endsWith("…")).toBe(true);
     expect(next.lastSeq).toBe(2);
     expect(JSON.stringify(board)).toBe(frozen);
 
     // A replayed step is ignored.
-    const again = applyEvent(next, { kind: "steps", taskId: id, agent: "careful", steps: [step(2, "careful", "text", "old")] }, 3_000);
+    const again = applyEvent(next, { kind: "steps", taskId: id, agent: "ponder", steps: [step(2, "ponder", "text", "old")] }, 3_000);
     expect(again).toEqual(next);
 
-    next = applyEvent(next, { kind: "push", taskId: id, agent: "fast", push: { commits: 3 } }, 3_000);
-    expect(fighter(next, "fast")).toMatchObject({ action: "push", actionAt: 3_000, commits: 3 });
+    next = applyEvent(next, { kind: "push", taskId: id, agent: "zippy", push: { commits: 3 } }, 3_000);
+    expect(fighter(next, "zippy")).toMatchObject({ action: "push", actionAt: 3_000, commits: 3 });
 
-    const preview = { url: "https://fast.example.dev", commit: "abc", at: "2025-01-01T00:01:00.000Z" };
-    next = applyEvent(next, { kind: "preview", taskId: id, agent: "fast", preview }, 3_000);
-    expect(fighter(next, "fast").preview).toEqual(preview);
+    const preview = { url: "https://zippy.example.dev", commit: "abc", at: "2025-01-01T00:01:00.000Z" };
+    next = applyEvent(next, { kind: "preview", taskId: id, agent: "zippy", preview }, 3_000);
+    expect(fighter(next, "zippy").preview).toEqual(preview);
 
-    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "careful", outcome: { end: "done" }, status: "running" }, 4_000);
-    expect(fighter(next, "careful")).toMatchObject({ status: "done", action: "finished", actionAt: 4_000 });
-    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "fast", outcome: { end: "timeout" }, status: "running" }, 4_000);
-    expect(fighter(next, "fast")).toMatchObject({ status: "timeout", action: "down" });
-    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "tester", outcome: { end: "failed" }, status: "finished" }, 5_000);
-    expect(fighter(next, "tester")).toMatchObject({ status: "failed", action: "down" });
+    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "ponder", outcome: { end: "done" }, status: "running" }, 4_000);
+    expect(fighter(next, "ponder")).toMatchObject({ status: "done", action: "finished", actionAt: 4_000 });
+    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "zippy", outcome: { end: "timeout" }, status: "running" }, 4_000);
+    expect(fighter(next, "zippy")).toMatchObject({ status: "timeout", action: "down" });
+    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "testy", outcome: { end: "failed" }, status: "finished" }, 5_000);
+    expect(fighter(next, "testy")).toMatchObject({ status: "failed", action: "down" });
     expect(next.task?.status).toBe("finished");
     expect(next.task?.finishedAt).toBe(new Date(5_000).toISOString());
     expect(next.task?.agents.map((slot) => slot.status)).toEqual(["done", "timeout", "failed"]);
     expect(task.agents.map((slot) => slot.status)).toEqual(["running", "running", "running"]);
 
     // An ended robot keeps its final action but still shows its last words.
-    next = applyEvent(next, { kind: "steps", taskId: id, agent: "careful", steps: [step(3, "careful", "tool", "Edit a.ts")] }, 6_000);
-    expect(fighter(next, "careful")).toMatchObject({ action: "finished", lastStep: "Edit a.ts" });
+    next = applyEvent(next, { kind: "steps", taskId: id, agent: "ponder", steps: [step(3, "ponder", "tool", "Edit a.ts")] }, 6_000);
+    expect(fighter(next, "ponder")).toMatchObject({ action: "finished", lastStep: "Edit a.ts" });
 
     const base = { url: "https://base.example.dev", commit: "b0", at: "2025-01-01T00:00:30.000Z" };
     next = applyEvent(next, { kind: "base-preview", taskId: id, preview: base }, 6_000);
     expect(next.basePreview).toEqual(base);
 
     // Another task's events are ignored.
-    expect(applyEvent(next, { kind: "push", taskId: "t-ffffffff", agent: "tester", push: { commits: 9 } }, 7_000)).toBe(next);
+    expect(applyEvent(next, { kind: "push", taskId: "t-ffffffff", agent: "testy", push: { commits: 9 } }, 7_000)).toBe(next);
   });
 
   it("U5: a claim clash marks both robots as clashing on the file and the grid marks it red", () => {
     let board = initBoard(wireTask(), [], { active: [], history: [] }, now);
-    board = applyEvent(board, claim("careful", ["src/b.ts", "src/a.ts"], [], []), now);
+    board = applyEvent(board, claim("ponder", ["src/b.ts", "src/a.ts"], [], []), now);
     expect(board.grid.clashes).toEqual([]);
     const before = JSON.stringify(board);
-    board = applyEvent(board, claim("fast", ["src/a.ts"], ["src/a.ts"], [{ file: "src/a.ts", heldBy: ["careful"] }]), later);
-    expect(JSON.parse(before).grid.cells["src/a.ts"]).toEqual({ careful: "own" });
+    board = applyEvent(board, claim("zippy", ["src/a.ts"], ["src/a.ts"], [{ file: "src/a.ts", heldBy: ["ponder"] }]), later);
+    expect(JSON.parse(before).grid.cells["src/a.ts"]).toEqual({ ponder: "own" });
 
     expect(board.grid.files).toEqual(["src/a.ts", "src/b.ts"]);
-    expect(board.grid.cells["src/a.ts"]).toEqual({ careful: "own", fast: "shared" });
+    expect(board.grid.cells["src/a.ts"]).toEqual({ ponder: "own", zippy: "shared" });
     expect(board.grid.clashes).toEqual(["src/a.ts"]);
-    for (const agent of ["careful", "fast"]) {
+    for (const agent of ["ponder", "zippy"]) {
       expect(fighter(board, agent)).toMatchObject({ action: "clash", actionAt: later, clashFile: "src/a.ts" });
     }
-    expect(fighter(board, "careful").files).toEqual(["src/b.ts", "src/a.ts"]);
-    expect(fighter(board, "tester").clashFile).toBeUndefined();
+    expect(fighter(board, "ponder").files).toEqual(["src/b.ts", "src/a.ts"]);
+    expect(fighter(board, "testy").clashFile).toBeUndefined();
 
-    board = applyEvent(board, { kind: "release", taskId: id, agent: "fast", released: ["src/a.ts"] }, 3_000);
+    board = applyEvent(board, { kind: "release", taskId: id, agent: "zippy", released: ["src/a.ts"] }, 3_000);
     expect(board.grid.clashes).toEqual([]);
-    expect(board.grid.cells["src/a.ts"]).toEqual({ careful: "own" });
-    expect(fighter(board, "careful").clashFile).toBeUndefined();
-    expect(fighter(board, "fast")).toMatchObject({ files: [], action: "clash" });
+    expect(board.grid.cells["src/a.ts"]).toEqual({ ponder: "own" });
+    expect(fighter(board, "ponder").clashFile).toBeUndefined();
+    expect(fighter(board, "zippy")).toMatchObject({ files: [], action: "clash" });
 
     // An ended agent's files are freed.
-    board = applyEvent(board, { kind: "agent-end", taskId: id, agent: "careful", outcome: { end: "done" }, status: "running" }, 4_000);
+    board = applyEvent(board, { kind: "agent-end", taskId: id, agent: "ponder", outcome: { end: "done" }, status: "running" }, 4_000);
     expect(board.grid).toEqual({ files: [], cells: {}, clashes: [] });
   });
 
   it("U6: the verdict crowns the winner, the rest lose, scores rank the fighters with their parts, and a null winner crowns nobody", () => {
     const board = initBoard(wireTask(), [], { active: [], history: [] }, now);
-    const won = applyEvent(board, { kind: "verdict", taskId: id, verdict: { winner: "fast", why: "Passed every test." } }, later);
+    const won = applyEvent(board, { kind: "verdict", taskId: id, verdict: { winner: "zippy", why: "Passed every test." } }, later);
     expect(won.fighters.map((f) => f.action)).toEqual(["lost", "won", "lost"]);
-    expect(won).toMatchObject({ winner: "fast", why: "Passed every test.", ended: true });
-    expect(won.task?.verdict).toEqual({ winner: "fast", why: "Passed every test." });
+    expect(won).toMatchObject({ winner: "zippy", why: "Passed every test.", ended: true });
+    expect(won.task?.verdict).toEqual({ winner: "zippy", why: "Passed every test." });
     expect(board.ended).toBe(false);
 
     const fork = { testsTotal: 4, linesChanged: 5, filesChanged: ["a.ts"], filesClaimed: ["a.ts"] };
     const ranked: ScoreResult["ranked"] = scoreForks([
-      { ...fork, agent: "careful", testsPassed: 2, taskFit: 0.5, clarity: 0.5 },
-      { ...fork, agent: "fast", testsPassed: 4, taskFit: 1, clarity: 1 },
-      { ...fork, agent: "tester", testsPassed: 0, taskFit: 1, clarity: 1 },
+      { ...fork, agent: "ponder", testsPassed: 2, taskFit: 0.5, clarity: 0.5 },
+      { ...fork, agent: "zippy", testsPassed: 4, taskFit: 1, clarity: 1 },
+      { ...fork, agent: "testy", testsPassed: 0, taskFit: 1, clarity: 1 },
     ]).ranked;
     const scored = applyScores(won, ranked);
-    expect(scored.fighters.map((f) => f.agent)).toEqual(["careful", "fast", "tester"]);
-    expect(fighter(scored, "fast").score).toEqual({ total: 100, parts: { tests: 50, taskFit: 25, clarity: 15, claim: 10 }, eligible: true, place: 1 });
-    expect(fighter(scored, "careful").score).toMatchObject({ place: 2, eligible: true, parts: { tests: 25 } });
-    expect(fighter(scored, "tester").score).toMatchObject({ place: 3, eligible: false });
-    expect(fighter(won, "fast").score).toBeUndefined();
+    expect(scored.fighters.map((f) => f.agent)).toEqual(["ponder", "zippy", "testy"]);
+    expect(fighter(scored, "zippy").score).toEqual({ total: 100, parts: { tests: 50, taskFit: 25, clarity: 15, claim: 10 }, eligible: true, place: 1 });
+    expect(fighter(scored, "ponder").score).toMatchObject({ place: 2, eligible: true, parts: { tests: 25 } });
+    expect(fighter(scored, "testy").score).toMatchObject({ place: 3, eligible: false });
+    expect(fighter(won, "zippy").score).toBeUndefined();
 
-    let none = applyEvent(board, { kind: "agent-end", taskId: id, agent: "tester", outcome: { end: "failed" }, status: "running" }, later);
+    let none = applyEvent(board, { kind: "agent-end", taskId: id, agent: "testy", outcome: { end: "failed" }, status: "running" }, later);
     none = applyEvent(none, { kind: "verdict", taskId: id, verdict: { winner: null, why: "Nobody passed." } }, later);
     expect(none.fighters.map((f) => f.action)).toEqual(["finished", "finished", "down"]);
     expect(none).toMatchObject({ winner: null, ended: true });
@@ -209,7 +209,7 @@ describe("board", () => {
       status: "running",
       createdAt: "2025-01-01T00:00:00.000Z",
       startedAt: "2025-01-01T00:00:01.000Z",
-      agents: (["careful", "fast", "tester"] as const).map((name) => ({
+      agents: (["ponder", "zippy", "testy"] as const).map((name) => ({
         name,
         fork: `${id}-${name}`,
         remote: `https://example.dev/${name}.git`,
@@ -219,65 +219,65 @@ describe("board", () => {
       baseCommit: "b0",
     };
     const steps: LoggedStep[] = [
-      step(1, "careful", "tool", "Read src/a.ts"),
-      step(2, "careful", "claim", "claimed src/a.ts, src/b.ts"),
-      step(3, "fast", "tool", "Edit src/a.ts"),
+      step(1, "ponder", "tool", "Read src/a.ts"),
+      step(2, "ponder", "claim", "claimed src/a.ts, src/b.ts"),
+      step(3, "zippy", "tool", "Edit src/a.ts"),
     ];
     const first: ClaimResult = { ok: true, claimed: ["src/a.ts", "src/b.ts"], already: [], shared: [], clashes: [] };
-    const second: ClaimResult = { ok: true, claimed: ["src/a.ts"], already: [], shared: ["src/a.ts"], clashes: [{ file: "src/a.ts", heldBy: ["careful"] }] };
+    const second: ClaimResult = { ok: true, claimed: ["src/a.ts"], already: [], shared: ["src/a.ts"], clashes: [{ file: "src/a.ts", heldBy: ["ponder"] }] };
     const at = "2025-01-01T00:00:02.000Z";
     const claims: ClaimBoard = {
       active: [
-        { agent: "careful", file: "src/a.ts", shared: false, at },
-        { agent: "careful", file: "src/b.ts", shared: false, at },
-        { agent: "fast", file: "src/a.ts", shared: true, at },
+        { agent: "ponder", file: "src/a.ts", shared: false, at },
+        { agent: "ponder", file: "src/b.ts", shared: false, at },
+        { agent: "zippy", file: "src/a.ts", shared: true, at },
       ],
       history: [],
     };
     const replay: LiveEvent[] = [
       { kind: "snapshot", taskId: id, task },
-      { kind: "steps", taskId: id, agent: "careful", steps: steps.slice(0, 2) },
-      { kind: "steps", taskId: id, agent: "fast", steps: steps.slice(2) },
-      { kind: "claim", taskId: id, agent: "careful", result: first },
-      { kind: "claim", taskId: id, agent: "fast", result: second },
+      { kind: "steps", taskId: id, agent: "ponder", steps: steps.slice(0, 2) },
+      { kind: "steps", taskId: id, agent: "zippy", steps: steps.slice(2) },
+      { kind: "claim", taskId: id, agent: "ponder", result: first },
+      { kind: "claim", taskId: id, agent: "zippy", result: second },
     ];
     let replayed = emptyBoard(id);
     for (const event of replay) replayed = applyEvent(replayed, event, now);
     const built = initBoard(task, steps, claims, now);
     expect(built).toEqual(replayed);
     expect(built.grid.clashes).toEqual(["src/a.ts"]);
-    expect(fighter(built, "fast")).toMatchObject({ action: "clash", clashFile: "src/a.ts", lastStep: "Edit src/a.ts" });
+    expect(fighter(built, "zippy")).toMatchObject({ action: "clash", clashFile: "src/a.ts", lastStep: "Edit src/a.ts" });
 
     const preview = { url: "https://p.example.dev", commit: "c1", at };
     const rest: LiveEvent[] = [
       { kind: "status", taskId: id, task },
-      { kind: "steps", taskId: id, agent: "tester", steps: [step(4, "tester", "tool", "Bash npm test")] },
-      { kind: "claim", taskId: id, agent: "tester", result: { ok: false, status: 409, error: "Task is finished" } },
-      { kind: "release", taskId: id, agent: "fast", released: ["src/a.ts"] },
-      { kind: "push", taskId: id, agent: "fast", push: { commits: 2, pushes: 1, lastPushAt: at, head: "c1" } },
-      { kind: "preview", taskId: id, agent: "fast", preview },
-      { kind: "agent-end", taskId: id, agent: "fast", outcome: { end: "done", pushed: true, commit: "c1" }, status: "running" },
+      { kind: "steps", taskId: id, agent: "testy", steps: [step(4, "testy", "tool", "Bash npm test")] },
+      { kind: "claim", taskId: id, agent: "testy", result: { ok: false, status: 409, error: "Task is finished" } },
+      { kind: "release", taskId: id, agent: "zippy", released: ["src/a.ts"] },
+      { kind: "push", taskId: id, agent: "zippy", push: { commits: 2, pushes: 1, lastPushAt: at, head: "c1" } },
+      { kind: "preview", taskId: id, agent: "zippy", preview },
+      { kind: "agent-end", taskId: id, agent: "zippy", outcome: { end: "done", pushed: true, commit: "c1" }, status: "running" },
       { kind: "base-preview", taskId: id, preview: { url: "https://b.example.dev", commit: "b0", at } },
       {
         kind: "verdict",
         taskId: id,
-        verdict: { winner: "fast", why: "Best fix.", judgedAt: at, ship: { status: "merged", winner: "fast", commit: "m1", locks: [] } },
+        verdict: { winner: "zippy", why: "Best fix.", judgedAt: at, ship: { status: "merged", winner: "zippy", commit: "m1", locks: [] } },
       },
     ];
     let board = built;
     for (const event of rest) board = applyEvent(board, event, later);
-    expect(fighter(board, "tester")).toMatchObject({ lastStep: "Bash npm test", action: "lost" });
-    expect(fighter(board, "fast")).toMatchObject({ commits: 2, preview, status: "done", action: "won", files: [] });
+    expect(fighter(board, "testy")).toMatchObject({ lastStep: "Bash npm test", action: "lost" });
+    expect(fighter(board, "zippy")).toMatchObject({ commits: 2, preview, status: "done", action: "won", files: [] });
     expect(board.grid.clashes).toEqual([]);
     expect(board.basePreview?.commit).toBe("b0");
-    expect(board).toMatchObject({ winner: "fast", why: "Best fix.", ended: true, lastSeq: 4 });
+    expect(board).toMatchObject({ winner: "zippy", why: "Best fix.", ended: true, lastSeq: 4 });
     expect(task.agents.map((slot) => slot.status)).toEqual(["running", "running", "running"]);
   });
 });
 
 describe("U8 names: each fighter has a display name", () => {
   it("U8 names every agent, and falls back to the agent id", () => {
-    expect(["careful", "fast", "tester", "lean", "tidy"].map(displayName)).toEqual(["Ponder", "Zippy", "Testy", "Snip", "Sparkle"]);
+    expect(["ponder", "zippy", "testy", "snip", "sparkle"].map(displayName)).toEqual(["Ponder", "Zippy", "Testy", "Snip", "Sparkle"]);
     expect(displayName("other")).toBe("other");
     expect(displayName("constructor")).toBe("constructor");
   });
@@ -286,17 +286,17 @@ describe("U8 names: each fighter has a display name", () => {
 describe("U9 names: the why uses the names and keeps the table aligned", () => {
   it("U9 swaps whole agent ids and keeps each table column at the same offset", () => {
     const why = [
-      "Winner: careful (98.47/100)",
+      "Winner: ponder (98.47/100)",
       "",
       "agent    tests     total",
-      "careful  6/6 (50)  98.47",
-      "tester   6/6 (50)  89.49",
-      "fast     6/6 (50)  86.05",
+      "ponder   6/6 (50)  98.47",
+      "testy    6/6 (50)  89.49",
+      "zippy    6/6 (50)  86.05",
       "",
-      "Why careful won:",
-      "- A carefully kept claim; fast was faster.",
+      "Why ponder won:",
+      "- A carefully kept claim; zippy was faster.",
     ].join("\n");
-    const out = whyWithNames(why, ["careful", "tester", "fast"]).split("\n");
+    const out = whyWithNames(why, ["ponder", "testy", "zippy"]).split("\n");
     expect(out[0]).toBe("Winner: Ponder (98.47/100)");
     for (const row of out.slice(2, 6)) expect(row.indexOf("6/6") === -1 ? row.indexOf("tests") : row.indexOf("6/6")).toBe(9);
     expect(out[4]).toBe("Testy    6/6 (50)  89.49");
@@ -309,20 +309,20 @@ describe("U10 claims: the claimed grid keeps the race's claim record", () => {
   it("U10 keeps released and ended agents' claims, and their clashes, in claimed", () => {
     const task = wireTask();
     let board = initBoard(task, [], { active: [], history: [] }, now);
-    board = applyEvent(board, { kind: "claim", taskId: id, agent: "careful", result: { ok: true, claimed: ["src/a.ts"], shared: [], clashes: [] } }, now);
-    board = applyEvent(board, { kind: "claim", taskId: id, agent: "fast", result: { ok: true, claimed: ["src/a.ts"], shared: ["src/a.ts"], clashes: [{ file: "src/a.ts", heldBy: ["careful"] }] } }, now);
-    board = applyEvent(board, { kind: "release", taskId: id, agent: "careful", released: ["src/a.ts"] }, now);
-    board = applyEvent(board, { kind: "agent-end", taskId: id, agent: "fast", outcome: { end: "done" }, status: "running" }, now);
+    board = applyEvent(board, { kind: "claim", taskId: id, agent: "ponder", result: { ok: true, claimed: ["src/a.ts"], shared: [], clashes: [] } }, now);
+    board = applyEvent(board, { kind: "claim", taskId: id, agent: "zippy", result: { ok: true, claimed: ["src/a.ts"], shared: ["src/a.ts"], clashes: [{ file: "src/a.ts", heldBy: ["ponder"] }] } }, now);
+    board = applyEvent(board, { kind: "release", taskId: id, agent: "ponder", released: ["src/a.ts"] }, now);
+    board = applyEvent(board, { kind: "agent-end", taskId: id, agent: "zippy", outcome: { end: "done" }, status: "running" }, now);
     expect(board.grid.files).toEqual([]);
-    expect(board.claimed.cells).toEqual({ "src/a.ts": { careful: "own", fast: "shared" } });
+    expect(board.claimed.cells).toEqual({ "src/a.ts": { ponder: "own", zippy: "shared" } });
     expect(board.claimed.clashes).toEqual(["src/a.ts"]);
   });
 
   it("U10 builds claimed from the claim history on load, even when nothing is held", () => {
     const history = [
-      { agent: "careful", file: "src/a.ts", shared: false, at: "t" },
-      { agent: "fast", file: "src/a.ts", shared: true, at: "t" },
-      { agent: "tester", file: "src/b.ts", shared: false, at: "t" },
+      { agent: "ponder", file: "src/a.ts", shared: false, at: "t" },
+      { agent: "zippy", file: "src/a.ts", shared: true, at: "t" },
+      { agent: "testy", file: "src/b.ts", shared: false, at: "t" },
     ];
     const board = initBoard(wireTask(), [], { active: [], history }, now);
     expect(board.grid.files).toEqual([]);
@@ -347,7 +347,7 @@ describe("U11 bubbles: short labels instead of raw steps", () => {
     expect(tool("Bash cd /workspace/repo; for f in src/*.ts; do cat $f; done")).toBe("running a script");
     expect(bubbleFor({ kind: "result", text: "DONE (done) pushed 44c72df644762c6b7450e1a4a22509942836b63a" })).toBe("done");
     expect(bubbleFor({ kind: "text", text: "**Done.** All 6 tests pass now, and more." })).toBe("Done.");
-    expect(bubbleFor({ kind: "claim", text: "shared claim src/a.ts; clash: src/a.ts (also held by careful)" })).toBe("clash on a claim!");
+    expect(bubbleFor({ kind: "claim", text: "shared claim src/a.ts; clash: src/a.ts (also held by ponder)" })).toBe("clash on a claim!");
     expect(bubbleFor({ kind: "init", text: "started" })).toBeUndefined();
     expect((bubbleFor({ kind: "text", text: "x".repeat(200) }) ?? "").length).toBe(64);
   });
@@ -355,8 +355,8 @@ describe("U11 bubbles: short labels instead of raw steps", () => {
 
 describe("U14 decided: the page shows the judge's deciding line", () => {
   it("U14 finds the Decided by line in the why, and nothing when there is none", () => {
-    const why = "Winner: fast (91.82/100)\n\nagent  total\nfast   91.82\n\nDecided by claims: the fixes were within 0.55 points on code; fast claimed the files first (10 vs 8 claim points).\n\nWhy fast won:\n- x";
-    expect(decidedLine(why)).toBe("Decided by claims: the fixes were within 0.55 points on code; fast claimed the files first (10 vs 8 claim points).");
+    const why = "Winner: zippy (91.82/100)\n\nagent  total\nfast   91.82\n\nDecided by claims: the fixes were within 0.55 points on code; zippy claimed the files first (10 vs 8 claim points).\n\nWhy zippy won:\n- x";
+    expect(decidedLine(why)).toBe("Decided by claims: the fixes were within 0.55 points on code; zippy claimed the files first (10 vs 8 claim points).");
     expect(decidedLine("Winner: a (1/100)")).toBeUndefined();
     expect(decidedLine(undefined)).toBeUndefined();
   });
@@ -367,35 +367,35 @@ describe("progress squares", () => {
 
   it("lights one step at a time as the agent works, and only the steps it reached", () => {
     let board = initBoard(wireTask("starting"), [], { active: [], history: [] }, now);
-    expect(reached(board, "careful")).toEqual([]);
-    board = applyEvent(board, { kind: "steps", taskId: id, agent: "careful", steps: [step(1, "careful", "init", "started")] }, now);
-    expect(reached(board, "careful")).toEqual(["started"]);
-    board = applyEvent(board, claim("careful", ["src/a.ts"], [], []), now);
-    board = applyEvent(board, { kind: "steps", taskId: id, agent: "careful", steps: [step(2, "careful", "tool", "Edit src/a.ts")] }, now);
-    expect(reached(board, "careful")).toEqual(["started", "claimed", "edited"]);
-    // fast pushed without running the tests: its "ran the tests" square stays dark.
-    board = applyEvent(board, { kind: "steps", taskId: id, agent: "fast", steps: [step(3, "fast", "tool", "Write src/b.ts")] }, now);
-    board = applyEvent(board, { kind: "push", taskId: id, agent: "fast", push: { commits: 1 } }, now);
-    expect(reached(board, "fast")).toEqual(["started", "edited", "pushed"]);
-    // tester edited with sed only, then pushed: the push counts as edited code.
-    board = applyEvent(board, { kind: "steps", taskId: id, agent: "tester", steps: [step(4, "tester", "tool", "Bash sed -i s/a/b/ src/c.ts")] }, now);
-    board = applyEvent(board, { kind: "push", taskId: id, agent: "tester", push: { commits: 1 } }, now);
-    expect(reached(board, "tester")).toEqual(["started", "edited", "pushed"]);
-    board = applyEvent(board, { kind: "steps", taskId: id, agent: "careful", steps: [step(5, "careful", "tool", "Bash npm test")] }, now);
-    board = applyEvent(board, { kind: "push", taskId: id, agent: "careful", push: { commits: 2 } }, now);
-    expect(reached(board, "careful")).toEqual(["started", "claimed", "edited", "tested", "pushed"]);
+    expect(reached(board, "ponder")).toEqual([]);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "ponder", steps: [step(1, "ponder", "init", "started")] }, now);
+    expect(reached(board, "ponder")).toEqual(["started"]);
+    board = applyEvent(board, claim("ponder", ["src/a.ts"], [], []), now);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "ponder", steps: [step(2, "ponder", "tool", "Edit src/a.ts")] }, now);
+    expect(reached(board, "ponder")).toEqual(["started", "claimed", "edited"]);
+    // zippy pushed without running the tests: its "ran the tests" square stays dark.
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "zippy", steps: [step(3, "zippy", "tool", "Write src/b.ts")] }, now);
+    board = applyEvent(board, { kind: "push", taskId: id, agent: "zippy", push: { commits: 1 } }, now);
+    expect(reached(board, "zippy")).toEqual(["started", "edited", "pushed"]);
+    // testy edited with sed only, then pushed: the push counts as edited code.
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "testy", steps: [step(4, "testy", "tool", "Bash sed -i s/a/b/ src/c.ts")] }, now);
+    board = applyEvent(board, { kind: "push", taskId: id, agent: "testy", push: { commits: 1 } }, now);
+    expect(reached(board, "testy")).toEqual(["started", "edited", "pushed"]);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "ponder", steps: [step(5, "ponder", "tool", "Bash npm test")] }, now);
+    board = applyEvent(board, { kind: "push", taskId: id, agent: "ponder", push: { commits: 2 } }, now);
+    expect(reached(board, "ponder")).toEqual(["started", "claimed", "edited", "tested", "pushed"]);
   });
 
   it("does not light \"sandbox up\" for an agent that failed before it ever ran", () => {
     const board = initBoard(wireTask("failed"), [], { active: [], history: [] }, now);
-    expect(reached(board, "careful")).toEqual([]);
+    expect(reached(board, "ponder")).toEqual([]);
   });
 
   it("fills the winner's bar completely, and only the winner's", () => {
-    let board = initBoard(wireTask("done"), [step(1, "careful", "init", "started")], { active: [], history: [] }, now);
-    board = applyEvent(board, { kind: "verdict", taskId: id, verdict: { winner: "fast", why: "Fast won." } }, later);
-    expect(reached(board, "fast")).toEqual([...PROGRESS_STEPS]);
-    expect(reached(board, "careful")).toEqual(["started"]);
+    let board = initBoard(wireTask("done"), [step(1, "ponder", "init", "started")], { active: [], history: [] }, now);
+    board = applyEvent(board, { kind: "verdict", taskId: id, verdict: { winner: "zippy", why: "Fast won." } }, later);
+    expect(reached(board, "zippy")).toEqual([...PROGRESS_STEPS]);
+    expect(reached(board, "ponder")).toEqual(["started"]);
     expect(PROGRESS_STEPS.map((s) => PROGRESS_LABELS[s])).toEqual(["sandbox up", "claimed files", "edited code", "ran the tests", "pushed", "won the race"]);
   });
 });
@@ -405,7 +405,7 @@ describe("a test run hidden in a long command", () => {
     const command = `claim src/page.ts && cat > src/page.ts <<'EOF'\n${"export const x = 1;\n".repeat(60)}EOF\nnpm test`;
     const [logged] = stepsOf({ type: "assistant", message: { content: [{ type: "tool_use", name: "Bash", input: { command } }] } });
     let board = initBoard(wireTask(), [], { active: [], history: [] }, now);
-    board = applyEvent(board, { kind: "steps", taskId: id, agent: "fast", steps: [step(1, "fast", "tool", logged!.text)] }, now);
-    expect(progressOf(board, fighter(board, "fast")).has("tested")).toBe(true);
+    board = applyEvent(board, { kind: "steps", taskId: id, agent: "zippy", steps: [step(1, "zippy", "tool", logged!.text)] }, now);
+    expect(progressOf(board, fighter(board, "zippy")).has("tested")).toBe(true);
   });
 });

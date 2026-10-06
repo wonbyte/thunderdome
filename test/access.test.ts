@@ -97,7 +97,7 @@ describe("accessFor", () => {
   });
 
   it('X7: the diff route, POST /play and GET /play/quota are public; GET /play is page with pageAsset "/play.html"; POST to other paths is still admin; a bad agent name in the diff path is admin', () => {
-    for (const agent of ["careful", "fast", "a"]) {
+    for (const agent of ["ponder", "zippy", "a"]) {
       expect(accessFor("GET", `/tasks/${id}/forks/${agent}/diff`), agent).toBe("public");
     }
     expect(accessFor("POST", "/play")).toBe("public");
@@ -108,7 +108,7 @@ describe("accessFor", () => {
     expect(pageAsset(`/race/${id}`)).toBe("/race.html");
     for (const path of ["/play/", "/play.html", "/play/quota"]) expect(pageAsset(path), path).toBeUndefined();
 
-    expect(isForkAgent("careful")).toBe(true);
+    expect(isForkAgent("ponder")).toBe(true);
     for (const bad of ["", "Bad1", "Careful", "a-b", "a b", "../x"]) expect(isForkAgent(bad), bad).toBe(false);
 
     const admin: [string, string][] = [
@@ -116,7 +116,7 @@ describe("accessFor", () => {
       ["POST", `/tasks/${id}/run`],
       ["POST", "/play/quota"],
       ["POST", "/play/"],
-      ["POST", `/tasks/${id}/forks/careful/diff`],
+      ["POST", `/tasks/${id}/forks/ponder/diff`],
       ["PUT", "/play"],
       ["DELETE", "/play"],
       ["get", "/play"],
@@ -124,16 +124,16 @@ describe("accessFor", () => {
       ["GET", "/play.html"],
       ["GET", "/play/quota/x"],
       ["GET", `/tasks/${id}/forks`],
-      ["GET", `/tasks/${id}/forks/careful`],
+      ["GET", `/tasks/${id}/forks/ponder`],
       ["GET", `/tasks/${id}/forks/Bad1/diff`],
       ["GET", `/tasks/${id}/forks//diff`],
       ["GET", `/tasks/${id}/forks/a-b/diff`],
       ["GET", `/tasks/${id}/forks/a/diff/x`],
       ["GET", `/tasks/${id}/forks/a/diff/`],
       ["GET", `/tasks/${id}/forks/a/patch`],
-      ["GET", "/tasks/bad-id/forks/careful/diff"],
-      ["GET", `/race/${id}/forks/careful/diff`],
-      ["GET", `/x/tasks/${id}/forks/careful/diff`],
+      ["GET", "/tasks/bad-id/forks/ponder/diff"],
+      ["GET", `/race/${id}/forks/ponder/diff`],
+      ["GET", `/x/tasks/${id}/forks/ponder/diff`],
     ];
     for (const [method, path] of admin) {
       expect(accessFor(method, path), `${method} ${path}`).toBe("admin");

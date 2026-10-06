@@ -1,6 +1,6 @@
 // The code a robot wrote: a dialog with its fork's diff, as the judge scored it.
 // Diff text only ever goes into textContent.
-import { colorFor, displayName } from "./board";
+import { colorFor, displayName, styleLabel } from "./board";
 import { parseDiff, type DiffFile } from "./diffview";
 
 interface SavedDiff {
@@ -55,7 +55,8 @@ function header(agent: string, files: DiffFile[] | undefined, close: () => void)
   const head = el("header", "diff-head");
   const who = el("div", "diff-who");
   who.append(el("span", "diff-swatch"), el("b", undefined, `${displayName(agent)}'s code`));
-  if (displayName(agent) !== agent) who.append(el("span", "diff-style", agent));
+  const style = styleLabel(agent);
+  if (style !== undefined) who.append(el("span", "diff-style", style));
   head.append(who);
   if (files !== undefined) {
     const added = files.reduce((n, f) => n + f.added, 0);

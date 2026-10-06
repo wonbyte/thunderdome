@@ -39,7 +39,10 @@ export interface WireTask {
   createdAt?: string;
   verdict?: WireVerdict;
   basePreview?: WirePreview;
+  memory?: WireMemory[];
 }
+// One earlier race the robots were told about (src/room/races.ts RaceMemory).
+export interface WireMemory { id: string; prompt: string; winner: string; headline?: string; commit?: string }
 export interface WireStep { seq: number; agent: string; at: string; kind: string; text: string }
 export interface WireClaim { agent: string; file: string; shared: boolean; at: string }
 export interface WireClaimBoard { active: WireClaim[]; history: WireClaim[] }
@@ -65,20 +68,35 @@ export type BoardEvent =
   | { kind: "base-preview"; taskId: string; preview: WirePreview };
 
 export const AGENT_COLORS: Readonly<Record<string, string>> = {
-  careful: "#d97757",
-  fast: "#e5484d",
-  tester: "#3e8ed0",
-  lean: "#30a46c",
-  tidy: "#8e4ec6",
+  ponder: "#d97757",
+  zippy: "#e5484d",
+  testy: "#3e8ed0",
+  snip: "#30a46c",
+  sparkle: "#8e4ec6",
 };
-// The fighters' names on the page. The agent id (its style) stays the key everywhere else.
+// The fighters' names on the page. The agent id (the name in lowercase) stays the key everywhere else.
 export const AGENT_DISPLAY_NAMES: Readonly<Record<string, string>> = {
-  careful: "Ponder", // thinks before it types
-  fast: "Zippy",
-  tester: "Testy", // test-first, and a little testy about it
-  lean: "Snip", // the smallest diff
-  tidy: "Sparkle", // code that sparks joy
+  ponder: "Ponder", // thinks before it types
+  zippy: "Zippy",
+  testy: "Testy", // test-first, and a little testy about it
+  snip: "Snip", // the smallest diff
+  sparkle: "Sparkle", // code that sparks joy
 };
+// Every robot's agent id.
+export const AGENT_IDS: readonly string[] = Object.keys(AGENT_DISPLAY_NAMES);
+// Each robot's style, shown next to its name.
+export const AGENT_STYLE_LABELS: Readonly<Record<string, string>> = {
+  ponder: "careful",
+  zippy: "fast",
+  testy: "test-first",
+  snip: "lean",
+  sparkle: "tidy",
+};
+
+// The robot's style, or undefined for an agent with none.
+export function styleLabel(agent: string): string | undefined {
+  return Object.prototype.hasOwnProperty.call(AGENT_STYLE_LABELS, agent) ? AGENT_STYLE_LABELS[agent] : undefined;
+}
 export const FALLBACK_COLOR = "#8b8d98";
 export const STEP_TEXT_MAX = 120;
 

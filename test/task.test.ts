@@ -91,16 +91,16 @@ describe("makeForks", () => {
     const { source, forks, base } = await makeForks(fakeArtifacts(repo), task, noSleep);
     expect(source).toBe("thunderdome-sample");
     expect(base).toBeUndefined();
-    expect(forks.map((fork) => fork.fork)).toEqual(["t-0123abcd-careful", "t-0123abcd-fast", "t-0123abcd-tester"]);
+    expect(forks.map((fork) => fork.fork)).toEqual(["t-0123abcd-ponder", "t-0123abcd-zippy", "t-0123abcd-testy"]);
     expect(forks[0]).toEqual({
-      name: "careful",
-      fork: "t-0123abcd-careful",
-      remote: "https://git.test/thunderdome/t-0123abcd-careful.git",
+      name: "ponder",
+      fork: "t-0123abcd-ponder",
+      remote: "https://git.test/thunderdome/t-0123abcd-ponder.git",
       defaultBranch: "main",
-      token: "token-t-0123abcd-careful",
+      token: "token-t-0123abcd-ponder",
     });
     expect(new Set(forks.map((fork) => fork.token)).size).toBe(3);
-    expect(repo.fork).toHaveBeenCalledWith("t-0123abcd-careful", { description: "Thunderdome task t-0123abcd, agent careful", defaultBranchOnly: true });
+    expect(repo.fork).toHaveBeenCalledWith("t-0123abcd-ponder", { description: "Thunderdome task t-0123abcd, agent ponder", defaultBranchOnly: true });
   });
 
   it("retries while the source repo is busy", async () => {
@@ -119,15 +119,15 @@ describe("makeForks", () => {
   it("deletes the forks it made when one fails", async () => {
     const repo = fakeRepo({
       fork: vi.fn(async (name: string) => {
-        if (name.endsWith("-tester")) throw artifactsError("INTERNAL_ERROR");
+        if (name.endsWith("-testy")) throw artifactsError("INTERNAL_ERROR");
         return created(name);
       }),
     });
     const artifacts = fakeArtifacts(repo);
     await expect(makeForks(artifacts, task, noSleep)).rejects.toMatchObject({ code: "INTERNAL_ERROR" });
     expect(artifacts.delete).toHaveBeenCalledTimes(2);
-    expect(artifacts.delete).toHaveBeenCalledWith("t-0123abcd-careful");
-    expect(artifacts.delete).toHaveBeenCalledWith("t-0123abcd-fast");
+    expect(artifacts.delete).toHaveBeenCalledWith("t-0123abcd-ponder");
+    expect(artifacts.delete).toHaveBeenCalledWith("t-0123abcd-zippy");
   });
 
   it("does not retry a missing source repo", async () => {
@@ -190,14 +190,14 @@ describe("makeForks", () => {
         "thunderdome-template-t-0123abcd",
       ]);
       expect(vi.mocked(repo.fork).mock.calls[0]?.[0]).toBe("thunderdome-template-t-0123abcd");
-      expect(forks.map((fork) => fork.fork)).toEqual(["t-0123abcd-careful", "t-0123abcd-fast", "t-0123abcd-tester"]);
+      expect(forks.map((fork) => fork.fork)).toEqual(["t-0123abcd-ponder", "t-0123abcd-zippy", "t-0123abcd-testy"]);
     });
 
     it("retries agent forks while the fresh source is still forking", async () => {
       let calls = 0;
       const repo = fakeRepo({
         fork: vi.fn(async (name: string) => {
-          if (name.endsWith("-careful") && ++calls <= 2) throw artifactsError("FORK_IN_PROGRESS");
+          if (name.endsWith("-ponder") && ++calls <= 2) throw artifactsError("FORK_IN_PROGRESS");
           return created(name);
         }),
       });
@@ -208,13 +208,13 @@ describe("makeForks", () => {
     it("deletes the fresh source and the agent forks when an agent fork fails", async () => {
       const repo = fakeRepo({
         fork: vi.fn(async (name: string) => {
-          if (name.endsWith("-fast")) throw artifactsError("INTERNAL_ERROR");
+          if (name.endsWith("-zippy")) throw artifactsError("INTERNAL_ERROR");
           return created(name);
         }),
       });
       const artifacts = fakeArtifacts(repo);
       await expect(makeForks(artifacts, fromTemplate, noSleep)).rejects.toMatchObject({ code: "INTERNAL_ERROR" });
-      expect(vi.mocked(artifacts.delete).mock.calls.map(([name]) => name).sort()).toEqual(["t-0123abcd-careful", "thunderdome-template-t-0123abcd"]);
+      expect(vi.mocked(artifacts.delete).mock.calls.map(([name]) => name).sort()).toEqual(["t-0123abcd-ponder", "thunderdome-template-t-0123abcd"]);
     });
 
     it("makes nothing when the template is missing", async () => {
@@ -245,14 +245,14 @@ function runningTask(): Task {
     status: "running",
     createdAt: "t0",
     startedAt: "t0",
-    agents: (["careful", "fast", "tester"] as const).map((name) => ({ name, fork: `t-0123abcd-${name}`, remote: "r", defaultBranch: "main", status: "starting" as const })),
+    agents: (["ponder", "zippy", "testy"] as const).map((name) => ({ name, fork: `t-0123abcd-${name}`, remote: "r", defaultBranch: "main", status: "starting" as const })),
   };
 }
 
 describe("applyStarts", () => {
   it("marks started agents running and failed starts failed", () => {
     const task = runningTask();
-    applyStarts(task, [{ agent: "careful" }, { agent: "fast", error: "clone failed" }, { agent: "tester" }], "t1");
+    applyStarts(task, [{ agent: "ponder" }, { agent: "zippy", error: "clone failed" }, { agent: "testy" }], "t1");
     expect(task.agents.map((slot) => slot.status)).toEqual(["running", "failed", "running"]);
     expect(task.agents[1]).toMatchObject({ error: "clone failed", pushed: false, endedAt: "t1" });
     expect(task.status).toBe("running");
@@ -261,7 +261,7 @@ describe("applyStarts", () => {
   it("keeps an end that arrived before the start was recorded", () => {
     const task = runningTask();
     task.agents[0]!.status = "done";
-    applyStarts(task, [{ agent: "careful" }], "t1");
+    applyStarts(task, [{ agent: "ponder" }], "t1");
     expect(task.agents[0]!.status).toBe("done");
   });
 
@@ -276,13 +276,13 @@ describe("applyOutcome", () => {
   it("records each end once and finishes the task after the last one", () => {
     const task = runningTask();
     for (const slot of task.agents) slot.status = "running";
-    expect(applyOutcome(task, "careful", { end: "done", pushed: true, commit: "abc", costUsd: 0.12 }, "t1")).toBe(true);
+    expect(applyOutcome(task, "ponder", { end: "done", pushed: true, commit: "abc", costUsd: 0.12 }, "t1")).toBe(true);
     expect(task.agents[0]).toMatchObject({ status: "done", commit: "abc", pushed: true, costUsd: 0.12, endedAt: "t1" });
-    expect(applyOutcome(task, "careful", { end: "failed", pushed: false }, "t2")).toBe(false);
+    expect(applyOutcome(task, "ponder", { end: "failed", pushed: false }, "t2")).toBe(false);
     expect(task.agents[0]!.status).toBe("done");
-    applyOutcome(task, "fast", { end: "timeout", pushed: true }, "t3");
+    applyOutcome(task, "zippy", { end: "timeout", pushed: true }, "t3");
     expect(task.status).toBe("running");
-    applyOutcome(task, "tester", { end: "failed", pushed: false, error: "e" }, "t4");
+    applyOutcome(task, "testy", { end: "failed", pushed: false, error: "e" }, "t4");
     expect(task).toMatchObject({ status: "finished", finishedAt: "t4" });
   });
 
@@ -298,13 +298,13 @@ function verdict(winner: string | null, why: string): Verdict {
 describe("saveVerdict", () => {
   it("a verdict is saved once, and a second save is refused", () => {
     const task = { ...runningTask(), status: "finished" as const };
-    const first = verdict("careful", "careful passed every test");
+    const first = verdict("ponder", "ponder passed every test");
     expect(saveVerdict(task, first)).toBe(true);
     expect(task.verdict).toEqual(first);
     const before = structuredClone(task);
-    expect(saveVerdict(task, verdict("fast", "another why"))).toBe(false);
+    expect(saveVerdict(task, verdict("zippy", "another why"))).toBe(false);
     expect(task).toEqual(before);
-    expect(task.verdict?.winner).toBe("careful");
+    expect(task.verdict?.winner).toBe("ponder");
   });
 });
 
@@ -317,16 +317,16 @@ describe("justFinished", () => {
       change();
       if (justFinished(before, task)) judgeRuns += 1;
     };
-    track(() => applyStarts(task, [{ agent: "careful" }, { agent: "fast", error: "x" }, { agent: "tester" }], "t1"));
+    track(() => applyStarts(task, [{ agent: "ponder" }, { agent: "zippy", error: "x" }, { agent: "testy" }], "t1"));
     expect(judgeRuns).toBe(0);
-    track(() => applyOutcome(task, "careful", { end: "done", pushed: true }, "t2"));
+    track(() => applyOutcome(task, "ponder", { end: "done", pushed: true }, "t2"));
     expect(judgeRuns).toBe(0);
-    track(() => applyOutcome(task, "tester", { end: "done", pushed: true }, "t3"));
+    track(() => applyOutcome(task, "testy", { end: "done", pushed: true }, "t3"));
     expect(task.status).toBe("finished");
     expect(judgeRuns).toBe(1);
     // Retried ends and late starts on a finished task do not ask again.
-    track(() => applyOutcome(task, "tester", { end: "done", pushed: true }, "t4"));
-    track(() => applyStarts(task, [{ agent: "careful" }], "t5"));
+    track(() => applyOutcome(task, "testy", { end: "done", pushed: true }, "t4"));
+    track(() => applyStarts(task, [{ agent: "ponder" }], "t5"));
     expect(judgeRuns).toBe(1);
   });
 
@@ -342,7 +342,7 @@ describe("justFinished", () => {
 describe("applyPush", () => {
   it("R6: a push is recorded once per commit, counts commits, and keeps the newest head", () => {
     const task = runningTask();
-    expect(applyPush(task, { agent: "careful", after: A, commits: 2, message: "first" }, "t1")).toBe(true);
+    expect(applyPush(task, { agent: "ponder", after: A, commits: 2, message: "first" }, "t1")).toBe(true);
     expect(task.agents[0]!.push).toEqual({
       commits: 2,
       pushes: 1,
@@ -354,9 +354,9 @@ describe("applyPush", () => {
     });
     // An event retry of the same commit changes nothing.
     const before = structuredClone(task);
-    expect(applyPush(task, { agent: "careful", after: A, commits: 2, message: "first" }, "t2")).toBe(false);
+    expect(applyPush(task, { agent: "ponder", after: A, commits: 2, message: "first" }, "t2")).toBe(false);
     expect(task).toEqual(before);
-    expect(applyPush(task, { agent: "careful", after: B, commits: 3 }, "t3")).toBe(true);
+    expect(applyPush(task, { agent: "ponder", after: B, commits: 3 }, "t3")).toBe(true);
     expect(task.agents[0]!.push).toEqual({
       commits: 5,
       pushes: 2,
@@ -369,7 +369,7 @@ describe("applyPush", () => {
       ],
     });
     // A late retry of an older push is still refused, so the head stays the newest.
-    expect(applyPush(task, { agent: "careful", after: A, commits: 2 }, "t4")).toBe(false);
+    expect(applyPush(task, { agent: "ponder", after: A, commits: 2 }, "t4")).toBe(false);
     expect(task.agents[0]!.push?.head).toBe(B);
     // Other agents keep their own state; unknown agents are refused.
     expect(task.agents[1]!.push).toBeUndefined();
@@ -378,15 +378,15 @@ describe("applyPush", () => {
 
   it("records pushes in any task status and keeps the outcome fields apart", () => {
     const task = { ...runningTask(), status: "finished" as const };
-    applyOutcome(task, "fast", { end: "done", pushed: true, commit: A }, "t1");
-    expect(applyPush(task, { agent: "fast", after: A, commits: 1 }, "t2")).toBe(true);
+    applyOutcome(task, "zippy", { end: "done", pushed: true, commit: A }, "t1");
+    expect(applyPush(task, { agent: "zippy", after: A, commits: 1 }, "t2")).toBe(true);
     expect(task.agents[1]).toMatchObject({ commit: A, pushed: true, push: { head: A, commits: 1 } });
   });
 
   it("caps the seen list at MAX_SEEN_PUSHES", () => {
     const task = runningTask();
     for (let i = 0; i < MAX_SEEN_PUSHES + 5; i++) {
-      applyPush(task, { agent: "careful", after: i.toString(16).padStart(40, "0"), commits: 1 }, `t${i}`);
+      applyPush(task, { agent: "ponder", after: i.toString(16).padStart(40, "0"), commits: 1 }, `t${i}`);
     }
     const push = task.agents[0]!.push!;
     expect(push.seen).toHaveLength(MAX_SEEN_PUSHES);
@@ -396,9 +396,9 @@ describe("applyPush", () => {
 
   it("X1: applyPush appends a timed log entry per new push (with message only when given), caps it at MAX_SEEN_PUSHES, and ignores a duplicate", () => {
     const task = runningTask();
-    expect(applyPush(task, { agent: "careful", after: A, commits: 2, message: "fix the bug" }, "t1")).toBe(true);
+    expect(applyPush(task, { agent: "ponder", after: A, commits: 2, message: "fix the bug" }, "t1")).toBe(true);
     // No message, and a bad count is logged as 0 commits.
-    expect(applyPush(task, { agent: "careful", after: B, commits: -1 }, "t2")).toBe(true);
+    expect(applyPush(task, { agent: "ponder", after: B, commits: -1 }, "t2")).toBe(true);
     const log = task.agents[0]!.push!.log!;
     expect(log).toEqual([
       { at: "t1", commit: A, commits: 2, message: "fix the bug" },
@@ -408,14 +408,14 @@ describe("applyPush", () => {
 
     // A duplicate push changes nothing, log included.
     const before = structuredClone(task);
-    expect(applyPush(task, { agent: "careful", after: A, commits: 2, message: "fix the bug" }, "t3")).toBe(false);
+    expect(applyPush(task, { agent: "ponder", after: A, commits: 2, message: "fix the bug" }, "t3")).toBe(false);
     expect(task).toEqual(before);
     expect(task.agents[1]!.push).toBeUndefined();
 
     // A stored push state without a log counts as an empty log.
     const old = runningTask();
     old.agents[0]!.push = { commits: 1, pushes: 1, lastPushAt: "t0", head: A, seen: [A] };
-    expect(applyPush(old, { agent: "careful", after: B, commits: 1 }, "t1")).toBe(true);
+    expect(applyPush(old, { agent: "ponder", after: B, commits: 1 }, "t1")).toBe(true);
     expect(old.agents[0]!.push?.log).toEqual([{ at: "t1", commit: B, commits: 1 }]);
 
     // Capped at MAX_SEEN_PUSHES, oldest first, newest kept.
@@ -423,7 +423,7 @@ describe("applyPush", () => {
     const total = MAX_SEEN_PUSHES + 5;
     const hash = (i: number) => i.toString(16).padStart(40, "0");
     for (let i = 0; i < total; i++) {
-      applyPush(many, { agent: "fast", after: hash(i), commits: 1, message: `m${i}` }, `t${i}`);
+      applyPush(many, { agent: "zippy", after: hash(i), commits: 1, message: `m${i}` }, `t${i}`);
     }
     const capped = many.agents[1]!.push!.log!;
     expect(capped).toHaveLength(MAX_SEEN_PUSHES);
@@ -436,19 +436,19 @@ describe("applyPush", () => {
 describe("applyPreview", () => {
   it("R7: a preview URL is saved only when it is for the agent's newest pushed commit", () => {
     const task = runningTask();
-    expect(applyPreview(task, "careful", { url: "https://a.example", commit: A }, "t0")).toBe(false);
-    applyPush(task, { agent: "careful", after: A, commits: 1 }, "t1");
-    applyPush(task, { agent: "careful", after: B, commits: 1 }, "t2");
+    expect(applyPreview(task, "ponder", { url: "https://a.example", commit: A }, "t0")).toBe(false);
+    applyPush(task, { agent: "ponder", after: A, commits: 1 }, "t1");
+    applyPush(task, { agent: "ponder", after: B, commits: 1 }, "t2");
     // The older build finished late: not saved.
-    expect(applyPreview(task, "careful", { url: "https://a.example", commit: A }, "t3")).toBe(false);
+    expect(applyPreview(task, "ponder", { url: "https://a.example", commit: A }, "t3")).toBe(false);
     expect(task.agents[0]!.push?.preview).toBeUndefined();
-    expect(applyPreview(task, "careful", { url: "https://b.example", commit: B }, "t4")).toBe(true);
+    expect(applyPreview(task, "ponder", { url: "https://b.example", commit: B }, "t4")).toBe(true);
     expect(task.agents[0]!.push?.preview).toEqual({ url: "https://b.example", commit: B, at: "t4" });
     // A newer push keeps the last preview until its own is saved; an old one never replaces it.
-    applyPush(task, { agent: "careful", after: C, commits: 1 }, "t5");
+    applyPush(task, { agent: "ponder", after: C, commits: 1 }, "t5");
     expect(task.agents[0]!.push?.preview?.commit).toBe(B);
-    expect(applyPreview(task, "careful", { url: "https://a.example", commit: A }, "t6")).toBe(false);
-    expect(applyPreview(task, "careful", { url: "https://b2.example", commit: B }, "t6")).toBe(false);
+    expect(applyPreview(task, "ponder", { url: "https://a.example", commit: A }, "t6")).toBe(false);
+    expect(applyPreview(task, "ponder", { url: "https://b2.example", commit: B }, "t6")).toBe(false);
     expect(task.agents[0]!.push?.preview).toEqual({ url: "https://b.example", commit: B, at: "t4" });
     expect(applyPreview(task, "nobody", { url: "https://c.example", commit: C }, "t7")).toBe(false);
   });
@@ -489,14 +489,14 @@ describe("baseRequest", () => {
 describe("needsPreview", () => {
   it("is true only for the newest head without a saved preview", () => {
     const task = runningTask();
-    expect(needsPreview(task, "careful", A)).toBe(false);
-    applyPush(task, { agent: "careful", after: A, commits: 1 }, "t1");
-    expect(needsPreview(task, "careful", A)).toBe(true);
-    applyPush(task, { agent: "careful", after: B, commits: 1 }, "t2");
-    expect(needsPreview(task, "careful", A)).toBe(false);
-    expect(needsPreview(task, "careful", B)).toBe(true);
-    applyPreview(task, "careful", { url: "https://b.example", commit: B }, "t3");
-    expect(needsPreview(task, "careful", B)).toBe(false);
+    expect(needsPreview(task, "ponder", A)).toBe(false);
+    applyPush(task, { agent: "ponder", after: A, commits: 1 }, "t1");
+    expect(needsPreview(task, "ponder", A)).toBe(true);
+    applyPush(task, { agent: "ponder", after: B, commits: 1 }, "t2");
+    expect(needsPreview(task, "ponder", A)).toBe(false);
+    expect(needsPreview(task, "ponder", B)).toBe(true);
+    applyPreview(task, "ponder", { url: "https://b.example", commit: B }, "t3");
+    expect(needsPreview(task, "ponder", B)).toBe(false);
     expect(needsPreview(task, "nobody", B)).toBe(false);
   });
 });
@@ -504,17 +504,17 @@ describe("needsPreview", () => {
 describe("claimRefusal", () => {
   it("lets a live agent of a ready or running task claim", () => {
     const task = runningTask();
-    expect(claimRefusal(task, "careful")).toBeUndefined();
-    expect(claimRefusal({ ...task, status: "ready" }, "careful")).toBeUndefined();
+    expect(claimRefusal(task, "ponder")).toBeUndefined();
+    expect(claimRefusal({ ...task, status: "ready" }, "ponder")).toBeUndefined();
   });
 
   it("refuses everyone else", () => {
     const task = runningTask();
-    expect(claimRefusal(undefined, "careful")).toMatchObject({ status: 404 });
-    expect(claimRefusal({ ...task, status: "finished" }, "careful")).toMatchObject({ status: 409 });
+    expect(claimRefusal(undefined, "ponder")).toMatchObject({ status: 404 });
+    expect(claimRefusal({ ...task, status: "finished" }, "ponder")).toMatchObject({ status: 409 });
     expect(claimRefusal(task, "nobody")).toMatchObject({ status: 404 });
     task.agents[0]!.status = "done";
-    expect(claimRefusal(task, "careful")).toMatchObject({ status: 409, error: "Agent careful has ended" });
+    expect(claimRefusal(task, "ponder")).toMatchObject({ status: 409, error: "Agent ponder has ended" });
   });
 });
 
@@ -527,17 +527,17 @@ describe("purge", () => {
     status: "finished",
     createdAt: "x",
     agents: [
-      { name: "careful", fork: "t-00000001-careful", remote: "r", defaultBranch: "main", status: "done" },
-      { name: "fast", fork: "t-00000001-fast", remote: "r", defaultBranch: "main", status: "done" },
+      { name: "ponder", fork: "t-00000001-ponder", remote: "r", defaultBranch: "main", status: "done" },
+      { name: "zippy", fork: "t-00000001-zippy", remote: "r", defaultBranch: "main", status: "done" },
     ],
-    verdict: { winner: "fast", why: "", judgedAt: "x", ship: { status: "merged", winner: "fast", locks: [] } },
+    verdict: { winner: "zippy", why: "", judgedAt: "x", ship: { status: "merged", winner: "zippy", locks: [] } },
     ...over,
   });
 
   it("deletes the forks and a template-made source, but never a shared source repo", () => {
-    expect(purgeRepos(task())).toEqual(["t-00000001-careful", "t-00000001-fast", "thunderdome-ui-t-00000001"]);
+    expect(purgeRepos(task())).toEqual(["t-00000001-ponder", "t-00000001-zippy", "thunderdome-ui-t-00000001"]);
     const { template: _template, ...shared } = task({ repo: "thunderdome-sample" });
-    expect(purgeRepos(shared)).toEqual(["t-00000001-careful", "t-00000001-fast"]);
+    expect(purgeRepos(shared)).toEqual(["t-00000001-ponder", "t-00000001-zippy"]);
   });
 
   it("refuses a race that is creating, running or being judged", () => {

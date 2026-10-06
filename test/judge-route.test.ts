@@ -16,7 +16,7 @@ function task(status: TaskStatus = "finished"): Task {
     prompt: "Add /health",
     status,
     createdAt: "2026-10-05T00:00:00.000Z",
-    agents: (["careful", "fast", "tester"] as const).map((name, i) => ({
+    agents: (["ponder", "zippy", "testy"] as const).map((name, i) => ({
       name,
       fork: `${ID}-${name}`,
       remote: `https://git.test/${name}.git`,
@@ -28,8 +28,8 @@ function task(status: TaskStatus = "finished"): Task {
 
 function board(): ClaimBoard {
   const b = emptyBoard();
-  claimFiles(b, "careful", ["src/a.ts", "src/b.ts"], false, "now");
-  claimFiles(b, "fast", ["src/a.ts"], true, "now");
+  claimFiles(b, "ponder", ["src/a.ts", "src/b.ts"], false, "now");
+  claimFiles(b, "zippy", ["src/a.ts"], true, "now");
   return b;
 }
 
@@ -83,11 +83,11 @@ describe("judgeInput", () => {
     const input = judgeInput(task(), board());
     expect(input).toMatchObject({ taskId: ID, repo: "thunderdome-sample", task: "Add /health" });
     expect(input.forks.map((f) => [f.agent, f.filesClaimed])).toEqual([
-      ["careful", ["src/a.ts", "src/b.ts"]],
-      ["fast", ["src/a.ts"]],
-      ["tester", []],
+      ["ponder", ["src/a.ts", "src/b.ts"]],
+      ["zippy", ["src/a.ts"]],
+      ["testy", []],
     ]);
-    expect(input.forks[0]).toMatchObject({ fork: `${ID}-careful`, remote: "https://git.test/careful.git", defaultBranch: "main" });
+    expect(input.forks[0]).toMatchObject({ fork: `${ID}-ponder`, remote: "https://git.test/ponder.git", defaultBranch: "main" });
   });
 
   it("passes shared files and each agent's end time", () => {
@@ -95,9 +95,9 @@ describe("judgeInput", () => {
     t.agents[1]!.endedAt = "2026-10-05T00:01:00.000Z";
     const input = judgeInput(t, board());
     expect(input.forks.map((f) => [f.agent, f.filesShared, f.endedAt])).toEqual([
-      ["careful", [], undefined],
-      ["fast", ["src/a.ts"], "2026-10-05T00:01:00.000Z"],
-      ["tester", [], undefined],
+      ["ponder", [], undefined],
+      ["zippy", ["src/a.ts"], "2026-10-05T00:01:00.000Z"],
+      ["testy", [], undefined],
     ]);
     expect("endedAt" in input.forks[0]!).toBe(false);
   });
@@ -152,7 +152,7 @@ describe("POST /tasks/:id/judge", () => {
 
 describe("GET /tasks/:id/judge", () => {
   it("returns the status and output", async () => {
-    const output = { winner: "careful", why: "Winner: careful (90/100)" };
+    const output = { winner: "ponder", why: "Winner: ponder (90/100)" };
     const { env, JUDGE } = fakeEnv({ instance: { status: "complete", output } });
     const response = await handleJudge(new Request(URL_), env, ID);
     expect(response.status).toBe(200);
@@ -161,8 +161,8 @@ describe("GET /tasks/:id/judge", () => {
   });
 
   it("returns the ship result in the output", async () => {
-    const ship = { status: "merged", winner: "careful", commit: "abc123", locks: [{ agent: "careful", fork: `${ID}-careful`, revoked: 1 }] };
-    const output = { winner: "careful", why: "Winner: careful (90/100)", ship };
+    const ship = { status: "merged", winner: "ponder", commit: "abc123", locks: [{ agent: "ponder", fork: `${ID}-ponder`, revoked: 1 }] };
+    const output = { winner: "ponder", why: "Winner: ponder (90/100)", ship };
     const { env } = fakeEnv({ instance: { status: "complete", output } });
     const response = await handleJudge(new Request(URL_), env, ID);
     expect(await response.json()).toMatchObject({ status: "complete", output: { ship: { status: "merged", commit: "abc123" } } });

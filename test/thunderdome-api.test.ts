@@ -35,7 +35,7 @@ const props = (agent: string): OutboundProps => ({ gitHost: GIT_HOST, gitToken: 
 
 describe("isThunderdomeApi", () => {
   it("matches only the reserved path on the git host", () => {
-    const base = props("careful");
+    const base = props("ponder");
     expect(isThunderdomeApi(new URL("https://git.test/_thunderdome/claims"), base)).toBe(true);
     expect(isThunderdomeApi(new URL("https://git.test/git/thunderdome/x.git"), base)).toBe(false);
     expect(isThunderdomeApi(new URL("https://evil.test/_thunderdome/claims"), base)).toBe(false);
@@ -43,7 +43,7 @@ describe("isThunderdomeApi", () => {
   });
 
   it("never forwards an Thunderdome API path to the git host with the token", () => {
-    expect(decideOutbound(new URL("https://git.test/_thunderdome/claims"), props("careful"))).toMatchObject({ allow: false, status: 404 });
+    expect(decideOutbound(new URL("https://git.test/_thunderdome/claims"), props("ponder"))).toMatchObject({ allow: false, status: 404 });
   });
 });
 
@@ -53,27 +53,27 @@ describe("handleThunderdomeApi", () => {
 
   it("takes the agent from the props, not the body", async () => {
     const board = emptyBoard();
-    const response = await handleThunderdomeApi(request("POST", "claims", { files: ["a.ts"], agent: "fast" }), props("careful"), () => memoryRoom(board));
+    const response = await handleThunderdomeApi(request("POST", "claims", { files: ["a.ts"], agent: "zippy" }), props("ponder"), () => memoryRoom(board));
     expect(response.status).toBe(200);
-    expect(board.active[0]?.agent).toBe("careful");
+    expect(board.active[0]?.agent).toBe("ponder");
   });
 
   it("gives agent B a shared claim and the clash on a file agent A holds", async () => {
     const board = emptyBoard();
     const room = () => memoryRoom(board);
-    await handleThunderdomeApi(request("POST", "claims", { files: ["src/text.ts"] }), props("careful"), room);
-    const response = await handleThunderdomeApi(request("POST", "claims", { files: ["src/text.ts"] }), props("fast"), room);
+    await handleThunderdomeApi(request("POST", "claims", { files: ["src/text.ts"] }), props("ponder"), room);
+    const response = await handleThunderdomeApi(request("POST", "claims", { files: ["src/text.ts"] }), props("zippy"), room);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ shared: ["src/text.ts"], clashes: [{ file: "src/text.ts", heldBy: ["careful"] }] });
+    expect(await response.json()).toMatchObject({ shared: ["src/text.ts"], clashes: [{ file: "src/text.ts", heldBy: ["ponder"] }] });
   });
 
   it("refuses a sandbox that runs no agent, plain HTTP, and unknown paths", async () => {
     const room = () => memoryRoom(emptyBoard());
     expect((await handleThunderdomeApi(request("GET", "claims"), { gitHost: GIT_HOST, gitToken: "t" }, room)).status).toBe(404);
     const plain = new Request(`http://${GIT_HOST}/_thunderdome/claims`);
-    expect((await handleThunderdomeApi(plain, props("careful"), room)).status).toBe(403);
-    expect((await handleThunderdomeApi(request("GET", "nope"), props("careful"), room)).status).toBe(404);
-    expect((await handleThunderdomeApi(new Request(`https://${GIT_HOST}/_thunderdome/claims`, { method: "POST", body: "{" }), props("careful"), room)).status).toBe(400);
+    expect((await handleThunderdomeApi(plain, props("ponder"), room)).status).toBe(403);
+    expect((await handleThunderdomeApi(request("GET", "nope"), props("ponder"), room)).status).toBe(404);
+    expect((await handleThunderdomeApi(new Request(`https://${GIT_HOST}/_thunderdome/claims`, { method: "POST", body: "{" }), props("ponder"), room)).status).toBe(400);
   });
 });
 
@@ -111,22 +111,22 @@ describe("claim CLI", () => {
   }
 
   it("runs a full claim round between two agents", async () => {
-    expect(await claim("careful", "./src/text.ts")).toMatchObject({ code: 0, stdout: "Claimed: src/text.ts\n" });
+    expect(await claim("ponder", "./src/text.ts")).toMatchObject({ code: 0, stdout: "Claimed: src/text.ts\n" });
 
-    const clash = await claim("fast", "src/text.ts", "src/index.ts");
+    const clash = await claim("zippy", "src/text.ts", "src/index.ts");
     expect(clash).toMatchObject({ code: 0, stdout: "Claimed: src/index.ts\nShared claim: src/text.ts\n" });
-    expect(clash.stderr).toContain("src/text.ts: careful");
+    expect(clash.stderr).toContain("src/text.ts: ponder");
 
-    expect(await claim("fast", "src/index.ts")).toMatchObject({ code: 0, stdout: "Already yours: src/index.ts\n" });
-    expect(await claim("tester", "--shared", "README.md")).toMatchObject({ code: 0, stdout: "Shared claim: README.md\n" });
-    expect((await claim("careful", "--list")).stdout).toBe("src/text.ts\tcareful\nsrc/text.ts\tfast (shared)\nsrc/index.ts\tfast\nREADME.md\ttester (shared)\n");
-    expect(await claim("careful", "--release")).toMatchObject({ code: 0, stdout: "Released: src/text.ts\n" });
+    expect(await claim("zippy", "src/index.ts")).toMatchObject({ code: 0, stdout: "Already yours: src/index.ts\n" });
+    expect(await claim("testy", "--shared", "README.md")).toMatchObject({ code: 0, stdout: "Shared claim: README.md\n" });
+    expect((await claim("ponder", "--list")).stdout).toBe("src/text.ts\tponder\nsrc/text.ts\tzippy (shared)\nsrc/index.ts\tzippy\nREADME.md\ttesty (shared)\n");
+    expect(await claim("ponder", "--release")).toMatchObject({ code: 0, stdout: "Released: src/text.ts\n" });
   });
 
   it("explains usage errors", async () => {
-    expect(await claim("careful")).toMatchObject({ code: 2 });
-    expect(await claim("careful", "--shared")).toMatchObject({ code: 2 });
-    expect(await claim("careful", "../etc/passwd")).toMatchObject({ code: 2 });
+    expect(await claim("ponder")).toMatchObject({ code: 2 });
+    expect(await claim("ponder", "--shared")).toMatchObject({ code: 2 });
+    expect(await claim("ponder", "../etc/passwd")).toMatchObject({ code: 2 });
     const noApi = await run(process.execPath, [CLI, "a.ts"], { env: { ...process.env, THUNDERDOME_API: "" } }).catch((e: { code: number; stderr: string }) => e);
     expect(noApi).toMatchObject({ code: 2 });
   });

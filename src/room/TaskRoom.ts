@@ -15,7 +15,7 @@ import {
   type ClaimBoard,
   type ClaimResult,
 } from "./claims";
-import { summaryOf } from "./races";
+import { RACE_INDEX_MAX, raceMemory, summaryOf, type RaceMemory } from "./races";
 import {
   applyBasePreview,
   applyOutcome,
@@ -133,6 +133,8 @@ export class TaskRoom extends DurableObject<Env> {
       tokens = Object.fromEntries(forks.map((fork) => [fork.name, fork.token]));
       task.status = "ready";
       task.agents = forks.map(({ token: _token, ...slot }) => ({ ...slot, status: "idle" }));
+      const memory = await this.#memory(task);
+      if (memory.length > 0) task.memory = memory;
       this.ctx.storage.kv.put(TOKENS_KEY, tokens);
       this.#save(task);
     } catch (cause) {
@@ -179,6 +181,7 @@ export class TaskRoom extends DurableObject<Env> {
           prompt: task.prompt,
           deadline: now + AGENT_TIME_LIMIT_MS,
           model: this.env.AGENT_MODEL ?? "",
+          ...(task.memory === undefined ? {} : { memory: task.memory }),
         }),
       ),
     );
@@ -361,6 +364,17 @@ export class TaskRoom extends DurableObject<Env> {
         Math.min(Math.max(limit, 1), MAX_STEPS_PER_PAGE),
       )
       .toArray();
+  }
+
+  // What earlier races on the same app taught, for the agents. Never throws: no memory is fine.
+  async #memory(task: Task): Promise<RaceMemory[]> {
+    try {
+      const races = await this.env.RACE_INDEX.getByName(RACE_INDEX_NAME).list(RACE_INDEX_MAX);
+      return raceMemory(races, task);
+    } catch (error) {
+      console.error({ event: "race_index.memory_failed", taskId: task.id, error: String(error) });
+      return [];
+    }
   }
 
   // Records the task's summary in the race index. Never throws: a failed record is only logged.

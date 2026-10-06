@@ -8,7 +8,7 @@ const id = "t-0123abcd";
 const T0 = Date.parse("2026-10-05T05:00:00.000Z");
 const iso = (s: number) => new Date(T0 + s * 1000).toISOString();
 
-// A finished race: careful claims first, fast clashes on a.ts and releases it, careful wins.
+// A finished race: ponder claims first, zippy clashes on a.ts and releases it, ponder wins.
 function recordedTask(): WireTask {
   return {
     id,
@@ -19,27 +19,27 @@ function recordedTask(): WireTask {
     finishedAt: iso(60),
     basePreview: { url: "https://base.example", commit: "b0", at: iso(15) },
     agents: [
-      { name: "careful", status: "done", startedAt: iso(5), endedAt: iso(60), push: { commits: 2, pushes: 2, lastPushAt: iso(50), seen: ["c1", "c2"], preview: { url: "https://careful.example", commit: "c2", at: iso(56) } } },
-      { name: "fast", status: "done", startedAt: iso(5), endedAt: iso(40), push: { commits: 1, pushes: 1, lastPushAt: iso(35), seen: ["f1"], preview: { url: "https://fast.example", commit: "f1", at: iso(39) } } },
+      { name: "ponder", status: "done", startedAt: iso(5), endedAt: iso(60), push: { commits: 2, pushes: 2, lastPushAt: iso(50), seen: ["c1", "c2"], preview: { url: "https://ponder.example", commit: "c2", at: iso(56) } } },
+      { name: "zippy", status: "done", startedAt: iso(5), endedAt: iso(40), push: { commits: 1, pushes: 1, lastPushAt: iso(35), seen: ["f1"], preview: { url: "https://zippy.example", commit: "f1", at: iso(39) } } },
     ],
-    verdict: { winner: "careful", why: "Best fix.", judgedAt: iso(75), ship: { status: "merged", commit: "abcdef1234567" } },
+    verdict: { winner: "ponder", why: "Best fix.", judgedAt: iso(75), ship: { status: "merged", commit: "abcdef1234567" } },
   };
 }
 
 const steps: WireStep[] = [
-  { seq: 1, agent: "careful", at: iso(10), kind: "init", text: "started" },
-  { seq: 2, agent: "fast", at: iso(12), kind: "init", text: "started" },
-  { seq: 3, agent: "careful", at: iso(20), kind: "tool", text: "Edit src/a.ts" },
-  { seq: 4, agent: "fast", at: iso(22), kind: "claim", text: "shared claim src/a.ts; clash: src/a.ts (also held by careful)" },
-  { seq: 5, agent: "fast", at: iso(30), kind: "claim", text: "released src/a.ts" },
+  { seq: 1, agent: "ponder", at: iso(10), kind: "init", text: "started" },
+  { seq: 2, agent: "zippy", at: iso(12), kind: "init", text: "started" },
+  { seq: 3, agent: "ponder", at: iso(20), kind: "tool", text: "Edit src/a.ts" },
+  { seq: 4, agent: "zippy", at: iso(22), kind: "claim", text: "shared claim src/a.ts; clash: src/a.ts (also held by ponder)" },
+  { seq: 5, agent: "zippy", at: iso(30), kind: "claim", text: "released src/a.ts" },
 ];
 
 const claims: WireClaimBoard = {
   active: [],
   history: [
-    { agent: "careful", file: "src/a.ts", shared: false, at: iso(18) },
-    { agent: "careful", file: "src/b.ts", shared: false, at: iso(18) },
-    { agent: "fast", file: "src/a.ts", shared: true, at: iso(22) },
+    { agent: "ponder", file: "src/a.ts", shared: false, at: iso(18) },
+    { agent: "ponder", file: "src/b.ts", shared: false, at: iso(18) },
+    { agent: "zippy", file: "src/a.ts", shared: true, at: iso(22) },
   ],
 };
 
@@ -68,11 +68,11 @@ describe("U12 replay: a recorded race becomes a timeline", () => {
     expect(atStart.fighters.map((f) => f.action)).toEqual(["idle", "idle"]);
     const clash = boardAt(timeline, T0 + 23_000);
     expect(clash.claimed.clashes).toEqual(["src/a.ts"]);
-    expect(clash.fighters.find((f) => f.agent === "fast")?.clashFile).toBe("src/a.ts");
+    expect(clash.fighters.find((f) => f.agent === "zippy")?.clashFile).toBe("src/a.ts");
     const released = boardAt(timeline, T0 + 31_000);
-    expect(released.grid.cells["src/a.ts"]).toEqual({ careful: "own" });
+    expect(released.grid.cells["src/a.ts"]).toEqual({ ponder: "own" });
     const end = boardAt(timeline, timeline.end);
-    expect(end).toMatchObject({ ended: true, winner: "careful" });
+    expect(end).toMatchObject({ ended: true, winner: "ponder" });
     expect(end.task?.verdict?.ship?.commit).toBe("abcdef1234567");
     expect(stepsAt(steps, T0 + 21_000).map((s) => s.seq)).toEqual([1, 2, 3]);
   });

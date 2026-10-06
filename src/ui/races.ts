@@ -1,6 +1,6 @@
 // The race gallery: every race from GET /tasks, newest first, each a link to watch or replay it.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
-import { colorFor, displayName } from "./board";
+import { AGENT_IDS, colorFor, displayName, styleLabel, whyWithNames } from "./board";
 import { raceStats, standings, type DecidedBy, type RaceStats, type Standing } from "./leaderboard";
 import { coreSvg, crownSvg, robotSvg } from "./sprites";
 
@@ -17,6 +17,7 @@ interface RaceSummary {
   clash?: boolean;
   scores?: { agent: string; total: number }[];
   decidedBy?: DecidedBy;
+  headline?: string;
 }
 
 const ID = /^t-[0-9a-f]{8}$/;
@@ -69,6 +70,7 @@ function card(r: RaceSummary): HTMLElement {
   if (r.template !== undefined) top.append(el("span", "pill tpl", `demo: ${r.template.replace(/^thunderdome-/, "")}`));
   top.append(el("span", "when", ago(r.createdAt)));
   const prompt = el("p", "race-prompt", r.prompt);
+  const why = r.headline === undefined ? undefined : el("p", "race-why", whyWithNames(r.headline, [...r.agents, ...AGENT_IDS]));
   const lineup = el("div", "lineup");
   for (const agent of r.agents) {
     const fighter = el("div", agent === r.winner ? "fighter won" : ended ? "fighter lost" : "fighter");
@@ -82,7 +84,7 @@ function card(r: RaceSummary): HTMLElement {
   const time = duration(r);
   foot.append(el("span", undefined, ended ? (r.winner ? `${displayName(r.winner)} won${time ? ` in ${time}` : ""}` : "no winner") : "in progress"));
   foot.append(el("span", "cta", ended ? "▶ replay" : "● watch live"));
-  link.append(top, prompt, lineup, foot);
+  link.append(top, prompt, ...(why === undefined ? [] : [why]), lineup, foot);
   return link;
 }
 
@@ -129,7 +131,8 @@ function standingRow(s: Standing, i: number, top: number): HTMLElement {
   if (i === 0 && s.wins > 0) bot.append(art("mini-crown", crownSvg()));
   const who = el("div", "who");
   who.append(el("b", undefined, s.name));
-  if (s.name !== s.agent) who.append(el("span", "style", s.agent));
+  const style = styleLabel(s.agent);
+  if (style !== undefined) who.append(el("span", "style", style));
   const bar = el("div", "wins-bar col-bar");
   const fill = el("i");
   fill.style.width = `${top === 0 ? 0 : (s.wins / top) * 100}%`;

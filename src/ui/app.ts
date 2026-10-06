@@ -1,8 +1,8 @@
 // The race page: follows a race live (WebSocket) or replays a recorded one (?replay), and draws
 // the board, the Cloudflare pipeline under it, the judging and the before/after compare.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
-import { applyEvent, applyScores, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
-import type { Action, Board, BoardEvent, Fighter, WireClaimBoard, WirePreview, WireScore, WireStep, WireTask } from "./board";
+import { AGENT_IDS, applyEvent, applyScores, colorFor, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
+import type { Action, Board, BoardEvent, Fighter, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, flagSvg, hammerSvg, robotSvg } from "./sprites";
@@ -710,9 +710,33 @@ function renderGraph(b: Board): void {
   byId("graph-stat").textContent = `${graph.lanes.length} forks · ${pushes} push${pushes === 1 ? "" : "es"}${graph.merge ? " · 1 merge" : ""}`;
 }
 
+// What the robots were told about earlier races on this app. Rebuilt only when it changes.
+let memoryKey = "";
+function renderMemory(memory: WireMemory[] | undefined): void {
+  const list = memory ?? [];
+  const key = JSON.stringify(list);
+  if (key === memoryKey) return;
+  memoryKey = key;
+  const box = byId("memory");
+  box.hidden = list.length === 0;
+  byId("memory-count").textContent = `${list.length} earlier race${list.length === 1 ? "" : "s"}, told to every robot`;
+  byId("memory-list").replaceChildren(
+    ...list.map((m) => {
+      const item = el("li");
+      item.style.setProperty("--color", colorFor(m.winner));
+      const what = el("span", "what", `“${m.prompt}”`);
+      what.title = m.prompt;
+      item.append(el("span", "who", `${displayName(m.winner)} won`), what);
+      if (m.headline !== undefined) item.append(el("span", "why", whyWithNames(m.headline, [m.winner, ...AGENT_IDS])));
+      return item;
+    }),
+  );
+}
+
 function renderHeader(b: Board): void {
   const task = b.task;
   byId("prompt").textContent = task?.prompt ?? "";
+  renderMemory(task?.memory);
   let status: string = task?.status ?? "unknown";
   if (b.ended) status = b.winner ? `won by ${displayName(b.winner)}` : "no winner";
   else if (task?.status === "finished") status = "judging";

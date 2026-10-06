@@ -167,11 +167,11 @@ describe("shipTask with a conflict race", () => {
   const conflict: GitResult = { exitCode: 1, stdout: "CONFLICT (content): a.ts", stderr: "" };
   const green: RaceOutcome = {
     attempts: [
-      { agent: "careful", status: "red", seconds: 50, commit: "m-careful", tests: { passed: 1, total: 2 } },
-      { agent: "fast", status: "unresolved", seconds: 20, note: "conflict markers left in: a.ts" },
-      { agent: "tester", status: "green", seconds: 41, commit: "m-tester", tests: { passed: 2, total: 2 } },
+      { agent: "ponder", status: "red", seconds: 50, commit: "m-ponder", tests: { passed: 1, total: 2 } },
+      { agent: "zippy", status: "unresolved", seconds: 20, note: "conflict markers left in: a.ts" },
+      { agent: "testy", status: "green", seconds: 41, commit: "m-testy", tests: { passed: 2, total: 2 } },
     ],
-    chosen: "tester",
+    chosen: "testy",
     bundle: "QlVORExF",
   };
 
@@ -229,12 +229,12 @@ describe("shipTask with a conflict race", () => {
     expect(diffAt).toBeGreaterThan(-1);
     expect(diffAt).toBeLessThan(abortAt);
     expect(calls).toContainEqual(["fetch", "/workspace/resolve.bundle", "+refs/resolve/*:refs/resolve/*"]);
-    expect(calls).toContainEqual(["push", "origin", "m-tester:refs/heads/main"]);
-    expect(calls).toContainEqual(["push", "origin", "refs/resolve/careful:refs/heads/thunderdome/t1/resolve-careful"]);
+    expect(calls).toContainEqual(["push", "origin", "m-testy:refs/heads/main"]);
+    expect(calls).toContainEqual(["push", "origin", "refs/resolve/ponder:refs/heads/thunderdome/t1/resolve-ponder"]);
     expect(result).toMatchObject({
       status: "merged",
-      commit: "m-tester",
-      resolve: { files: ["a.ts"], chosen: "tester", kept: ["thunderdome/t1/resolve-careful"], attempts: green.attempts },
+      commit: "m-testy",
+      resolve: { files: ["a.ts"], chosen: "testy", kept: ["thunderdome/t1/resolve-ponder"], attempts: green.attempts },
     });
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   });
@@ -268,7 +268,7 @@ describe("shipTask with a conflict race", () => {
   it("keeps the attempts when the push is rejected because the source moved again", async () => {
     const { deps } = raceDeps(green);
     const git = deps.git;
-    deps.git = async (args) => (args[0] === "push" && args[2] === "m-tester:refs/heads/main" ? { exitCode: 1, stdout: "", stderr: "non-fast-forward" } : git(args));
+    deps.git = async (args) => (args[0] === "push" && args[2] === "m-testy:refs/heads/main" ? { exitCode: 1, stdout: "", stderr: "non-fast-forward" } : git(args));
     const result = await shipTask(deps, input);
     expect(result).toMatchObject({ status: "error", resolve: { files: ["a.ts"], attempts: green.attempts } });
     expect(result.output).toContain("non-fast-forward");
@@ -278,7 +278,7 @@ describe("shipTask with a conflict race", () => {
   it("keeps the attempts when the push is rejected because the source moved again", async () => {
     const { deps } = raceDeps(green);
     const git = deps.git;
-    deps.git = async (args) => (args[0] === "push" && args[2] === "m-tester:refs/heads/main" ? { exitCode: 1, stdout: "", stderr: "non-fast-forward" } : git(args));
+    deps.git = async (args) => (args[0] === "push" && args[2] === "m-testy:refs/heads/main" ? { exitCode: 1, stdout: "", stderr: "non-fast-forward" } : git(args));
     const result = await shipTask(deps, input);
     expect(result).toMatchObject({ status: "error", resolve: { files: ["a.ts"], attempts: green.attempts } });
     expect(result.output).toContain("non-fast-forward");

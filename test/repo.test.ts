@@ -33,7 +33,7 @@ describe("isRepoName", () => {
 
 describe("forkName", () => {
   it("joins task and agent", () => {
-    expect(forkName("t1", "careful")).toBe("t1-careful");
+    expect(forkName("t1", "ponder")).toBe("t1-ponder");
   });
   it("rejects names Artifacts would refuse", () => {
     expect(() => forkName("t 1", "a/b")).toThrow(/Invalid fork name/);
@@ -73,9 +73,9 @@ describe("openOrCreate", () => {
 describe("forkFor", () => {
   it("forks the default branch and returns the fork token", async () => {
     const repo = fakeRepo();
-    const result = await forkFor(fakeArtifacts(repo), "thunderdome-sample", "t1-fast", "d");
-    expect(repo.fork).toHaveBeenCalledWith("t1-fast", { description: "d", defaultBranchOnly: true });
-    expect(result).toEqual({ name: "t1-fast", remote: "https://git.test/thunderdome/t1-fast.git", token: "token-t1-fast", defaultBranch: "main" });
+    const result = await forkFor(fakeArtifacts(repo), "thunderdome-sample", "t1-zippy", "d");
+    expect(repo.fork).toHaveBeenCalledWith("t1-zippy", { description: "d", defaultBranchOnly: true });
+    expect(result).toEqual({ name: "t1-zippy", remote: "https://git.test/thunderdome/t1-zippy.git", token: "token-t1-zippy", defaultBranch: "main" });
   });
 });
 
@@ -91,7 +91,7 @@ describe("revokeWriteTokens", () => {
         ],
       })),
     });
-    expect(await revokeWriteTokens(fakeArtifacts(repo), "t1-fast")).toBe(1);
+    expect(await revokeWriteTokens(fakeArtifacts(repo), "t1-zippy")).toBe(1);
     expect(repo.revokeToken).toHaveBeenCalledTimes(1);
     expect(repo.revokeToken).toHaveBeenCalledWith("w-live");
   });

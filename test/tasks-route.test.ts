@@ -12,10 +12,10 @@ const readyTask = (input: NewTask): Task => ({
   prompt: input.prompt,
   status: "ready",
   createdAt: "2026-10-05T00:00:00.000Z",
-  agents: (["careful", "fast", "tester"] as const).map((name) => ({ name, fork: `${input.id}-${name}`, remote: `https://git.test/${name}.git`, defaultBranch: "main", status: "idle" as const })),
+  agents: (["ponder", "zippy", "testy"] as const).map((name) => ({ name, fork: `${input.id}-${name}`, remote: `https://git.test/${name}.git`, defaultBranch: "main", status: "idle" as const })),
 });
 
-const race = (id: string, createdAt: string): RaceSummary => ({ id, prompt: "p", status: "ready", createdAt, agents: ["careful", "fast", "tester"], clash: false });
+const race = (id: string, createdAt: string): RaceSummary => ({ id, prompt: "p", status: "ready", createdAt, agents: ["ponder", "zippy", "testy"], clash: false });
 
 interface FakeRoom {
   create?: (input: NewTask) => Promise<CreateTaskResult>;
@@ -42,7 +42,7 @@ function fakeIndex(races: RaceSummary[] = []) {
 
 function fakeEnv(room: FakeRoom, races: RaceSummary[] = []) {
   const stub = {
-    create: vi.fn(room.create ?? (async (input: NewTask) => ({ ok: true as const, task: readyTask(input), tokens: { careful: "k1", fast: "k2", tester: "k3" } }))),
+    create: vi.fn(room.create ?? (async (input: NewTask) => ({ ok: true as const, task: readyTask(input), tokens: { ponder: "k1", zippy: "k2", testy: "k3" } }))),
     state: vi.fn(room.state ?? (async () => null)),
     run: vi.fn(room.run ?? (async () => ({ ok: false as const, status: 404, error: { error: "not found" } }))),
     steps: vi.fn(room.steps ?? (async () => [])),
@@ -138,8 +138,8 @@ describe("POST /admin/races", () => {
   function backfillEnv() {
     const task: Task = { ...readyTask({ id: known, repo: "thunderdome-sample", prompt: "p", agents: 3 }), status: "running", startedAt: "2026-10-05T00:01:00.000Z" };
     const board = emptyBoard();
-    claimFiles(board, "careful", ["src/text.ts"], false, "now");
-    claimFiles(board, "fast", ["src/text.ts"], false, "now");
+    claimFiles(board, "ponder", ["src/text.ts"], false, "now");
+    claimFiles(board, "zippy", ["src/text.ts"], false, "now");
     const knownRoom = { state: vi.fn(async () => task), claimBoard: vi.fn(async () => board) };
     const unknownRoom = { state: vi.fn(async () => null), claimBoard: vi.fn(async () => emptyBoard()) };
     const getByName = vi.fn((id: string) => (id === known ? knownRoom : unknownRoom));
@@ -185,16 +185,16 @@ describe("GET /tasks/:id", () => {
       ...readyTask({ id: "t-0123abcd", repo: "thunderdome-sample", prompt: "p", agents: 3 }),
       status: "finished",
       verdict: {
-        winner: "careful",
-        why: "Winner: careful (90/100)",
+        winner: "ponder",
+        why: "Winner: ponder (90/100)",
         judgedAt: "2026-10-05T00:10:00.000Z",
-        ship: { status: "merged", winner: "careful", commit: "abc123", locks: [{ agent: "careful", fork: "t-0123abcd-careful", revoked: 1 }] },
+        ship: { status: "merged", winner: "ponder", commit: "abc123", locks: [{ agent: "ponder", fork: "t-0123abcd-ponder", revoked: 1 }] },
       },
     };
     const { env } = fakeEnv({ state: async () => task });
     const response = await handleTasks(new Request("https://thunderdome.test/tasks/t-0123abcd"), env);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ verdict: { winner: "careful", ship: { status: "merged", commit: "abc123" } } });
+    expect(await response.json()).toMatchObject({ verdict: { winner: "ponder", ship: { status: "merged", commit: "abc123" } } });
   });
 
   it("returns 404 for an unknown or malformed id", async () => {
@@ -269,7 +269,7 @@ describe("GET /tasks/:id/live", () => {
 });
 
 describe("GET /tasks/:id/steps", () => {
-  const step = (seq: number): LoggedStep => ({ seq, agent: "fast", at: "2026-10-05T00:00:00.000Z", kind: "tool", text: "Bash npm test" });
+  const step = (seq: number): LoggedStep => ({ seq, agent: "zippy", at: "2026-10-05T00:00:00.000Z", kind: "tool", text: "Bash npm test" });
 
   it("pages by seq", async () => {
     const { env, stub } = fakeEnv({ steps: async () => [step(4), step(5)] });
@@ -291,26 +291,26 @@ describe("GET /tasks/:id/forks/:agent/diff", () => {
 
   it("X8: GET /tasks/:id/forks/:agent/diff returns the saved diff and 404 without one", async () => {
     const saved: SavedDiff = { diff: "diff --git a/src/text.ts b/src/text.ts\n+fixed\n", clipped: true };
-    const { env, stub, getByName } = fakeEnv({ forkDiff: async (agent) => (agent === "fast" ? saved : null) });
+    const { env, stub, getByName } = fakeEnv({ forkDiff: async (agent) => (agent === "zippy" ? saved : null) });
 
-    const found = await handleTasks(new Request(diffUrl("t-0123abcd/forks/fast/diff")), env);
+    const found = await handleTasks(new Request(diffUrl("t-0123abcd/forks/zippy/diff")), env);
     expect(found.status).toBe(200);
-    expect(await found.json()).toEqual({ agent: "fast", diff: saved.diff, clipped: true });
+    expect(await found.json()).toEqual({ agent: "zippy", diff: saved.diff, clipped: true });
     expect(getByName).toHaveBeenCalledWith("t-0123abcd");
-    expect(stub.forkDiff).toHaveBeenCalledWith("fast");
+    expect(stub.forkDiff).toHaveBeenCalledWith("zippy");
 
-    const missing = await handleTasks(new Request(diffUrl("t-0123abcd/forks/careful/diff")), env);
+    const missing = await handleTasks(new Request(diffUrl("t-0123abcd/forks/ponder/diff")), env);
     expect(missing.status).toBe(404);
     expect(await missing.json()).toEqual({ error: "not found" });
 
     // A bad agent name, a bad id or a near path is 404 without asking the room.
     stub.forkDiff.mockClear();
-    for (const path of ["t-0123abcd/forks/Bad1/diff", "t-0123abcd/forks/fast/diff/x", "t-0123abcd/forks/fast", "t-0123abcd/forks", "nope/forks/fast/diff"]) {
+    for (const path of ["t-0123abcd/forks/Bad1/diff", "t-0123abcd/forks/zippy/diff/x", "t-0123abcd/forks/zippy", "t-0123abcd/forks", "nope/forks/zippy/diff"]) {
       expect((await handleTasks(new Request(diffUrl(path)), env)).status).toBe(404);
     }
     expect(stub.forkDiff).not.toHaveBeenCalled();
 
-    const wrong = await handleTasks(new Request(diffUrl("t-0123abcd/forks/fast/diff"), { method: "POST" }), env);
+    const wrong = await handleTasks(new Request(diffUrl("t-0123abcd/forks/zippy/diff"), { method: "POST" }), env);
     expect(wrong.status).toBe(405);
     expect(wrong.headers.get("allow")).toBe("GET");
     expect(stub.forkDiff).not.toHaveBeenCalled();
@@ -331,16 +331,16 @@ describe("claim routes", () => {
   it("gives agent B a shared claim and the clash on a file agent A holds", async () => {
     const board = emptyBoard();
     const { env } = fakeEnv({ claim: async (agent, files, shared) => claimFiles(board, agent, files as string[], shared, "now") });
-    expect((await handleTasks(post("claims", { agent: "careful", files: ["src/text.ts"] }), env)).status).toBe(200);
-    const response = await handleTasks(post("claims", { agent: "fast", files: ["src/text.ts"] }), env);
+    expect((await handleTasks(post("claims", { agent: "ponder", files: ["src/text.ts"] }), env)).status).toBe(200);
+    const response = await handleTasks(post("claims", { agent: "zippy", files: ["src/text.ts"] }), env);
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ shared: ["src/text.ts"], clashes: [{ file: "src/text.ts", heldBy: ["careful"] }] });
+    expect(await response.json()).toMatchObject({ shared: ["src/text.ts"], clashes: [{ file: "src/text.ts", heldBy: ["ponder"] }] });
   });
 
   it("passes shared and checks the body", async () => {
     const { env, stub } = fakeEnv({});
-    await handleTasks(post("claims", { agent: "fast", files: ["a.ts"], shared: true }), env);
-    expect(stub.claim).toHaveBeenCalledWith("fast", ["a.ts"], true);
+    await handleTasks(post("claims", { agent: "zippy", files: ["a.ts"], shared: true }), env);
+    expect(stub.claim).toHaveBeenCalledWith("zippy", ["a.ts"], true);
     expect((await handleTasks(post("claims", { files: ["a.ts"] }), env)).status).toBe(400);
     expect((await handleTasks(post("claims", [1]), env)).status).toBe(400);
   });
@@ -349,8 +349,8 @@ describe("claim routes", () => {
     const { env, stub } = fakeEnv({});
     const board = await handleTasks(new Request("https://thunderdome.test/tasks/t-0123abcd/claims"), env);
     expect(await board.json()).toEqual({ active: [], history: [] });
-    expect((await handleTasks(post("release", { agent: "fast" }), env)).status).toBe(200);
-    expect(stub.release).toHaveBeenCalledWith("fast", undefined);
+    expect((await handleTasks(post("release", { agent: "zippy" }), env)).status).toBe(200);
+    expect(stub.release).toHaveBeenCalledWith("zippy", undefined);
     expect((await handleTasks(post("release", {}), env)).status).toBe(400);
     expect((await handleTasks(new Request("https://thunderdome.test/tasks/t-0123abcd/release"), env)).status).toBe(405);
   });

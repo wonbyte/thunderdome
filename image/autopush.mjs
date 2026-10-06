@@ -39,7 +39,7 @@ export function commitMessage(agent, files) {
   return message.length > MAX_MESSAGE ? `${message.slice(0, MAX_MESSAGE - 1)}…` : message;
 }
 
-// "Thunderdome careful" -> "careful"; anything else -> "agent".
+// "Thunderdome ponder" -> "ponder"; anything else -> "agent".
 export function agentFromAuthor(authorName) {
   const match = typeof authorName === "string" ? /^Thunderdome (\S+)$/.exec(authorName) : null;
   return match?.[1] ?? "agent";

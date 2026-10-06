@@ -29,7 +29,7 @@ import {
 } from "./judge";
 import type { ForkScore } from "./score";
 import { clefScorer } from "./scorer";
-import { decidedBy } from "./why";
+import { decidedBy, headline } from "./why";
 
 const FORK_STEP = {
   retries: { limit: 2, delay: "10 seconds", backoff: "exponential" },
@@ -91,6 +91,7 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
     const ship = JSON.parse(shipped) as ShipResult;
     await step.do("save verdict", async () => {
       const decided = decidedBy(result.scores);
+      const line = headline(result.scores);
       const saved = await this.env.TASK_ROOM.getByName(input.taskId).saveVerdict({
         winner: result.winner,
         why: result.why,
@@ -98,6 +99,7 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
         ship,
         scores: verdictScores(result.scores.ranked),
         ...(decided === undefined ? {} : { decidedBy: decided }),
+        ...(line === undefined ? {} : { headline: line }),
       });
       // 409: a retried step already saved it.
       if (!saved.ok && saved.status !== 409) throw new Error(`Saving the verdict failed (${saved.status}): ${saved.error}`);

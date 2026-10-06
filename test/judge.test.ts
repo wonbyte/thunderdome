@@ -28,28 +28,28 @@ describe("judgeTask", () => {
     const result = await judgeTask(deps, input);
 
     expect(result.taskId).toBe(TASK_ID);
-    expect(result.forks.map((f) => f.agent)).toEqual(["careful", "fast", "lean"]);
+    expect(result.forks.map((f) => f.agent)).toEqual(["ponder", "zippy", "snip"]);
     expect(result.scores.ranked).toHaveLength(3);
-    expect(result.scores.ranked.map((s) => s.agent)).toEqual(["careful", "fast", "lean"]);
-    expect(result.winner).toBe("careful");
-    expect(result.scores.winner).toBe("careful");
-    expect(result.why.split("\n")[0]).toBe(`Winner: careful (${result.scores.ranked[0]!.total}/100)`);
-    expect(result.why).toContain("Why careful won:");
+    expect(result.scores.ranked.map((s) => s.agent)).toEqual(["ponder", "zippy", "snip"]);
+    expect(result.winner).toBe("ponder");
+    expect(result.scores.winner).toBe("ponder");
+    expect(result.why.split("\n")[0]).toBe(`Winner: ponder (${result.scores.ranked[0]!.total}/100)`);
+    expect(result.why).toContain("Why ponder won:");
 
-    const careful = result.forks[0]!;
-    expect(careful.tests).toEqual({ passed: 10, total: 10 });
-    expect(careful.diff).toEqual({ filesChanged: ["src/careful.ts"], linesAdded: 2, linesRemoved: 1 });
-    expect(careful.input).toEqual({
-      agent: "careful",
+    const ponder = result.forks[0]!;
+    expect(ponder.tests).toEqual({ passed: 10, total: 10 });
+    expect(ponder.diff).toEqual({ filesChanged: ["src/ponder.ts"], linesAdded: 2, linesRemoved: 1 });
+    expect(ponder.input).toEqual({
+      agent: "ponder",
       testsPassed: 10,
       testsTotal: 10,
       taskFit: 0.75,
       clarity: 0.5,
       linesChanged: 3,
-      filesChanged: ["src/careful.ts"],
-      filesClaimed: ["src/careful.ts"],
+      filesChanged: ["src/ponder.ts"],
+      filesClaimed: ["src/ponder.ts"],
       filesShared: [],
-      fix: fixFingerprint("+// change by careful\n"),
+      fix: fixFingerprint("+// change by ponder\n"),
     });
 
     expect(deps.runTests).toHaveBeenCalledTimes(3);
@@ -57,8 +57,8 @@ describe("judgeTask", () => {
     expect(score).toHaveBeenCalledTimes(3);
     expect(score.mock.calls[0]![0]).toEqual({
       task: input.task,
-      diff: "+// change by careful\n",
-      filesChanged: ["src/careful.ts"],
+      diff: "+// change by ponder\n",
+      filesChanged: ["src/ponder.ts"],
       linesAdded: 2,
       linesRemoved: 1,
     });
@@ -71,29 +71,29 @@ describe("judgeTask", () => {
 
   it("R7: the test run retries 2× and then scores the fork as 0 tests passed", async () => {
     const runTests = vi.fn(async (fork: JudgeFork) => {
-      if (fork.agent === "fast") throw new Error("npm test printed no test summary");
+      if (fork.agent === "zippy") throw new Error("npm test printed no test summary");
       return { passed: 6, total: 10 };
     });
     const deps = fakeDeps({ runTests });
     const result = await judgeTask(deps, fakeInput());
 
-    const fastCalls = runTests.mock.calls.filter(([fork]) => fork.agent === "fast");
+    const fastCalls = runTests.mock.calls.filter(([fork]) => fork.agent === "zippy");
     expect(fastCalls).toHaveLength(TEST_ATTEMPTS);
     expect(TEST_ATTEMPTS).toBe(3);
     expect(deps.sleep).toHaveBeenCalledTimes(2);
     expect(deps.sleep).toHaveBeenCalledWith(TEST_RETRY_DELAY_MS);
 
-    const fast = result.forks.find((f) => f.agent === "fast")!;
-    expect(fast.tests.passed).toBe(0);
-    expect(fast.tests.total).toBe(0);
-    expect(fast.tests.error).toContain("no test summary");
-    expect(fast.input.testsPassed).toBe(0);
-    const score = result.scores.ranked.find((s) => s.agent === "fast")!;
+    const zippy = result.forks.find((f) => f.agent === "zippy")!;
+    expect(zippy.tests.passed).toBe(0);
+    expect(zippy.tests.total).toBe(0);
+    expect(zippy.tests.error).toContain("no test summary");
+    expect(zippy.input.testsPassed).toBe(0);
+    const score = result.scores.ranked.find((s) => s.agent === "zippy")!;
     expect(score.eligible).toBe(false);
     expect(score.parts.tests).toBe(0);
-    expect(result.scores.ranked.at(-1)!.agent).toBe("fast");
-    expect(result.winner).not.toBe("fast");
-    expect(result.why).toContain("- fast (");
+    expect(result.scores.ranked.at(-1)!.agent).toBe("zippy");
+    expect(result.winner).not.toBe("zippy");
+    expect(result.why).toContain("- zippy (");
     expect(result.why).toContain("0 tests passed, cannot win.");
   });
 
@@ -104,7 +104,7 @@ describe("judgeTask", () => {
       .mockRejectedValueOnce(new Error("flaky"))
       .mockResolvedValue({ passed: 3, total: 4 });
     const deps = fakeDeps({ runTests });
-    const judged = await judgeFork(deps, fakeInput(["careful"]), fakeFork("careful"));
+    const judged = await judgeFork(deps, fakeInput(["ponder"]), fakeFork("ponder"));
     expect(runTests).toHaveBeenCalledTimes(3);
     expect(judged.tests).toEqual({ passed: 3, total: 4 });
   });
@@ -113,7 +113,7 @@ describe("judgeTask", () => {
     const scorer = fakeScorer();
     const score = vi.spyOn(scorer, "score");
     const getDiff = vi.fn(async () => ({ diff: "", filesChanged: [], linesAdded: 0, linesRemoved: 0 }));
-    const judged = await judgeFork(fakeDeps({ scorer, getDiff }), fakeInput(), fakeFork("careful"));
+    const judged = await judgeFork(fakeDeps({ scorer, getDiff }), fakeInput(), fakeFork("ponder"));
     expect(score).not.toHaveBeenCalled();
     expect(judged.scorer).toBeUndefined();
     expect("scorer" in judged).toBe(false);
