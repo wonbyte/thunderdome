@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { clip, resultOf, splitLines, stepsOf, testRunIn } from "../src/agents/events";
-import { AGENT_NAMES, AGENT_STYLES, isAgentName, memoryText, systemPrompt } from "../src/agents/prompt";
+import { AGENT_NAMES, AGENT_STYLES, isAgentName, memoryText, systemPrompt, testFileOf } from "../src/agents/prompt";
 import {
   agentCommand,
   AUTOPUSH_HOOK_PATH,
@@ -221,9 +221,13 @@ describe("memory in the system prompt", () => {
   });
 });
 
-describe("Testy's style", () => {
-  it("writes its tests in a new file of its own, so the fusion round can add them to another robot's fix", () => {
-    expect(AGENT_STYLES.testy).toContain("in a new test file of your own");
-    expect(AGENT_STYLES.testy).toContain("Leave the existing tests as they are");
+describe("tests of their own", () => {
+  it("tells every agent to add its tests in a file named after it, so the fusion round can add a loser's tests", () => {
+    for (const agent of AGENT_NAMES) {
+      const prompt = systemPrompt(agent, 8);
+      expect(prompt).toContain(`\`test/${agent}.test.ts\``);
+      expect(prompt).toContain("Leave the existing tests as they are");
+    }
+    expect(new Set(AGENT_NAMES.map(testFileOf)).size).toBe(AGENT_NAMES.length);
   });
 });

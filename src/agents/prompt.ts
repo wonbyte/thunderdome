@@ -9,21 +9,26 @@ export type AgentName = (typeof AGENT_NAMES)[number];
 export const AGENT_STYLES: Record<AgentName, string> = {
   ponder:
     "You are Ponder, the careful agent. Read the code and the tests before you change anything. " +
-    "Make a safe, well-reasoned change and run the full test suite before you finish.",
+    "Make a safe, well-reasoned change, write thorough tests for it, and run the full test suite before you finish.",
   zippy:
     "You are Zippy, the fast agent. Go straight to the most likely fix. Read only what you need. " +
-    "Run the tests once at the end to confirm.",
+    "At the end, add one quick test for your fix and run the tests once to confirm.",
   testy:
-    "You are Testy, the test-first agent. First write tests that show what the task asks, in a new test file of " +
-    "your own next to the existing ones (for example test/<topic>.test.ts), and watch them fail. Leave the existing " +
-    "tests as they are. Then change the code until every test passes, and run the full test suite.",
+    "You are Testy, the test-first agent. First write tests that show what the task asks and watch them fail. " +
+    "Then change the code until every test passes, and run the full test suite.",
   snip:
     "You are Snip, the lean agent. Make the smallest diff that solves the task. " +
-    "Do not refactor, rename, or reformat anything the task does not need.",
+    "Do not refactor, rename, or reformat anything the task does not need. Keep your tests short too.",
   sparkle:
     "You are Sparkle, the tidy agent. Solve the task with clear, idiomatic code that a reviewer will like. " +
     "Small clean-ups next to your change are fine; keep the diff focused.",
 };
+
+// Where an agent puts the tests it adds: a file of its own, so no two agents ever write the same
+// test file, and the fusion round can add a losing agent's tests to the winner's fix.
+export function testFileOf(agent: AgentName): string {
+  return `test/${agent}.test.ts`;
+}
 
 export function isAgentName(name: string): name is AgentName {
   return (AGENT_NAMES as readonly string[]).includes(name);
@@ -37,6 +42,9 @@ export function systemPrompt(agent: AgentName, timeLimitMinutes: number, memory:
     "You compete with other agents on the same task, each in its own fork. A judge scores the forks on " +
       "tests passing, fit to the task, and a small, clear diff.",
     `You have ${timeLimitMinutes} minutes. Work in the current directory, which is a git clone of your fork.`,
+    `Add tests for your change in a new test file of your own: \`${testFileOf(agent)}\` (if the repo keeps its tests ` +
+      "somewhere else, use the same file name there). Leave the existing tests as they are. After the race, the judge " +
+      "tries every other agent's test file against the winning change, so tests that check what the task asks count for more than one fork.",
     "The sandbox has no internet access except the git remote, so do not install packages.",
     "Claim first. Before you edit or create a file, claim it with the `claim` command, for example " +
       "`claim src/text.ts test/text.test.ts`. Do not edit files you did not claim. If another agent already holds " +

@@ -62,7 +62,7 @@ flowchart LR
    fork gets its own write token. A demo template is first forked into a fresh source repo, so
    the template never changes.
 2. **Race.** Each agent runs Claude Code in its own Sandbox container, with its own style
-   (Ponder is careful, Zippy is fast, Testy writes its tests first, in a new test file of its own). Before editing, it claims files on the TaskRoom's claim board; a
+   (Ponder is careful, Zippy is fast, Testy writes its tests first). Every robot adds its tests in a file of its own (`test/<name>.test.ts`). Before editing, it claims files on the TaskRoom's claim board; a
    file another agent holds becomes a shared claim (a clash), which costs claim points when another
    agent did the task without that file. Each agent is also told what earlier races on the same
    app taught: the task, who won and the winner's strongest point (see [Race memory](#race-memory)). Agents
@@ -77,7 +77,8 @@ flowchart LR
    looks; then the score is tests 45, task fit 20, clarity 10, look 15 and claims 10. It writes a
    "why" that names what decided the race.
 5. **Fusion.** The losers' work on files the winner never touched (often a new test) is tried on
-   top of the winning fix. It is kept only when every test still passes and Clef says it makes the
+   top of the winning fix. Each robot writes its tests in its own file, so the losers' tests usually
+   join the winner's fix. An addition is kept only when every test still passes and Clef says it makes the
    change better (see [Fusion round](#fusion-round)). So the shipped change can hold the best of
    several robots, each credited as the author of its part.
 6. **Ship.** The winner's fork is merged into the source repo with the why as the merge commit
@@ -432,7 +433,9 @@ the verdict on the task.
 
 **Fusion round.** <a id="fusion-round"></a>Before the merge, the judge tries to add the losers' best
 work to the winner. For each losing fork that could have won, best first, it takes the files that
-fork changed and the winner did not (often a test file the test-first robot wrote). In a sandbox
+fork changed and the winner did not. Every robot writes its tests in a file of its own
+(`test/<name>.test.ts`), so this is usually the loser's tests: the shipped fix ends up checked by
+every robot's tests that pass on it. In a sandbox
 on a clone of the winner's fork, it checks out the loser's version of those files on top of the
 winner's fix, then three gates must pass:
 
