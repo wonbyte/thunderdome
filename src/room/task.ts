@@ -1,7 +1,7 @@
 // Task model: input checks, ids, and the forks one task owns. No Durable Object code here,
 // so the unit tests can run it with a mock Artifacts binding.
 import { AGENT_NAMES, type AgentName } from "../agents/prompt";
-import type { AgentOutcome } from "../agents/runner";
+import { AGENT_TIME_LIMIT_MS, type AgentOutcome } from "../agents/runner";
 import { deleteRepo, forkFor, forkName, isArtifactsError, isRepoName, latestCommit, notReady } from "../artifacts/repo";
 import type { JudgeInput } from "../judge/judge";
 import type { ScoreParts } from "../judge/score";
@@ -380,11 +380,39 @@ export function purgeRepos(task: Task): string[] {
 }
 
 // Why a task may not be purged now, or undefined when it may. Agents still push to a running task's forks.
-export function purgeRefusal(task: Task | undefined): string | undefined {
+export function purgeRefusal(task: Task | undefined, now: number = Date.now()): string | undefined {
   if (task === undefined) return undefined;
-  if (task.status === "creating" || task.status === "running") return `Task is ${task.status}`;
+  if (task.status === "creating") return "Task is creating";
+  // A race past its watchdog time has stalled: no agent will report any more, so it may go.
+  if (task.status === "running" && !isStalled(task, now)) return "Task is running";
   if (task.status === "finished" && task.verdict === undefined) return "Task is being judged";
   return undefined;
+}
+
+// The watchdog: a running race whose agents have not all ended this long after it started has
+// stalled (a sandbox lost track of its agent, for example when a deploy reset it mid-start).
+export const WATCHDOG_MS = AGENT_TIME_LIMIT_MS + 4 * 60 * 1_000;
+
+// True when a running race is past its watchdog time.
+export function isStalled(task: Task, now: number): boolean {
+  const started = task.startedAt === undefined ? NaN : Date.parse(task.startedAt);
+  return task.status === "running" && Number.isFinite(started) && now >= started + WATCHDOG_MS;
+}
+
+// The outcome the watchdog gives each agent that never ended. Its pushes are kept: the judge
+// scores whatever the fork holds.
+export function stalledOutcomes(task: Task): { agent: string; outcome: AgentOutcome }[] {
+  return task.agents
+    .filter((slot) => !isAgentDone(slot.status))
+    .map((slot) => ({
+      agent: slot.name,
+      outcome: {
+        end: "failed" as const,
+        pushed: slot.push !== undefined,
+        ...(slot.push === undefined ? {} : { commit: slot.push.head }),
+        error: "The sandbox stopped reporting before the agent ended; the judge scores what the fork holds",
+      },
+    }));
 }
 
 // Why an agent may not use the claim board now, or undefined when it may.

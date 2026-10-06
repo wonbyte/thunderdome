@@ -33,6 +33,8 @@ import {
   purgeRepos,
   saveVerdict as recordVerdict,
   sourceName,
+  stalledOutcomes,
+  WATCHDOG_MS,
   type CreateTaskResult,
   type LoggedStep,
   type NewTask,
@@ -167,6 +169,8 @@ export class TaskRoom extends DurableObject<Env> {
     }
     // Written before the first await, so a second run sees "running".
     this.#save(task);
+    // The watchdog ends the race even if a sandbox never reports back.
+    await this.ctx.storage.setAlarm(now + WATCHDOG_MS);
     this.#broadcast({ kind: "status", taskId: task.id, task });
     await this.#index(task);
     const settled = await Promise.allSettled(
@@ -205,6 +209,14 @@ export class TaskRoom extends DurableObject<Env> {
       await this.#startJudge(latest);
     }
     return { ok: true, task: latest };
+  }
+
+  // The watchdog (set by run): every agent still not ended is ended as failed, so the race
+  // finishes and the judge starts. Does nothing once every agent has ended.
+  async alarm(): Promise<void> {
+    const task = this.#task();
+    if (task === undefined || task.status !== "running") return;
+    for (const { agent, outcome } of stalledOutcomes(task)) await this.agentFinished(agent, outcome);
   }
 
   // Called by a sandbox with the steps its agent took since the last call.

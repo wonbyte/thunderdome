@@ -207,6 +207,7 @@ public demo costs at most about $5.50 a day in agent spend.
 |---|---|---|
 | Agents per race | 3 to 5 (`/play` always uses 3) | `src/room/task.ts` |
 | Agent run time | 8 minutes each; what it pushed by then still counts | `src/agents/runner.ts` |
+| Race watchdog | 12 minutes after the start, any agent that never reported back (its sandbox lost track, e.g. a deploy reset it) is ended as failed, so the judge still runs on what the forks hold | `src/room/task.ts`, `src/room/TaskRoom.ts` |
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
 | Public races (`/play`) | 10 per UTC day, 2 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash` | `src/play/play.ts` |

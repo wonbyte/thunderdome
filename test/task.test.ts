@@ -19,8 +19,11 @@ import {
   saveVerdict,
   type Task,
   type Verdict,
+  isStalled,
   purgeRefusal,
   purgeRepos,
+  stalledOutcomes,
+  WATCHDOG_MS,
 } from "../src/room/task";
 import { artifactsError, created, fakeArtifacts, fakeRepo } from "./fakes";
 
@@ -547,5 +550,41 @@ describe("purge", () => {
     expect(purgeRefusal(task({ status: "running" }))).toBe("Task is running");
     expect(purgeRefusal(task({ status: "creating" }))).toBe("Task is creating");
     expect(purgeRefusal(task({ verdict: undefined }))).toBe("Task is being judged");
+  });
+});
+
+describe("the watchdog", () => {
+  const start = Date.parse("2026-10-06T05:00:00Z");
+  const running = (): Task => ({
+    id: "t-00000001",
+    repo: "r",
+    prompt: "p",
+    status: "running",
+    createdAt: "x",
+    startedAt: new Date(start).toISOString(),
+    agents: [
+      { name: "ponder", fork: "f1", remote: "r", defaultBranch: "main", status: "starting", push: { commits: 1, pushes: 1, lastPushAt: "x", head: "abc123", seen: ["abc123"] } },
+      { name: "zippy", fork: "f2", remote: "r", defaultBranch: "main", status: "done", pushed: true },
+      { name: "testy", fork: "f3", remote: "r", defaultBranch: "main", status: "running" },
+    ],
+  });
+
+  it("calls a running race stalled only once its watchdog time has passed", () => {
+    expect(isStalled(running(), start + WATCHDOG_MS - 1)).toBe(false);
+    expect(isStalled(running(), start + WATCHDOG_MS)).toBe(true);
+    expect(isStalled({ ...running(), status: "finished" }, start + WATCHDOG_MS)).toBe(false);
+    expect(isStalled({ ...running(), startedAt: undefined }, start + WATCHDOG_MS)).toBe(false);
+  });
+
+  it("ends every agent that never ended as failed, keeping a pushed head for the judge", () => {
+    expect(stalledOutcomes(running())).toEqual([
+      { agent: "ponder", outcome: { end: "failed", pushed: true, commit: "abc123", error: expect.stringContaining("stopped reporting") } },
+      { agent: "testy", outcome: { end: "failed", pushed: false, error: expect.stringContaining("stopped reporting") } },
+    ]);
+  });
+
+  it("lets a stalled race be purged, but not one still in its time", () => {
+    expect(purgeRefusal(running(), start + 60_000)).toBe("Task is running");
+    expect(purgeRefusal(running(), start + WATCHDOG_MS)).toBeUndefined();
   });
 });
