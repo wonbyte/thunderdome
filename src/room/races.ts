@@ -82,7 +82,7 @@ function hasClash(history: Claim[]): boolean {
 // The new summary goes first, so the stable sort keeps it ahead of entries with the same createdAt.
 export function upsertRace(list: readonly RaceSummary[], summary: RaceSummary, max: number = RACE_INDEX_MAX): RaceSummary[] {
   return [summary, ...list.filter((race) => race.id !== summary.id)]
-    .sort((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
+    .toSorted((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
     .slice(0, Math.max(0, max));
 }
 

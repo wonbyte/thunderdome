@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { createServer, type Server } from "node:http";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -84,7 +84,8 @@ describe("claim CLI", () => {
 
   beforeAll(async () => {
     // Plays the Outbound Worker: the agent name comes from the path the test picks.
-    server = createServer(async (req, res) => {
+    server = createServer((req, res) => void answer(req, res));
+    async function answer(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const chunks: Buffer[] = [];
       for await (const chunk of req) chunks.push(chunk as Buffer);
       const [, agent = "", ...rest] = (req.url ?? "").split("/");
@@ -93,7 +94,7 @@ describe("claim CLI", () => {
       const response = await handleThunderdomeApi(request, props(agent), () => memoryRoom(board));
       res.writeHead(response.status, { "content-type": "application/json" });
       res.end(await response.text());
-    });
+    }
     await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   });

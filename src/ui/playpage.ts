@@ -11,7 +11,7 @@ interface Template {
 }
 
 // The demo apps (demo/README.md) and their sample tasks.
-const TEMPLATES: Template[] = [
+const TEMPLATES: [Template, ...Template[]] = [
   {
     id: "thunderdome-bugs",
     title: "Fix the cart",
@@ -36,14 +36,16 @@ const TEMPLATES: Template[] = [
 const MIN = 10;
 const MAX = 600;
 
-let chosen: Template = TEMPLATES[0] as Template;
+let chosen: Template = TEMPLATES[0];
 let inviteNeeded = false;
 let remaining: number | undefined;
 
-function byId<T extends HTMLElement>(id: string): T {
+function byId<T extends HTMLElement>(id: string, type: new () => T): T;
+function byId(id: string): HTMLElement;
+function byId(id: string, type: new () => HTMLElement = HTMLElement): HTMLElement {
   const node = document.getElementById(id);
-  if (node === null) throw new Error(`#${id} is missing`);
-  return node as T;
+  if (!(node instanceof type)) throw new Error(`#${id} is missing or not a ${type.name}`);
+  return node;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -68,7 +70,7 @@ function renderTemplates(): void {
       card.setAttribute("aria-checked", String(t === chosen));
       card.append(el("b", undefined, t.title), el("span", undefined, t.blurb), el("code", undefined, t.id.replace(/^thunderdome-/, "demo: ")));
       card.addEventListener("click", () => {
-        const prompt = byId<HTMLTextAreaElement>("prompt");
+        const prompt = byId("prompt", HTMLTextAreaElement);
         // Keep an edited task; swap only the sample one.
         if (TEMPLATES.some((x) => x.prompt === prompt.value.trim()) || prompt.value.trim() === "") prompt.value = t.prompt;
         chosen = t;
@@ -81,7 +83,7 @@ function renderTemplates(): void {
 }
 
 function renderCount(): void {
-  const n = byId<HTMLTextAreaElement>("prompt").value.trim().length;
+  const n = byId("prompt", HTMLTextAreaElement).value.trim().length;
   const count = byId("count");
   count.textContent = `${n} / ${MAX}`;
   count.dataset.bad = String(n < MIN || n > MAX);
@@ -91,7 +93,7 @@ function renderQuota(): void {
   const quota = byId("quota");
   quota.textContent = remaining === undefined ? "" : remaining === 1 ? "1 race left today" : `${remaining} races left today`;
   quota.dataset.empty = String(remaining === 0);
-  const go = byId<HTMLButtonElement>("go");
+  const go = byId("go", HTMLButtonElement);
   go.disabled = remaining === 0;
   if (remaining === 0) showError("Today's races are used up. Come back tomorrow, or watch a replay in the gallery.");
 }
@@ -112,18 +114,18 @@ async function loadQuota(): Promise<void> {
 
 async function submit(event: SubmitEvent): Promise<void> {
   event.preventDefault();
-  const prompt = byId<HTMLTextAreaElement>("prompt").value.trim();
+  const prompt = byId("prompt", HTMLTextAreaElement).value.trim();
   if (prompt.length < MIN || prompt.length > MAX) {
     showError(`The task must be ${MIN} to ${MAX} characters.`);
     return;
   }
-  const invite = byId<HTMLInputElement>("invite").value.trim();
+  const invite = byId("invite", HTMLInputElement).value.trim();
   if (inviteNeeded && invite === "") {
     showError("This race needs an invite code.");
     return;
   }
   showError(undefined);
-  const go = byId<HTMLButtonElement>("go");
+  const go = byId("go", HTMLButtonElement);
   go.disabled = true;
   go.textContent = "Starting the race…";
   go.classList.add("busy");
@@ -162,14 +164,14 @@ function main(): void {
     bot.innerHTML = robotSvg(AGENT_COLORS[agent] ?? "#8b8d98"); // sprites.ts output only
     bots.append(bot);
   }
-  const prompt = byId<HTMLTextAreaElement>("prompt");
+  const prompt = byId("prompt", HTMLTextAreaElement);
   prompt.value = chosen.prompt;
   prompt.addEventListener("input", renderCount);
   byId("reset").addEventListener("click", () => {
     prompt.value = chosen.prompt;
     renderCount();
   });
-  byId<HTMLFormElement>("play").addEventListener("submit", (e) => void submit(e));
+  byId("play", HTMLFormElement).addEventListener("submit", (e) => void submit(e));
   renderTemplates();
   renderCount();
   void loadQuota();

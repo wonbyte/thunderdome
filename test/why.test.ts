@@ -103,13 +103,13 @@ describe("winnerReasons", () => {
     ]).ranked;
     expect(winner!.agent).toBe("zippy");
     expect(winnerReasons(winner!, [other!])[0]).toBe("Finish: tied with testy on points and diff size, and finished first, 12 s earlier.");
-    expect(loserLine(other!, winner!)).toBe("testy (100/100): tied on points and diff size, finished 12 s after zippy.");
+    expect(loserLine(other!, winner)).toBe("testy (100/100): tied on points and diff size, finished 12 s after zippy.");
   });
 
   it("says a full tie was decided by agent order", () => {
     const [winner, other] = scoreForks([fork({ agent: "ponder" }), fork({ agent: "snip" })]).ranked;
     expect(winnerReasons(winner!, [other!])[0]).toBe("Tie: level with snip on points, diff size and finish time; won on agent order.");
-    expect(loserLine(other!, winner!)).toBe("snip (100/100): tied on points, diff size and finish time, lost on agent order.");
+    expect(loserLine(other!, winner)).toBe("snip (100/100): tied on points, diff size and finish time, lost on agent order.");
   });
 
   it("mentions shared files in the claim reason", () => {

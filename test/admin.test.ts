@@ -15,7 +15,7 @@ describe("keyShape", () => {
 describe("modelCheck", () => {
   it("calls the model API with the trimmed key", async () => {
     const fetcher = vi.fn(async () => new Response("{}", { status: 200 }));
-    const response = await modelCheck({ ANTHROPIC_API_KEY: "sk-ant-api03-abc\n" }, fetcher as unknown as typeof fetch);
+    const response = await modelCheck({ ANTHROPIC_API_KEY: "sk-ant-api03-abc\n" }, fetcher);
     expect(await response.json()).toMatchObject({ ok: true, status: 200, key: { kind: "sk-ant-api", trimmed: true } });
     const [url, init] = fetcher.mock.calls[0] as unknown as [URL, RequestInit];
     expect(url.hostname).toBe("api.anthropic.com");

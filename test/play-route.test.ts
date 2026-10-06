@@ -82,7 +82,7 @@ describe("play routes", () => {
     expect(text).not.toContain("token");
     const body = JSON.parse(text) as { id: string; page: string; remaining: number };
     expect(body).toEqual({ id: body.id, page: `/race/${body.id}`, remaining: 7 });
-    expect(Object.keys(body).sort()).toEqual(["id", "page", "remaining"]);
+    expect(Object.keys(body).toSorted()).toEqual(["id", "page", "remaining"]);
     expect(ok.quotaByName).toHaveBeenCalledWith(PLAY_QUOTA_NAME);
     expect(PLAY_QUOTA_NAME).toBe("daily");
     expect(ok.quota.take).toHaveBeenCalledWith(utcDay(new Date()), "203.0.113.9", 10);
@@ -112,7 +112,7 @@ describe("play routes", () => {
     for (const input of ["{", [1], { template: "thunderdome-sample", prompt: good.prompt }, { template: "thunderdome-ui", prompt: "short" }]) {
       const rejected = await handlePlay(play(input), bad.env);
       expect(rejected.status).toBe(400);
-      expect(Object.keys((await rejected.json()) as object)).toEqual(["error"]);
+      expect(Object.keys((await rejected.json()))).toEqual(["error"]);
     }
     expect(bad.quota.take).not.toHaveBeenCalled();
     expect(bad.room.create).not.toHaveBeenCalled();

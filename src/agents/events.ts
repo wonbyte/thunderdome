@@ -41,7 +41,7 @@ export function resultOf(event: unknown): RunResult | undefined {
   if (!isRecord(event) || event.type !== "result") return undefined;
   return {
     isError: event.is_error === true,
-    text: typeof event.result === "string" ? event.result : String(event.subtype ?? ""),
+    text: typeof event.result === "string" ? event.result : typeof event.subtype === "string" ? event.subtype : "",
     costUsd: typeof event.total_cost_usd === "number" ? event.total_cost_usd : undefined,
     turns: typeof event.num_turns === "number" ? event.num_turns : undefined,
   };

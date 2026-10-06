@@ -181,7 +181,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
   }
 
   // Sends new steps to the TaskRoom, and ends the run when the agent exits or time runs out.
-  async alarm(): Promise<void> {
+  override async alarm(): Promise<void> {
     const run = this.ctx.storage.kv.get<AgentRun>(RUN_KEY);
     if (run === undefined) return;
     const room = this.env.TASK_ROOM.getByName(run.taskId);

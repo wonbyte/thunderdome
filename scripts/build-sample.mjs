@@ -21,11 +21,11 @@ async function walk(dir) {
 
 const apps = {};
 let count = 0;
-for (const entry of (await readdir(demoDir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+for (const entry of (await readdir(demoDir, { withFileTypes: true })).toSorted((a, b) => a.name.localeCompare(b.name))) {
   if (!entry.isDirectory() || SKIP.has(entry.name)) continue;
   const appDir = join(demoDir, entry.name);
   const files = {};
-  for (const path of (await walk(appDir)).sort()) files[relative(appDir, path)] = await readFile(path, "utf8");
+  for (const path of (await walk(appDir)).toSorted()) files[relative(appDir, path)] = await readFile(path, "utf8");
   apps[entry.name] = files;
   count += Object.keys(files).length;
 }

@@ -52,7 +52,7 @@ describe("U12 replay: a recorded race becomes a timeline", () => {
     expect(kinds[0]).toBe("snapshot");
     expect(kinds[1]).toBe("status");
     expect(kinds.at(-1)).toBe("verdict");
-    expect(timeline.events.map((e) => e.at)).toEqual([...timeline.events.map((e) => e.at)].sort((a, b) => a - b));
+    expect(timeline.events.map((e) => e.at)).toEqual(timeline.events.map((e) => e.at).toSorted((a, b) => a - b));
     const pushes = timeline.events.filter((e) => e.event.kind === "push");
     expect(pushes).toHaveLength(3);
     expect(pushes.filter((e) => e.approx)).toHaveLength(1);

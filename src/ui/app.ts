@@ -431,7 +431,7 @@ function addLog(steps: WireStep[]): void {
   const seen = new Set(log.map((step) => step.seq));
   const fresh = steps.filter((step) => isObject(step) && typeof step.seq === "number" && !seen.has(step.seq));
   if (fresh.length === 0) return;
-  log = [...log, ...fresh].sort((a, b) => a.seq - b.seq).slice(-LOG_MAX);
+  log = [...log, ...fresh].toSorted((a, b) => a.seq - b.seq).slice(-LOG_MAX);
   if (board !== undefined) renderLog(board);
 }
 
@@ -741,9 +741,9 @@ function renderMemory(memory: WireMemory[] | undefined): void {
       const bot = art("mini", robotSvg(colorFor(m.winner)));
       bot.append(art("mini-crown", crownSvg()));
       const top = el("div", "mem-top");
-      const replay = el("a", undefined, "replay ›") as HTMLAnchorElement;
-      replay.href = `/race/${m.id}?replay`;
-      top.append(el("b", undefined, `${displayName(m.winner)} won`), replay);
+      const replayLink = el("a", undefined, "replay ›");
+      replayLink.href = `/race/${m.id}?replay`;
+      top.append(el("b", undefined, `${displayName(m.winner)} won`), replayLink);
       const task = el("p", "mem-task", `“${m.prompt}”`);
       task.title = m.prompt;
       card.append(bot, top, task);
@@ -800,7 +800,7 @@ function renderBots(b: Board): void {
   const key = b.fighters.map((f) => f.agent).join("\n");
   if (key !== botsKey) {
     botsKey = key;
-    for (const agent of [...bots.keys()]) if (!b.fighters.some((f) => f.agent === agent)) bots.delete(agent);
+    for (const agent of bots.keys()) if (!b.fighters.some((f) => f.agent === agent)) bots.delete(agent);
     row.replaceChildren(...b.fighters.map((f, i) => botView(f, i).root));
   }
   b.fighters.forEach((f, i) => updateBot(b, f, i));
@@ -808,7 +808,7 @@ function renderBots(b: Board): void {
 
 // The Thunderdome mascot, perched on a robot's head while it claims or pushes.
 function mascot(): HTMLElement {
-  const img = el("img", "fx-mascot") as HTMLImageElement;
+  const img = el("img", "fx-mascot");
   img.src = "/mascot.svg";
   img.alt = "";
   img.decoding = "async";
@@ -1163,6 +1163,15 @@ function setBusy(view: StageView): void {
   view.busy = setTimeout(() => view.root.classList.remove("busy"), BUSY_MS);
 }
 
+// The bus y under a unit, and the x of its center, in the pipeline's coordinates.
+function busY(n: HTMLElement): number {
+  return n.offsetTop + n.offsetHeight + 7;
+}
+
+function busX(n: HTMLElement): number {
+  return n.offsetLeft + n.offsetWidth / 2;
+}
+
 // A packet along the bus from the stage before (or the bus start) into this unit.
 function sendPacket(stage: Stage): void {
   if (reducedMotion()) return;
@@ -1170,19 +1179,18 @@ function sendPacket(stage: Stage): void {
   const to = stageViews.get(stage)?.root;
   if (to === undefined || to.offsetParent === null) return;
   const index = STAGES.indexOf(stage);
-  const from = index > 0 ? stageViews.get(STAGES[index - 1]!)?.root : undefined;
-  const y = (n: HTMLElement): number => n.offsetTop + n.offsetHeight + 7;
-  const x = (n: HTMLElement): number => n.offsetLeft + n.offsetWidth / 2;
-  const startX = from === undefined ? 0 : x(from);
-  const startY = from === undefined ? y(to) : y(from);
+  const before = STAGES[index - 1];
+  const from = before === undefined ? undefined : stageViews.get(before)?.root;
+  const startX = from === undefined ? 0 : busX(from);
+  const startY = from === undefined ? busY(to) : busY(from);
   const packet = el("i", "packet");
   list.append(packet);
   const anim = packet.animate(
     [
       { transform: `translate(${startX}px, ${startY}px) scale(.6)`, opacity: 0 },
       { transform: `translate(${startX}px, ${startY}px) scale(1)`, opacity: 1, offset: 0.1 },
-      { transform: `translate(${x(to)}px, ${y(to)}px) scale(1)`, opacity: 1, offset: 0.85 },
-      { transform: `translate(${x(to)}px, ${y(to) - 10}px) scale(.4)`, opacity: 0 },
+      { transform: `translate(${busX(to)}px, ${busY(to)}px) scale(1)`, opacity: 1, offset: 0.85 },
+      { transform: `translate(${busX(to)}px, ${busY(to) - 10}px) scale(.4)`, opacity: 0 },
     ],
     { duration: PACKET_MS, easing: "cubic-bezier(.5,0,.3,1)" },
   );
@@ -1245,7 +1253,7 @@ function renderClaims(b: Board): void {
     return;
   }
   const clashes = new Set(b.claimed.clashes);
-  const files = [...b.claimed.files].sort((x, y) => Number(clashes.has(y)) - Number(clashes.has(x)) || x.localeCompare(y));
+  const files = b.claimed.files.toSorted((x, y) => Number(clashes.has(y)) - Number(clashes.has(x)) || x.localeCompare(y));
   const list = el("ul", "claim-list");
   for (const file of files) {
     const item = el("li", clashes.has(file) ? "claim clash" : "claim");
@@ -1348,7 +1356,7 @@ function updatePreview(view: PreviewView, slot: Slot, winner: boolean): void {
   }
   iframe.src = url;
   view.host.textContent = new URL(url).host;
-  view.commit.textContent = String(preview.commit).slice(0, 7);
+  view.commit.textContent = preview.commit.slice(0, 7);
   view.link.href = url;
   view.link.hidden = false;
   if (!first) kick(view.root, "updated");
@@ -1452,7 +1460,7 @@ function renderWipe(b: Board): void {
 }
 
 function renderResult(b: Board): void {
-  const scored = b.fighters.filter((f): f is Scored => f.score !== undefined).sort((x, y) => x.score.place - y.score.place);
+  const scored = b.fighters.filter((f): f is Scored => f.score !== undefined).toSorted((x, y) => x.score.place - y.score.place);
   const key = JSON.stringify([b.ended, b.winner, b.why, scored.map((f) => [f.agent, f.score])]);
   if (key === resultKey) return;
   resultKey = key;
@@ -1527,8 +1535,7 @@ function renderLog(b: Board): void {
   logShown = new Set(lines.map((line) => line.step.seq));
   byId("log").replaceChildren(
     ...lines
-      .slice()
-      .reverse()
+      .toReversed()
       .map(({ step, label }) => {
         const item = el("li", `kind-${step.kind}${shown.has(step.seq) ? "" : " new"}`);
         item.style.setProperty("--color", color.get(step.agent) ?? "#8b8d98");

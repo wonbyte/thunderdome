@@ -133,6 +133,11 @@ function scoreOf(answers: Record<string, unknown>, id: keyof typeof LOOK_QUESTIO
   return clamp01(answer.score / (LOOK_QUESTIONS[id].criteria.length - 1));
 }
 
+// Retries what Clef may answer next time: a failed run, not a malformed answer.
+function retryable(cause: unknown): boolean {
+  return cause instanceof ScorerError && cause.retryable;
+}
+
 export async function ask(deps: Pick<LookDeps, "ai" | "sleep">, body: unknown): Promise<Record<string, unknown>> {
   const once = async (): Promise<Record<string, unknown>> => {
     let raw: unknown;
@@ -143,7 +148,6 @@ export async function ask(deps: Pick<LookDeps, "ai" | "sleep">, body: unknown): 
     }
     return answersOf(raw);
   };
-  const retryable = (cause: unknown): boolean => cause instanceof ScorerError && cause.retryable;
   return retry(once, { attempts: SCORER_ATTEMPTS, delayMs: SCORER_RETRY_DELAY_MS, shouldRetry: retryable }, deps.sleep);
 }
 

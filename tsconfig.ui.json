@@ -10,9 +10,15 @@
     "types": [],
     "strict": true,
     "noUncheckedIndexedAccess": true,
-    "isolatedModules": true,
     "skipLibCheck": true,
-    "noEmit": true
+    "noEmit": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true,
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true
   },
   "include": [
     "src/ui"

@@ -14,7 +14,7 @@ function failingTests(app: string): string[] {
   const dir = join(demoDir, app);
   const tests = Object.keys(DEMO_APPS[app] ?? {}).filter((file) => /^test\/.*\.test\.ts$/.test(file));
   const run = spawnSync("node", ["--test", "--test-reporter=tap", ...tests], { cwd: dir, encoding: "utf8" });
-  return [...run.stdout.matchAll(/^not ok \d+ - (.+)$/gm)].map((match) => match[1] ?? "").sort();
+  return [...run.stdout.matchAll(/^not ok \d+ - (.+)$/gm)].map((match) => match[1] ?? "").toSorted();
 }
 
 describe("sample app", () => {
@@ -37,7 +37,7 @@ describe("sample app", () => {
 // Each demo app is a template for one demo task. Its failing tests are the task.
 describe("demo apps", () => {
   it("are all packed, each with a Worker entry and npm test", () => {
-    expect(Object.keys(DEMO_APPS).sort()).toEqual(["bugs", "clash", "sample-app", "ui"]);
+    expect(Object.keys(DEMO_APPS).toSorted()).toEqual(["bugs", "clash", "sample-app", "ui"]);
     for (const files of Object.values(DEMO_APPS)) {
       expect(files).toHaveProperty("src/index.ts");
       expect(JSON.parse(files["package.json"] ?? "{}").scripts.test).toBe("node --test test/*.test.ts");

@@ -1,5 +1,5 @@
 // Thin Workflow around judge.ts and ship.ts: one step per fork and a look step, all at once, then decide, ship, then save the verdict.
-import puppeteer, { type Browser } from "@cloudflare/puppeteer";
+import { launch, type Browser } from "@cloudflare/puppeteer";
 import { WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep } from "cloudflare:workers";
 
 import { revokeWriteTokens } from "../artifacts/repo";
@@ -79,7 +79,7 @@ type Sandbox = ReturnType<Env["SANDBOX"]["getByName"]>;
 export type JudgeOutput = JudgeResult & { ship: ShipResult };
 
 export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
-  async run(event: WorkflowEvent<JudgeInput>, step: WorkflowStep): Promise<JudgeOutput> {
+  override async run(event: WorkflowEvent<JudgeInput>, step: WorkflowStep): Promise<JudgeOutput> {
     const input = event.payload;
     // Every fork is judged in its own sandbox, and the look needs only the previews, so all of
     // these steps run at once: the judge takes as long as its slowest step, not their sum.
@@ -112,7 +112,7 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
     const shipped = await step.do("ship", SHIP_STEP, async () => JSON.stringify(await shipInSandbox(this.env, input, result)));
     const ship = JSON.parse(shipped) as ShipResult;
     await step.do("save verdict", async () => {
-      const decided = decidedBy(result.scores);
+      const by = decidedBy(result.scores);
       const line = headline(result.scores);
       const point = lesson(result.scores);
       const saved = await this.env.TASK_ROOM.getByName(input.taskId).saveVerdict({
@@ -121,7 +121,7 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
         judgedAt: new Date().toISOString(),
         ship,
         scores: verdictScores(result.scores.ranked),
-        ...(decided === undefined ? {} : { decidedBy: decided }),
+        ...(by === undefined ? {} : { decidedBy: by }),
         ...(line === undefined ? {} : { headline: line }),
         ...(point === undefined ? {} : { lesson: point }),
         ...(fusion.tried.length === 0 && fusion.error === undefined ? {} : { fusion }),
@@ -164,7 +164,7 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
     const budget = Date.now() + LOOK_BUDGET_MS;
     // The browser starts on the first screenshot, so a race that is not visual never opens one.
     const shoot = async (url: string, viewport: Viewport): Promise<string> => {
-      browser ??= puppeteer.launch(env.BROWSER);
+      browser ??= launch(env.BROWSER);
       return screenshot(await browser, url, viewport);
     };
     const deps = { ai: env.AI, shoot, now: () => Date.now(), deadline: budget };
@@ -423,11 +423,11 @@ function shipGit(
 }
 
 // The write token goes only to the source repo, the read token to the winner fork; the read token is the fallback.
-function shipProps(sourceRemote: string, writeToken: string, winner: ShipFork, readToken: string): OutboundProps {
+function shipProps(sourceRemote: string, writeToken: string, winner: ShipFork, winnerRead: string): OutboundProps {
   return {
     gitHost: new URL(sourceRemote).hostname,
-    gitToken: readToken,
-    repoTokens: { [repoPath(sourceRemote)]: writeToken, [repoPath(winner.remote)]: readToken },
+    gitToken: winnerRead,
+    repoTokens: { [repoPath(sourceRemote)]: writeToken, [repoPath(winner.remote)]: winnerRead },
   };
 }
 

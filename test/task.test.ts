@@ -217,7 +217,7 @@ describe("makeForks", () => {
       });
       const artifacts = fakeArtifacts(repo);
       await expect(makeForks(artifacts, fromTemplate, noSleep)).rejects.toMatchObject({ code: "INTERNAL_ERROR" });
-      expect(vi.mocked(artifacts.delete).mock.calls.map(([name]) => name).sort()).toEqual(["t-0123abcd-ponder", "thunderdome-template-t-0123abcd"]);
+      expect(vi.mocked(artifacts.delete).mock.calls.map(([name]) => name).toSorted()).toEqual(["t-0123abcd-ponder", "thunderdome-template-t-0123abcd"]);
     });
 
     it("makes nothing when the template is missing", async () => {

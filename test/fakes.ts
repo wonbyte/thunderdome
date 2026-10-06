@@ -23,7 +23,7 @@ export function fakeRepo(overrides: Partial<ArtifactsRepo> = {}): ArtifactsRepo 
     log: vi.fn(async () => []),
     fork: vi.fn(async (name: string) => created(name)),
     ...overrides,
-  } as unknown as ArtifactsRepo;
+  };
 }
 
 export function fakeArtifacts(repo: ArtifactsRepo, overrides: Partial<Artifacts> = {}): Artifacts {
@@ -34,5 +34,5 @@ export function fakeArtifacts(repo: ArtifactsRepo, overrides: Partial<Artifacts>
     list: vi.fn(),
     delete: vi.fn(async () => true),
     ...overrides,
-  } as unknown as Artifacts;
+  };
 }

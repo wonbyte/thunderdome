@@ -125,7 +125,7 @@ function commitsOf(payload: Record<string, unknown>): { list: Record<string, unk
   const validTotal = typeof total === "number" && Number.isSafeInteger(total) && total >= 0 ? total : undefined;
   if (payload.commits === undefined) return validTotal === undefined ? undefined : { list: [], count: validTotal };
   if (!Array.isArray(payload.commits) || !payload.commits.every(isRecord)) return undefined;
-  const list = payload.commits as Record<string, unknown>[];
+  const list = payload.commits;
   return { list, count: validTotal ?? list.length };
 }
 

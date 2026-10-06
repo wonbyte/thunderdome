@@ -12,7 +12,7 @@ function previewToken(env: Env): string | undefined {
 
 // All sandbox HTTP and HTTPS goes through here.
 export class Outbound extends WorkerEntrypoint<Env, OutboundProps> {
-  async fetch(request: Request): Promise<Response> {
+  override async fetch(request: Request): Promise<Response> {
     if (isThunderdomeApi(new URL(request.url), this.ctx.props)) {
       return handleThunderdomeApi(request, this.ctx.props, (taskId) => this.env.TASK_ROOM.getByName(taskId));
     }

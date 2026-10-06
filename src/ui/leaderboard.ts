@@ -64,7 +64,7 @@ export function standings(races: readonly RaceRow[]): Standing[] {
       winRate: row.races === 0 ? 0 : row.wins / row.races,
       ...(row.scored === 0 ? {} : { avgScore: round1(row.sum / row.scored) }),
     }))
-    .sort((a, b) => b.wins - a.wins || b.winRate - a.winRate || (b.avgScore ?? -1) - (a.avgScore ?? -1) || a.agent.localeCompare(b.agent));
+    .toSorted((a, b) => b.wins - a.wins || b.winRate - a.winRate || (b.avgScore ?? -1) - (a.avgScore ?? -1) || a.agent.localeCompare(b.agent));
 }
 
 export function raceStats(races: readonly RaceRow[]): RaceStats {

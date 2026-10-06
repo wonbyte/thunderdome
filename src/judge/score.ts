@@ -177,7 +177,7 @@ function byEnd(a: ForkInput, b: ForkInput): number {
 
 // Eligible first, then total desc, then linesChanged asc, then endedAt asc; the stable sort keeps input order.
 export function rankForks(scores: ForkScore[]): ForkScore[] {
-  return [...scores].sort(
+  return scores.toSorted(
     (a, b) =>
       Number(b.eligible) - Number(a.eligible) ||
       b.total - a.total ||

@@ -15,11 +15,8 @@ const USAGE = "usage: claim [--shared] <file>... | claim --release [<file>...] |
 const api = process.env.THUNDERDOME_API;
 
 async function call(method, path, body) {
-  const response = await fetch(`${api}/${path}`, {
-    method,
-    headers: body === undefined ? {} : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const init = body === undefined ? { method } : { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) };
+  const response = await fetch(`${api}/${path}`, init);
   let data;
   try {
     data = await response.json();

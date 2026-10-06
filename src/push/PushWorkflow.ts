@@ -45,8 +45,8 @@ interface PreviewBuild {
 }
 
 // The payload is the Artifacts event itself, or a base request from the TaskRoom.
-export class PushWorkflow extends WorkflowEntrypoint<Env, unknown> {
-  async run(event: WorkflowEvent<unknown>, step: WorkflowStep): Promise<PushOutput> {
+export class PushWorkflow extends WorkflowEntrypoint<Env> {
+  override async run(event: WorkflowEvent<unknown>, step: WorkflowStep): Promise<PushOutput> {
     const base = parseBaseRequest(event.payload);
     if (base !== undefined) return this.#runBase(base, step);
     const push = parsePushEvent(event.payload);

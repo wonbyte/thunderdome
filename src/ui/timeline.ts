@@ -84,7 +84,7 @@ function releaseEvents(taskId: string, steps: WireStep[]): TimedEvent[] {
 function pushEvents(taskId: string, task: WireTask): TimedEvent[] {
   const totals = new Map<string, { commits: number; pushes: number }>();
   return [...pushDots(task)]
-    .sort((a, b) => a.at - b.at)
+    .toSorted((a, b) => a.at - b.at)
     .map((dot): TimedEvent => {
       const sum = totals.get(dot.agent) ?? { commits: 0, pushes: 0 };
       const next = { commits: sum.commits + dot.commits, pushes: sum.pushes + 1 };
@@ -121,7 +121,7 @@ export function buildTimeline(task: WireTask, steps: WireStep[], claims: WireCla
   const ends = task.agents
     .map((slot) => ({ slot, at: ms(slot.endedAt) }))
     .filter((x): x is { slot: WireAgent; at: number } => x.at !== undefined && (x.slot.status === "done" || x.slot.status === "failed" || x.slot.status === "timeout"))
-    .sort((a, b) => a.at - b.at);
+    .toSorted((a, b) => a.at - b.at);
   ends.forEach(({ slot, at }, i) => {
     const end = slot.status === "done" || slot.status === "failed" || slot.status === "timeout" ? slot.status : "done";
     const status = i === ends.length - 1 && ends.length === task.agents.length ? "finished" : "running";
@@ -130,7 +130,7 @@ export function buildTimeline(task: WireTask, steps: WireStep[], claims: WireCla
   const judgedAt = ms(task.verdict?.judgedAt) ?? ms(task.finishedAt);
   if (task.verdict !== undefined && judgedAt !== undefined) events.push({ at: judgedAt, event: { kind: "verdict", taskId, verdict: task.verdict } });
   // Stable sort: same-time events keep build order (a snapshot before its steps).
-  const sorted = events.map((e, i) => ({ e, i })).sort((a, b) => a.e.at - b.e.at || a.i - b.i).map(({ e }) => e);
+  const sorted = events.map((e, i) => ({ e, i })).toSorted((a, b) => a.e.at - b.e.at || a.i - b.i).map(({ e }) => e);
   return { taskId, start, end: sorted.at(-1)?.at ?? start, events: sorted };
 }
 

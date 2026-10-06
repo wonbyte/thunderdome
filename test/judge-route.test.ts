@@ -6,7 +6,7 @@ import { judgeInput as roomJudgeInput, type AgentStatus, type Task, type TaskSta
 import { handleJudge, judgeInput, judgeTaskId } from "../src/routes/tasks";
 
 const ID = "t-0123abcd";
-const URL_ = `https://thunderdome.test/tasks/${ID}/judge`;
+const JUDGE_URL = `https://thunderdome.test/tasks/${ID}/judge`;
 
 function task(status: TaskStatus = "finished"): Task {
   const ends: AgentStatus[] = ["done", "failed", "timeout"];
@@ -63,7 +63,7 @@ function fakeEnv({ state = task(), instance, createError, raceStatus }: FakeOpti
   return { env, stub, JUDGE };
 }
 
-const post = () => new Request(URL_, { method: "POST" });
+const post = () => new Request(JUDGE_URL, { method: "POST" });
 
 describe("judgeTaskId", () => {
   it("matches only /tasks/:id/judge with a valid id", () => {
@@ -154,7 +154,7 @@ describe("GET /tasks/:id/judge", () => {
   it("returns the status and output", async () => {
     const output = { winner: "ponder", why: "Winner: ponder (90/100)" };
     const { env, JUDGE } = fakeEnv({ instance: { status: "complete", output } });
-    const response = await handleJudge(new Request(URL_), env, ID);
+    const response = await handleJudge(new Request(JUDGE_URL), env, ID);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ id: judgeInstanceId(ID), status: "complete", output });
     expect(JUDGE.get).toHaveBeenCalledWith(judgeInstanceId(ID));
@@ -164,20 +164,20 @@ describe("GET /tasks/:id/judge", () => {
     const ship = { status: "merged", winner: "ponder", commit: "abc123", locks: [{ agent: "ponder", fork: `${ID}-ponder`, revoked: 1 }] };
     const output = { winner: "ponder", why: "Winner: ponder (90/100)", ship };
     const { env } = fakeEnv({ instance: { status: "complete", output } });
-    const response = await handleJudge(new Request(URL_), env, ID);
+    const response = await handleJudge(new Request(JUDGE_URL), env, ID);
     expect(await response.json()).toMatchObject({ status: "complete", output: { ship: { status: "merged", commit: "abc123" } } });
   });
 
   it("returns 404 when no judge was started", async () => {
     const { env } = fakeEnv();
-    const response = await handleJudge(new Request(URL_), env, ID);
+    const response = await handleJudge(new Request(JUDGE_URL), env, ID);
     expect(response.status).toBe(404);
     expect(await response.json()).toEqual({ error: "not judged yet" });
   });
 
   it("allows only GET and POST", async () => {
     const { env } = fakeEnv();
-    const response = await handleJudge(new Request(URL_, { method: "DELETE" }), env, ID);
+    const response = await handleJudge(new Request(JUDGE_URL, { method: "DELETE" }), env, ID);
     expect(response.status).toBe(405);
     expect(response.headers.get("allow")).toBe("GET, POST");
   });

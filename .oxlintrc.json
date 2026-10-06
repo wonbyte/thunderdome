@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // Lint rules for Thunderdome. Run with `npm run lint` (type-aware: it uses the TypeScript 7
+  // compiler through oxlint-tsgolint, since typescript-eslint does not support TypeScript 7 yet).
+  "plugins": ["typescript", "unicorn", "oxc", "import"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error"
+  },
+  "rules": {
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/await-thenable": "error",
+    "typescript/require-await": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unnecessary-type-conversion": "error",
+    "typescript/no-unnecessary-type-arguments": "error",
+    "typescript/no-unnecessary-type-parameters": "error",
+    "typescript/restrict-template-expressions": "error",
+    "typescript/switch-exhaustiveness-check": "error",
+    "typescript/consistent-type-imports": "error",
+    "eqeqeq": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "no-shadow": "error",
+    // TypeScript's noImplicitReturns already checks this, and it understands exhaustive switches.
+    "typescript/consistent-return": "off",
+    // Loops that await are sequential on purpose: git steps in order, retries, forks made one at a time.
+    "no-await-in-loop": "off",
+    // Spreads in map() build new objects on purpose, so state is never mutated in place.
+    "oxc/no-map-spread": "off",
+    // Untrusted JSON is checked with type guards (isRecord, parse*) before any cast; the remaining
+    // casts narrow data Thunderdome wrote itself, such as Workflow step outputs.
+    "typescript/no-unsafe-type-assertion": "off"
+  },
+  "overrides": [
+    {
+      // Mocks reference methods unbound (expect(stub.run)), and async fakes return plain values.
+      "files": ["test/**"],
+      "rules": {
+        "typescript/unbound-method": "off",
+        "typescript/require-await": "off",
+        "eslint/no-shadow": "off",
+        "unicorn/consistent-function-scoping": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["public/*.js", "node_modules", "demo", "harness"]
+}

@@ -26,15 +26,15 @@ if (!id) process.exit(1);
 
 const ws = new WebSocket(`${B.replace("https", "wss")}/tasks/${id}/live`, { headers: auth });
 const done = new Promise((resolve) => {
-  ws.onmessage = (m) => {
+  ws.addEventListener("message", (m) => {
     const e = JSON.parse(m.data);
     if (e.kind === "step" || e.kind === "steps" || e.kind === "snapshot" || e.kind === "claim") return;
     console.log(at(), e.kind, short(e));
     if (e.kind === "verdict") resolve();
-  };
-  ws.onclose = () => resolve();
+  });
+  ws.addEventListener("close", () => resolve());
 });
-await new Promise((r) => (ws.onopen = r));
+await new Promise((r) => ws.addEventListener("open", r, { once: true }));
 const run = await (await fetch(`${B}/tasks/${id}/run`, { method: "POST", headers: auth })).json();
 console.log(at(), "run", run.status ?? JSON.stringify(run));
 await Promise.race([done, new Promise((r) => setTimeout(r, 15 * 60_000))]);

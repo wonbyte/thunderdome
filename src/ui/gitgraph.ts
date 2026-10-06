@@ -108,7 +108,7 @@ export function gitGraph(input: GraphInput): GitGraph {
     const ended = end !== undefined && end <= t;
     const dots = input.dots
       .filter((d) => d.agent === agent && d.at <= t)
-      .sort((a, b) => a.at - b.at)
+      .toSorted((a, b) => a.at - b.at)
       .map((d, i): LaneDot => {
         const sha = shortSha(d.commit);
         const what = `${d.commits} commit${d.commits === 1 ? "" : "s"}`;

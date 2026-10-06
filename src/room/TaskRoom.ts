@@ -85,7 +85,7 @@ export class TaskRoom extends DurableObject<Env> {
   }
 
   // GET /tasks/:id/live: accepts a hibernating WebSocket and sends it a snapshot.
-  async fetch(request: Request): Promise<Response> {
+  override fetch(request: Request): Response {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return Response.json({ error: "Expected Upgrade: websocket" }, { status: 426, headers: { upgrade: "websocket" } });
     }
@@ -98,9 +98,9 @@ export class TaskRoom extends DurableObject<Env> {
   }
 
   // Clients only listen.
-  webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): void {}
+  override webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): void {}
 
-  webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): void {
+  override webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): void {
     try {
       ws.close(code, reason);
     } catch {
@@ -108,7 +108,7 @@ export class TaskRoom extends DurableObject<Env> {
     }
   }
 
-  webSocketError(_ws: WebSocket, error: unknown): void {
+  override webSocketError(_ws: WebSocket, error: unknown): void {
     console.error({ event: "live.socket_error", error: String(error) });
   }
 
@@ -213,7 +213,7 @@ export class TaskRoom extends DurableObject<Env> {
 
   // The watchdog (set by run): every agent still not ended is ended as failed, so the race
   // finishes and the judge starts. Does nothing once every agent has ended.
-  async alarm(): Promise<void> {
+  override async alarm(): Promise<void> {
     const task = this.#task();
     if (task === undefined || task.status !== "running") return;
     for (const { agent, outcome } of stalledOutcomes(task)) await this.agentFinished(agent, outcome);
@@ -297,7 +297,7 @@ export class TaskRoom extends DurableObject<Env> {
 
   // Called by the judge Workflow with the (clipped) diff it scored. False when there is no
   // task or the agent is not one of its agents.
-  async saveDiff(agent: string, saved: SavedDiff): Promise<boolean> {
+  saveDiff(agent: string, saved: SavedDiff): boolean {
     const task = this.#task();
     if (task === undefined || !task.agents.some((slot) => slot.name === agent)) return false;
     this.ctx.storage.kv.put(`${DIFF_KEY_PREFIX}${agent}`, { diff: saved.diff, clipped: saved.clipped });
@@ -305,7 +305,7 @@ export class TaskRoom extends DurableObject<Env> {
   }
 
   // The saved diff of an agent's fork, or null before the judge saved one.
-  async forkDiff(agent: string): Promise<SavedDiff | null> {
+  forkDiff(agent: string): SavedDiff | null {
     return this.ctx.storage.kv.get<SavedDiff>(`${DIFF_KEY_PREFIX}${agent}`) ?? null;
   }
 

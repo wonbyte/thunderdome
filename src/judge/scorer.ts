@@ -154,14 +154,14 @@ export function parseResponse(body: unknown): ScorerResult {
 function redact(text: string, secrets: string[]): string {
   return secrets
     .filter((s) => s !== "")
-    .sort((a, b) => b.length - a.length)
+    .toSorted((a, b) => b.length - a.length)
     .reduce((t, s) => t.split(s).join("[diff]"), text);
 }
 
 // The text of a thrown value. A value that cannot be turned into text must not hide the run failure.
 function errorText(cause: unknown): string {
   try {
-    return cause instanceof Error ? String(cause.message) : String(cause);
+    return cause instanceof Error ? cause.message : String(cause);
   } catch {
     return "unknown error";
   }
@@ -221,15 +221,15 @@ export function fakeScorer(
   values: { taskFit?: number; clarity?: number } | ((request: ScoreRequest) => { taskFit: number; clarity: number }) = {},
 ): Scorer {
   return {
-    async score(request) {
+    score(request) {
       const picked = typeof values === "function" ? values(request) : values;
       const taskFit = clamp01(picked.taskFit ?? 1);
       const clarity = clamp01(picked.clarity ?? 1);
-      return {
+      return Promise.resolve({
         taskFit,
         clarity,
         raw: { taskFit: fakeAnswer(taskFit, QUESTIONS.task_fit), clarity: fakeAnswer(clarity, QUESTIONS.clarity) },
-      };
+      });
     },
   };
 }

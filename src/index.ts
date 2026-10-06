@@ -1,7 +1,7 @@
 import { isArtifactsError, isRepoName } from "./artifacts/repo";
 import { accessFor, pageAsset } from "./routes/access";
 import { modelCheck } from "./routes/admin";
-import { handlePlay, isPlayPath, type PlayEnv } from "./routes/play";
+import { handlePlay, isPlayPath } from "./routes/play";
 import { handleJudge, handlePurge, handleRaceBackfill, handleTasks, isTasksPath, judgeTaskId } from "./routes/tasks";
 import { CommandError } from "./sandbox/ThunderdomeSandbox";
 import { isDemoApp, runDay1, seedSample } from "./spike";
@@ -60,8 +60,7 @@ export default {
       const judgeId = judgeTaskId(url.pathname);
       if (judgeId !== undefined) return await handleJudge(request, env, judgeId);
       if (tasks) return await handleTasks(request, env);
-      // The PLAY_* bindings come from wrangler.jsonc and show up in Env after `npm run types`.
-      if (play) return await handlePlay(request, env as Env & PlayEnv);
+      if (play) return await handlePlay(request, env);
       if (route === "POST /admin/races") return await handleRaceBackfill(request, env);
       if (route === "POST /admin/purge") return await handlePurge(request, env);
       if (route === "GET /admin/model-check") return await modelCheck(env);

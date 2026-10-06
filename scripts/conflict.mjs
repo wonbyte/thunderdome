@@ -26,14 +26,14 @@ async function create(body) {
 async function race(label, id) {
   const ws = new WebSocket(`${B.replace("https", "wss")}/tasks/${id}/live`, { headers: auth });
   const done = new Promise((resolve) => {
-    ws.onmessage = (m) => {
+    ws.addEventListener("message", (m) => {
       const e = JSON.parse(m.data);
       if (e.kind === "agent-end" || e.kind === "verdict") console.log(at(), label, e.kind, e.agent ?? e.verdict?.winner ?? "");
       if (e.kind === "verdict") resolve();
-    };
-    ws.onclose = () => resolve();
+    });
+    ws.addEventListener("close", () => resolve());
   });
-  await new Promise((r) => (ws.onopen = r));
+  await new Promise((r) => ws.addEventListener("open", r, { once: true }));
   const run = await (await fetch(`${B}/tasks/${id}/run`, { method: "POST", headers: auth })).json();
   console.log(at(), label, "run", run.status ?? JSON.stringify(run));
   await Promise.race([done, new Promise((r) => setTimeout(r, 25 * 60_000))]);

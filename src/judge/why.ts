@@ -141,7 +141,7 @@ export function winnerReasons(winner: ForkScore, others: ForkScore[]): string[] 
   ];
   // Stable sort: equal margins keep the fixed part order.
   return reasons
-    .sort((a, b) => b.margin - a.margin)
+    .toSorted((a, b) => b.margin - a.margin)
     .slice(0, REASON_COUNT)
     .map((r) => r.text);
 }

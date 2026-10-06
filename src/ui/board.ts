@@ -131,8 +131,8 @@ export function colorFor(agent: string): string {
 
 export type Action = "idle" | "think" | "scan" | "hammer" | "charge" | "work" | "flag" | "clash" | "push" | "hurt" | "finished" | "down" | "won" | "lost";
 
-const SCAN_TOOLS = ["Read", "Grep", "Glob", "LS"];
-const HAMMER_TOOLS = ["Edit", "Write", "MultiEdit", "NotebookEdit"];
+const SCAN_TOOLS: ReadonlySet<string> = new Set(["Read", "Grep", "Glob", "LS"]);
+const HAMMER_TOOLS: ReadonlySet<string> = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 const TEST_COMMAND = /\b(vitest|jest|pytest|mocha)\b|\b(npm|pnpm|yarn|bun)\s+(run\s+)?t(est)?\b|--test\b|\btest\b(?!\/)/;
 
 // The robot move for one step. Tool steps are "<Tool> <input>", as src/agents/events.ts writes them.
@@ -160,14 +160,14 @@ function actionForTool(text: string): Action {
   const space = trimmed.search(/\s/);
   const tool = space < 0 ? trimmed : trimmed.slice(0, space);
   const rest = space < 0 ? "" : trimmed.slice(space + 1);
-  if (SCAN_TOOLS.includes(tool)) return "scan";
-  if (HAMMER_TOOLS.includes(tool)) return "hammer";
+  if (SCAN_TOOLS.has(tool)) return "scan";
+  if (HAMMER_TOOLS.has(tool)) return "hammer";
   if (tool === "Bash" && TEST_COMMAND.test(rest)) return "charge";
   return "work";
 }
 
 const BUBBLE_MAX = 64;
-const SHELL_WORDS = ["for", "if", "while", "until", "set", "export", "(", "{"];
+const SHELL_WORDS: ReadonlySet<string> = new Set(["for", "if", "while", "until", "set", "export", "(", "{"]);
 const SHELL_PREFIX = /^(?:cd\s+\S+\s*(?:;|&&)\s*)+/;
 
 function baseName(path: string): string {
@@ -204,7 +204,7 @@ export function bubbleFor(step: Pick<WireStep, "kind" | "text">): string | undef
   const rest = space < 0 ? "" : text.slice(space + 1).trim();
   if (tool === "Read") return `reading ${baseName(rest)}`;
   if (tool === "Grep" || tool === "Glob" || tool === "LS") return "searching the code";
-  if (HAMMER_TOOLS.includes(tool)) return `editing ${baseName(rest)}`;
+  if (HAMMER_TOOLS.has(tool)) return `editing ${baseName(rest)}`;
   if (tool !== "Bash") return `using ${tool}`;
   const command = rest.replace(SHELL_PREFIX, "");
   if (TEST_COMMAND.test(command)) return "running the tests";
@@ -215,7 +215,7 @@ export function bubbleFor(step: Pick<WireStep, "kind" | "text">): string | undef
   if (written !== undefined) return `writing ${baseName(written)}`;
   if (/^(cat|head|tail|sed -n|ls|find|grep|rg)\b/.test(command)) return "reading the code";
   const word = command.split(/\s/)[0] ?? "";
-  if (SHELL_WORDS.includes(word)) return "running a script";
+  if (SHELL_WORDS.has(word)) return "running a script";
   return word === "" ? "working" : `running ${word}`;
 }
 
@@ -292,7 +292,7 @@ export function progressOf(board: Board, f: Fighter): Set<ProgressStep> {
 export function initBoard(task: WireTask, steps: WireStep[], claims: WireClaimBoard, now: number): Board {
   const taskId = task.id;
   let board = applyEvent(emptyBoard(taskId), { kind: "snapshot", taskId, task }, now);
-  for (const step of [...steps].sort((a, b) => a.seq - b.seq)) {
+  for (const step of steps.toSorted((a, b) => a.seq - b.seq)) {
     board = applyEvent(board, { kind: "steps", taskId, agent: step.agent, steps: [step] }, now);
   }
   // Agents release their files as they go and when they end, so the history keeps the race's record.
@@ -450,7 +450,7 @@ function applyClaim(board: Board, agent: string, result: WireClaimResult, now: n
   if (!result.ok) return board;
   const cells = { ...board.grid.cells };
   for (const file of result.claimed) {
-    cells[file] = { ...(cells[file] ?? {}), [agent]: result.shared.includes(file) ? "shared" : "own" };
+    cells[file] = { ...cells[file], [agent]: result.shared.includes(file) ? "shared" : "own" };
   }
   let claimed = board.claimed.cells;
   for (const file of result.claimed) claimed = withCell(claimed, file, agent, result.shared.includes(file) ? "shared" : "own");
@@ -501,7 +501,7 @@ function gridOf(cells: Grid["cells"]): Grid {
   for (const [file, row] of Object.entries(cells)) {
     if (Object.keys(row).length > 0) kept[file] = row;
   }
-  const files = Object.keys(kept).sort();
+  const files = Object.keys(kept).toSorted();
   const clashes = files.filter((file) => Object.keys(kept[file] ?? {}).length >= 2);
   return { files, cells: kept, clashes };
 }

@@ -39,7 +39,7 @@ function okBody(taskFit = 3, clarity = 4) {
 }
 
 // A fake AI runner: answers, or throws, the given steps in order.
-function runnerOf(...steps: Array<unknown | Error>) {
+function runnerOf(...steps: unknown[]) {
   return {
     run: vi.fn(async (_model: string, _input: unknown) => {
       const next = steps.shift();
