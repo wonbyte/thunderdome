@@ -155,29 +155,34 @@ function drawFusion(
   const fx = Math.min(mergeStart, Math.max(px(winner.endX) + 18, px(fusion.x) - FUSE_GAP));
   const fresh = isNew("fusion") ? " pop" : "";
   const g = svg("g", {}, `fusion${fresh}`);
-  let added = 0;
+  const added = fusion.tries.filter((t) => t.added).length;
+  const asCommit = added > 0 && fusion.hash !== undefined && fusion.author !== undefined && onCommit !== undefined;
+  // The label under the dot is placed first, so the left-out arrows and their ✗ stop short of it.
+  const tag = added > 0 ? "⚡ fused" : "none kept";
+  const labelLeft = asCommit ? commitLeft(fx, commitLabel(fusion.hash ?? "", fusion.author ?? "")) : fx - (tag.length * MONO_CH) / 2;
+  const stop = Math.min(fx - 16, labelLeft - 34);
   fusion.tries.forEach((t, k) => {
     const li = graph.lanes.findIndex((l) => l.agent === t.agent);
     const lane = graph.lanes[li];
     if (lane === undefined) return;
     const ly = mainY + (li + 1) * LANE_H;
-    const sx = Math.min(px(lane.endX) + 6, fx - 36);
-    // A left-out try stops short of the winner's lane.
-    const ex = t.added ? fx - 7 : fx - 16;
-    const ey = t.added ? wy : wy + (ly - wy) * 0.3;
+    // A left-out try stops short of the winner's lane, left of the label, at a height of its own.
+    const ex = t.added ? fx - 7 : stop;
+    const off = (ly - wy) * 0.4;
+    const ey = t.added ? wy : wy + Math.sign(off) * Math.max(12, Math.abs(off));
+    const sx = Math.min(px(lane.endX) + 6, ex - 30);
     const len = curveLength(sx, ly, sx + 24, ly, ex - 26, ey, ex, ey);
     const path = svg("path", { d: `M ${sx} ${ly} C ${sx + 24} ${ly}, ${ex - 26} ${ey}, ${ex} ${ey}`, stroke: lane.color, style: `--k:${k};--len:${len}` }, `fuse-path ${t.added ? "kept" : "dropped"}`);
     g.append(titled(path, t.label));
-    if (t.added) added += 1;
-    else g.append(titled(text(ex + 2, ey + 4, "✗", "fuse-x"), t.label));
+    if (!t.added) g.append(titled(text(ex + 5, ey + 4, "✗", "fuse-x", "middle"), t.label));
   });
   const kept = fusion.tries.filter((t) => t.added).map((t) => t.label);
-  if (added > 0 && fusion.hash !== undefined && fusion.author !== undefined && onCommit !== undefined) {
-    g.append(commitNode(fx, wy, fusion.hash, fusion.author, kept, onCommit));
+  if (asCommit && onCommit !== undefined) {
+    g.append(commitNode(fx, wy, fusion.hash ?? "", fusion.author ?? "", kept, onCommit));
   } else {
     const dot = svg("circle", { cx: fx, cy: wy, r: added > 0 ? 7 : 4 }, `fuse-dot${added > 0 ? " kept" : ""}`);
     g.append(titled(dot, added > 0 ? `fusion commit${fusion.commit === undefined ? "" : ` ${fusion.commit}`}: ${kept.join("; ")}` : "fusion round: every try was left out"));
-    g.append(text(fx, wy + 20, added > 0 ? "⚡ fused" : "fusion: none kept", `fuse-tag${added > 0 ? " kept" : ""}`, "middle"));
+    g.append(text(fx, wy + 20, tag, `fuse-tag${added > 0 ? " kept" : ""}`, "middle"));
   }
   root.append(g);
 }
@@ -186,6 +191,17 @@ function drawFusion(
 const MONO_CH = 6.4;
 const SPRITE = 13;
 
+/** "<sha7> · by <Name>": the fusion commit's label. */
+function commitLabel(hash: string, author: string): string {
+  return `${hash.slice(0, 7)} · by ${displayName(author)}`;
+}
+
+/** Where the commit's sprite-and-label row starts: centred under the dot, inside the graph. */
+function commitLeft(fx: number, label: string): number {
+  const width = SPRITE + 4 + label.length * MONO_CH;
+  return Math.max(LEFT, Math.min(W - 4 - width, fx - width / 2));
+}
+
 /**
  * The fusion commit as a real commit: the dot, the author robot and "<sha7> · by <Name>". A button
  * that opens the commit.
@@ -193,7 +209,7 @@ const SPRITE = 13;
 function commitNode(fx: number, wy: number, hash: string, author: string, kept: string[], onCommit: (hash: string) => void): SVGGElement {
   const sha = hash.slice(0, 7);
   const name = displayName(author);
-  const label = `${sha} · by ${name}`;
+  const label = commitLabel(hash, author);
   const node = svg("g", { tabindex: 0, role: "button", "aria-label": `Fusion commit ${sha} by ${name}: open the commit` }, "fuse-commit");
   node.addEventListener("click", () => onCommit(hash));
   node.addEventListener("keydown", (e) => {
@@ -204,8 +220,7 @@ function commitNode(fx: number, wy: number, hash: string, author: string, kept: 
   });
   node.append(titled(svg("circle", { cx: fx, cy: wy, r: 7 }, "fuse-dot kept"), `fusion commit ${sha} by ${name}: ${kept.join("; ")}`));
   // Sprite and label as one row under the dot, kept inside the graph's right edge.
-  const width = SPRITE + 4 + label.length * MONO_CH;
-  const left = Math.max(LEFT, Math.min(W - 4 - width, fx - width / 2));
+  const left = commitLeft(fx, label);
   node.append(robot(left, wy + 9, SPRITE, colorFor(author)), text(left + SPRITE + 4, wy + 20, label, "fuse-tag kept fuse-sha"));
   return node;
 }
