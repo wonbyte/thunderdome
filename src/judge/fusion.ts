@@ -544,7 +544,8 @@ export function hunkName(body: string[], context: string): string | undefined {
       if (name !== undefined) return name;
     }
   }
-  const first = body.findIndex((l) => !l.startsWith(" "));
+  // The first code change: a hunk that also edits the comment above a function is still about the function.
+  const first = body.findIndex((l) => !l.startsWith(" ") && !isQuiet(l.slice(1)));
   for (const line of body.slice(0, Math.max(0, first)).toReversed()) {
     const name = isQuiet(line.slice(1)) ? undefined : nameIn(line.slice(1));
     if (name !== undefined) return name;

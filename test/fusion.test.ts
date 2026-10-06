@@ -530,6 +530,8 @@ describe("hunk parsing", () => {
     expect(hunkName([" function cart() {", "-  return 1;", "+  return 2;"], "function sort() {")).toBe("cart");
     // A hunk inside a function is named for the function, not a local it renames.
     expect(hunkName([" export function formatPrice(cents) {", "-  const dollars = 1;", "+  const whole = 1;"], "")).toBe("formatPrice");
+    // Seen live (t-8c79c7ce): the hunk edits the comment above the function first.
+    expect(hunkName([" // Part 4", "-// old note", "+// new note", " export function formatPrice(cents) {", "-  const dollars = 1;", "+  const whole = 1;"], "export function cartMessage(count) {")).toBe("formatPrice");
     expect(hunkName(["+  return y;"], "")).toBeUndefined();
     expect(hunkLabel({ file: "a.ts", header: "@@ -1 +12,7 @@" })).toBe("lines 12-18 of a.ts");
     expect(hunkLabel({ file: "a.ts", header: "@@ -1 +3 @@", name: "x" })).toBe("x in a.ts");
