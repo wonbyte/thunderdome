@@ -62,7 +62,7 @@ flowchart LR
    fork gets its own write token. A demo template is first forked into a fresh source repo, so
    the template never changes.
 2. **Race.** Each agent runs Claude Code in its own Sandbox container, with its own style
-   (Ponder is careful, Zippy is fast, Testy writes the test first). Before editing, it claims files on the TaskRoom's claim board; a
+   (Ponder is careful, Zippy is fast, Testy writes its tests first, in a new test file of its own). Before editing, it claims files on the TaskRoom's claim board; a
    file another agent holds becomes a shared claim (a clash), which costs claim points when another
    agent did the task without that file. Each agent is also told what earlier races on the same
    app taught: the task, who won and the winner's strongest point (see [Race memory](#race-memory)). Agents

@@ -220,3 +220,10 @@ describe("memory in the system prompt", () => {
     expect(memoryText([])).toBeUndefined();
   });
 });
+
+describe("Testy's style", () => {
+  it("writes its tests in a new file of its own, so the fusion round can add them to another robot's fix", () => {
+    expect(AGENT_STYLES.testy).toContain("in a new test file of your own");
+    expect(AGENT_STYLES.testy).toContain("Leave the existing tests as they are");
+  });
+});
