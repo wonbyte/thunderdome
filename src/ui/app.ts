@@ -5,7 +5,7 @@ import { AGENT_IDS, applyEvent, applyScores, colorFor, styleLabel, bubbleFor, de
 import type { Action, Board, BoardEvent, Fighter, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
-import { coreSvg, crownSvg, flagSvg, hammerSvg, robotSvg } from "./sprites";
+import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
 import { openDiff } from "./diffdialog";
 import { gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
 import { drawGraph } from "./graphview";
@@ -806,6 +806,15 @@ function renderBots(b: Board): void {
   b.fighters.forEach((f, i) => updateBot(b, f, i));
 }
 
+// The Thunderdome mascot, perched on a robot's head while it claims or pushes.
+function mascot(): HTMLElement {
+  const img = el("img", "fx-mascot") as HTMLImageElement;
+  img.src = "/mascot.svg";
+  img.alt = "";
+  img.decoding = "async";
+  return img;
+}
+
 function botView(f: Fighter, index: number): BotView {
   const existing = bots.get(f.agent);
   if (existing !== undefined) return existing;
@@ -823,7 +832,7 @@ function botView(f: Fighter, index: number): BotView {
     el("div", "fx-ring fx-ring-2"),
     el("div", "fx-scan"),
     art("fx-hammer", hammerSvg()),
-    art("fx-flag", flagSvg(f.color)),
+    mascot(),
     art("fx-crown", crownSvg()),
   );
   const sparks = el("div", "fx-sparks");

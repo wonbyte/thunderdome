@@ -117,18 +117,6 @@ export function crownSvg(): string {
   return svg("crown-svg", 8, 6, rects(CROWN, "oyr", { o: "#b07d00", y: "#ffd23f", r: "#e5484d" }));
 }
 
-const FLAG = [
-  "pffff...",
-  "pfffff..",
-  "pffff...",
-  "p.......",
-  "p.......",
-  "p.......",
-];
-
-export function flagSvg(color: string): string {
-  return svg("flag-svg", 8, 6, rects(FLAG, "pf", { p: "#d0d3dc", f: safeHex(color) }));
-}
 
 const HAMMER = [
   "hhhh.",

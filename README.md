@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/mascot.svg" width="180" alt="The Thunderdome mascot: an orange cloud with a glass dome, a lightning bolt and a crown">
+  <img src="public/mascot.svg" width="180" alt="The Thunderdome mascot: an orange cloud with a glass dome, a lightning bolt and a crown">
 </p>
 
 # Thunderdome
