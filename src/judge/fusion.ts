@@ -320,6 +320,12 @@ async function reset(deps: FuseDeps, dir: string): Promise<void> {
   }
 }
 
+/** The agents whose files the fusion round added to the winner's fork, in try order. None when nothing was pushed. */
+export function fusedAgents(result: FusionResult): string[] {
+  if (result.commit === undefined) return [];
+  return [...new Set(result.tried.filter((t) => t.status === "added").map((t) => t.agent))];
+}
+
 /** The why's fusion section, or "" when nothing was tried. */
 export function fusionWhy(result: FusionResult): string {
   if (result.tried.length === 0) return "";

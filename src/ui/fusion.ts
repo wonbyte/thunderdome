@@ -31,6 +31,10 @@ export interface FusionView {
   rows: FuseRow[];
   /** The fusion commit on the winner's fork, short, only when something was added. */
   commit?: string;
+  /** The same commit's full hash, for GET /tasks/:id/commits/:sha. */
+  hash?: string;
+  /** Who wrote the fusion commit (the head): the last loser whose files were added. */
+  author?: string;
   /** True when the fusion reached main: something was added and the winner merged. */
   shipped: boolean;
   /** Why the round itself did not run. */
@@ -63,11 +67,12 @@ export function fusionView(verdict: WireVerdict | undefined): FusionView | undef
     if (t.note !== undefined && row.outcome !== "added") row.note = t.note;
     return row;
   });
-  const added = rows.some((r) => r.outcome === "added");
+  const author = rows.findLast((r) => r.outcome === "added")?.agent;
+  const added = author !== undefined;
   return {
     winner: verdict.winner,
     rows,
-    ...(added && fusion.commit !== undefined ? { commit: fusion.commit.slice(0, 7) } : {}),
+    ...(added && fusion.commit !== undefined ? { commit: fusion.commit.slice(0, 7), hash: fusion.commit, author } : {}),
     shipped: added && verdict.ship?.status === "merged",
     ...(fusion.error === undefined ? {} : { error: fusion.error }),
   };

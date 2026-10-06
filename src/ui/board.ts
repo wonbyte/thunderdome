@@ -59,6 +59,7 @@ export interface WireTask {
   createdAt?: string;
   verdict?: WireVerdict;
   basePreview?: WirePreview;
+  baseCommit?: string;
   memory?: WireMemory[];
 }
 /** One earlier race the robots were told about (src/room/races.ts RaceMemory). */

@@ -454,7 +454,10 @@ git, checks that the bundle builds on the fork's current head and changes only t
 passed the gates, and pushes it. The round is time-boxed (no new try after 5 minutes), so it never
 pushes after its step has given up. An addition that passes becomes its own commit on the winner's
 fork, authored by the robot that wrote it ("Thunderdome fusion: add testy's test/cart.test.ts to ponder's fix"), so `git log` and
-`git blame` credit each robot. The ship then merges the fused fork as usual, the fused commit gets
+`git blame` credit each robot. The merge commit on main credits them too: after the why it ends
+with one `Co-authored-by: Thunderdome testy <testy@thunderdome.local>` trailer for each robot
+whose files were fused and merged (the identity its own commits use), so GitHub shows them as
+co-authors. Merges from before this change have no trailers (commits never change). The ship then merges the fused fork as usual, the fused commit gets
 its own preview, and the why gains a "Fusion" section listing every try and why it was kept or
 left out. Only whole files the winner
 did not touch are tried, so a fusion never conflicts with the winning fix. The code is
@@ -468,7 +471,17 @@ The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the sh
 - **Fusion round panel.** One row per try: the files, gate 1 (tests 20/20), gate 2 (Clef's yes as a
   bar with the 0.6 line on it), and the outcome, with the reason for a left-out try.
 - **Git graph.** An arrow from each loser's lane into the winner's lane just before the merge:
-  solid into the fusion commit when kept, dashed and stopping at ✗ when left out.
+  solid into the fusion commit when kept, dashed and stopping at ✗ when left out. The fusion
+  commit is a real commit node: its author robot and "660ef87 · by Ponder". Click it (or the
+  commit in the panel) to open it as git stores it, read from Artifacts by
+  `GET /tasks/:id/commits/:sha`: hash, author (the loser), committer (Thunderdome), parents,
+  message and the file it added. The route answers only for the fusion commit and the merge the
+  verdict names, never any other hash.
+- **`git log --graph main`.** Under the graph, main's history after the race: the merge, then
+  the winner's side (the fusion commit on top of its pushes), then the base, with the author
+  column in each robot's color.
+- **The sandbox handoff.** The panel shows the round as git: read-only sandbox (runs the losers'
+  tests) → git bundle (`refs/fusion/result`) → write sandbox (checks it, `git push`).
 - **Pipeline.** A "Containers × 2" unit between Clef and the merge, for the two fusion sandboxes.
 - **Gallery.** A race that shipped a loser's tests gets a "⚡ fused" pill, and the leaderboard
   counts each robot's **assists**: races it lost whose tests still shipped.
@@ -537,6 +550,16 @@ It returns `{ agent, diff, clipped }`, where `clipped` is true when the diff was
 ```sh
 curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/forks/ponder/diff
 ```
+
+### Verdict commits
+
+`GET /tasks/<id>/commits/<sha>` is public and reads a commit from Artifacts. It answers only for
+the two commits the verdict names: the fusion commit (read from the winner's fork) and the merge
+(read from the source repo). `<sha>` is the full 40-character lowercase hash; any other hash is
+`404`. It returns `{ kind, repo, hash, message, author, committer, parents, authoredAt,
+committedAt, files }`. For the fusion commit, `files` holds each file the round added
+(`{ path, content }`, cut at 64,000 characters with `clipped: true`; a binary file has
+`binary: true` and no content). A found commit is cached for good (`immutable`).
 
 ### Run your own race
 
@@ -640,10 +663,12 @@ If git fails with 401, see open item 1 in [docs/api-notes.md](docs/api-notes.md)
 | `src/sandbox/policy.ts`, `outbound.ts` | Sandbox network rules; adds the git and preview tokens outside the sandbox |
 | `demo/sample-app/` | The first sample app (Day 1 check). 2 tests fail on purpose. |
 | `scripts/build-sample.mjs` | Packs the sample app into the Worker for seeding |
+| `src/routes/commits.ts` | `GET /tasks/:id/commits/:sha`: the fusion commit and the merge the verdict names, read from Artifacts (unit tested) |
 | `src/routes/access.ts` | Which routes are public and which need `ADMIN_TOKEN` (unit tested) |
 | `src/ui/board.ts` | The race page's state: live events in, robots, claim grid and scores out (unit tested) |
 | `src/ui/timeline.ts`, `platform.ts` | Replay timeline and the Cloudflare pipeline strip (unit tested) |
 | `src/ui/gitgraph.ts`, `graphview.ts` | The git graph of the forks: model (unit tested) and SVG |
+| `src/ui/gitlog.ts`, `commitdialog.ts` | `git log --graph main` after the race (unit tested), and the dialog for a verdict commit |
 | `src/ui/diffview.ts`, `diffdialog.ts` | A robot's code: diff parser (unit tested) and dialog |
 | `src/ui/leaderboard.ts` | Standings and stats across races (unit tested) |
 | `src/ui/app.ts`, `src/ui/sprites.ts` | The race page script and its pixel robot art |

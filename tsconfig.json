@@ -31,6 +31,7 @@
     "src/ui/races.ts",
     "src/ui/graphview.ts",
     "src/ui/diffdialog.ts",
+    "src/ui/commitdialog.ts",
     "src/ui/playpage.ts"
   ]
 }

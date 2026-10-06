@@ -65,7 +65,9 @@ export interface GitGraph {
 export interface FusionInput {
   at: number; // ms
   winner: string;
-  commit?: string;
+  commit?: string; // short
+  hash?: string; // full, to open the commit
+  author?: string; // the agent who wrote the fusion commit
   tries: { agent: string; added: boolean; files: string[]; note?: string }[];
 }
 
@@ -73,7 +75,9 @@ export interface FusionInput {
 export interface GraphFusion {
   x: number;
   winner: string;
-  commit?: string;
+  commit?: string; // short
+  hash?: string; // full, to open the commit
+  author?: string; // the agent who wrote the fusion commit
   tries: { agent: string; added: boolean; label: string }[];
 }
 
@@ -133,6 +137,8 @@ export function fusionOf(task: WireTask): FusionInput | undefined {
     at,
     winner: view.winner,
     ...(view.commit === undefined ? {} : { commit: view.commit }),
+    ...(view.hash === undefined ? {} : { hash: view.hash }),
+    ...(view.author === undefined ? {} : { author: view.author }),
     tries: view.rows.map((r) => ({ agent: r.agent, added: r.outcome === "added", files: r.files, ...(r.note === undefined ? {} : { note: r.note }) })),
   };
 }
@@ -179,6 +185,8 @@ function placeFusion(fusion: FusionInput, x: (at: number) => number): GraphFusio
     x: x(fusion.at),
     winner: fusion.winner,
     ...(fusion.commit === undefined ? {} : { commit: fusion.commit }),
+    ...(fusion.hash === undefined ? {} : { hash: fusion.hash }),
+    ...(fusion.author === undefined ? {} : { author: fusion.author }),
     tries: fusion.tries.map((t) => {
       const files = t.files.join(", ");
       const label = t.added

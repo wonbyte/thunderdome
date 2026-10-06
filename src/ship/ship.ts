@@ -14,6 +14,7 @@ export interface ShipInput {
   forks: ShipFork[]; // every fork of the task, winner included
   winner: string | null; // agent name from the judge
   why: string;
+  coAuthors?: string[]; // agents whose files the fusion round added; each gets a Co-authored-by trailer
 }
 /** The exit code and output of one git command. */
 export interface GitResult { exitCode: number; stdout: string; stderr: string }
@@ -68,10 +69,22 @@ export const SHIP_OUTPUT_LIMIT = 4_000;
 
 type MergeOutcome = Omit<ShipResult, "winner" | "locks">;
 
-/** Title line, blank line, then the why unchanged. */
-export function mergeMessage(taskId: string, prompt: string, winner: string, why: string): string {
+/** The git trailer that credits an agent, with the identity its commits use (gitIdentity in src/agents/runner.ts). */
+export function coAuthorTrailer(agent: string): string {
+  return `Co-authored-by: Thunderdome ${agent} <${agent}@thunderdome.local>`;
+}
+
+/**
+ * Title line, blank line, then the why unchanged. With co-authors (the fusion round's), a blank
+ * line and one Co-authored-by trailer each follow.
+ */
+export function mergeMessage(taskId: string, prompt: string, winner: string, why: string, coAuthors: readonly string[] = []): string {
   void prompt; // the prompt is deliberately left out of the message
-  return `Thunderdome: ship ${winner}'s fork for task ${taskId}\n\n${why}`;
+  const message = `Thunderdome: ship ${winner}'s fork for task ${taskId}\n\n${why}`;
+  const credited = [...new Set(coAuthors)].filter((agent) => agent !== winner);
+  if (credited.length === 0) return message;
+  // Trailers must be the last paragraph, so trailing blank lines of the why go.
+  return `${message.trimEnd()}\n\n${credited.map(coAuthorTrailer).join("\n")}`;
 }
 
 /** Merges the winner (when there is one), then locks every fork. Never throws. */
@@ -97,7 +110,7 @@ async function mergeFork(deps: ShipDeps, input: ShipInput, fork: ShipFork): Prom
   const branch = input.source.defaultBranch;
   await runOk(deps, ["checkout", branch]);
   await runOk(deps, ["fetch", fork.remote, fork.defaultBranch]);
-  const message = mergeMessage(input.taskId, input.prompt, fork.agent, input.why);
+  const message = mergeMessage(input.taskId, input.prompt, fork.agent, input.why, input.coAuthors);
   const merged = await deps.git(["merge", "--no-ff", "--cleanup=verbatim", "-m", message, "FETCH_HEAD"]);
   if (merged.exitCode !== 0) {
     const output = gitOutput(merged);

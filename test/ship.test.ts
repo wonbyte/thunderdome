@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConflictRequest, RaceOutcome } from "../src/ship/resolve";
-import { mergeMessage, shipTask, SHIP_OUTPUT_LIMIT, type GitResult, type ShipDeps, type ShipInput, type ShipResolver } from "../src/ship/ship";
+import { coAuthorTrailer, mergeMessage, shipTask, SHIP_OUTPUT_LIMIT, type GitResult, type ShipDeps, type ShipInput, type ShipResolver } from "../src/ship/ship";
 
 const input: ShipInput = {
   taskId: "t1",
@@ -45,6 +45,22 @@ describe("mergeMessage", () => {
     expect(mergeMessage("t1", "Add a feature", "beta", input.why)).toBe(
       "Thunderdome: ship beta's fork for task t1\n\n  Beta passed every test.\n\nAlpha did not.\n",
     );
+  });
+
+  it("the fusion round's agents get one Co-authored-by trailer each, after a blank line, matching gitIdentity", () => {
+    expect(coAuthorTrailer("testy")).toBe("Co-authored-by: Thunderdome testy <testy@thunderdome.local>");
+    expect(mergeMessage("t1", "Add a feature", "beta", input.why, ["alpha", "gamma", "alpha", "beta"])).toBe(
+      "Thunderdome: ship beta's fork for task t1\n\n  Beta passed every test.\n\nAlpha did not.\n\n" +
+        "Co-authored-by: Thunderdome alpha <alpha@thunderdome.local>\nCo-authored-by: Thunderdome gamma <gamma@thunderdome.local>",
+    );
+    expect(mergeMessage("t1", "Add a feature", "beta", input.why, [])).toBe(mergeMessage("t1", "Add a feature", "beta", input.why));
+  });
+
+  it("shipTask merges with the co-author trailers when the input names them", async () => {
+    const { deps, calls } = fakeDeps();
+    await shipTask(deps, { ...input, coAuthors: ["alpha"] });
+    const message = calls.find((c) => c[0] === "merge")?.[4] ?? "";
+    expect(message.endsWith("\n\nCo-authored-by: Thunderdome alpha <alpha@thunderdome.local>")).toBe(true);
   });
 });
 

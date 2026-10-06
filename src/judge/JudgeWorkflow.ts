@@ -11,7 +11,7 @@ import { gitRepoPath } from "../sandbox/policy";
 import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
 import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { clipDiff } from "./diffs";
-import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusionCandidates, fusionProblem, fusionWhy, runFusion, type FusionResult } from "./fusion";
+import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, type FusionResult } from "./fusion";
 import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
@@ -245,7 +245,7 @@ async function judgeInSandbox(env: Env, input: JudgeInput, fork: JudgeFork): Pro
  * Merges the winner into the source repo and locks every fork. shipTask never throws, so a
  * failed source lookup or clone becomes status "error" and the forks are still locked.
  */
-async function shipInSandbox(env: Env, input: JudgeInput, result: JudgeResult): Promise<ShipResult> {
+async function shipInSandbox(env: Env, input: JudgeInput, result: Fused): Promise<ShipResult> {
   const deps = (git: ShipDeps["git"], resolver?: ShipResolver): ShipDeps => ({
     git,
     revokeWriteTokens: (name) => revokeWriteTokens(env.ARTIFACTS, name),
@@ -379,7 +379,11 @@ async function sourceRepo(artifacts: Artifacts, name: string): Promise<{ repo: A
   }
 }
 
-function shipInput(input: JudgeInput, result: JudgeResult, source: ShipRepo): ShipInput {
+/** A judged race after the fusion round. */
+type Fused = JudgeResult & { fusion: FusionResult };
+
+function shipInput(input: JudgeInput, result: Fused, source: ShipRepo): ShipInput {
+  const coAuthors = fusedAgents(result.fusion);
   return {
     taskId: input.taskId,
     prompt: input.task,
@@ -387,6 +391,7 @@ function shipInput(input: JudgeInput, result: JudgeResult, source: ShipRepo): Sh
     forks: input.forks.map((f) => ({ agent: f.agent, name: f.fork, remote: f.remote, defaultBranch: f.defaultBranch })),
     winner: result.winner,
     why: result.why,
+    ...(coAuthors.length === 0 ? {} : { coAuthors }),
   };
 }
 

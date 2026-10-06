@@ -96,6 +96,21 @@ describe("accessFor", () => {
     }
   });
 
+  it("the commit route is public only for GET with a full lowercase hash", () => {
+    const sha = "0123456789abcdef0123456789abcdef01234567";
+    expect(accessFor("GET", `/tasks/${id}/commits/${sha}`)).toBe("public");
+    for (const [method, path] of [
+      ["POST", `/tasks/${id}/commits/${sha}`],
+      ["GET", `/tasks/${id}/commits/${sha.slice(0, 7)}`],
+      ["GET", `/tasks/${id}/commits/${sha.toUpperCase()}`],
+      ["GET", `/tasks/${id}/commits/${sha}/x`],
+      ["GET", `/tasks/${id}/commits`],
+      ["GET", `/tasks/bad-id/commits/${sha}`],
+    ] as const) {
+      expect(accessFor(method, path), `${method} ${path}`).toBe("admin");
+    }
+  });
+
   it('X7: the diff route, POST /play and GET /play/quota are public; GET /play is page with pageAsset "/play.html"; POST to other paths is still admin; a bad agent name in the diff path is admin', () => {
     for (const agent of ["ponder", "zippy", "a"]) {
       expect(accessFor("GET", `/tasks/${id}/forks/${agent}/diff`), agent).toBe("public");

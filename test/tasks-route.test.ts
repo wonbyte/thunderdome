@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { SavedDiff } from "../src/judge/diffs";
+import { COMMIT_FILE_MAX, fileView } from "../src/routes/commits";
 import { claimFiles, emptyBoard, type ClaimBoard, type ClaimResult } from "../src/room/claims";
 import { RACE_LIST_LIMIT, summaryOf, type RaceSummary } from "../src/room/races";
 import type { CreateTaskResult, LoggedStep, NewTask, RunTaskResult, Task } from "../src/room/task";
+import { fakeArtifacts, fakeRepo } from "./fakes";
 import { handlePurge, handleRaceBackfill, handleTasks, isTasksPath } from "../src/routes/tasks";
 
 const readyTask = (input: NewTask): Task => ({
@@ -40,7 +42,7 @@ function fakeIndex(races: RaceSummary[] = []) {
   return { index, RACE_INDEX: { getByName: vi.fn(() => index) } };
 }
 
-function fakeEnv(room: FakeRoom, races: RaceSummary[] = []) {
+function fakeEnv(room: FakeRoom, races: RaceSummary[] = [], artifacts?: Artifacts) {
   const stub = {
     create: vi.fn(room.create ?? (async (input: NewTask) => ({ ok: true as const, task: readyTask(input), tokens: { ponder: "k1", zippy: "k2", testy: "k3" } }))),
     state: vi.fn(room.state ?? (async () => null)),
@@ -56,7 +58,7 @@ function fakeEnv(room: FakeRoom, races: RaceSummary[] = []) {
   };
   const getByName = vi.fn(() => stub);
   const { index, RACE_INDEX } = fakeIndex(races);
-  const env = { TASK_ROOM: { getByName }, RACE_INDEX } as unknown as Pick<Env, "TASK_ROOM" | "RACE_INDEX">;
+  const env = { TASK_ROOM: { getByName }, RACE_INDEX, ARTIFACTS: artifacts } as unknown as Pick<Env, "TASK_ROOM" | "RACE_INDEX" | "ARTIFACTS">;
   return { env, stub, getByName, index, indexByName: RACE_INDEX.getByName };
 }
 
@@ -144,7 +146,7 @@ describe("POST /admin/races", () => {
     const unknownRoom = { state: vi.fn(async () => null), claimBoard: vi.fn(async () => emptyBoard()) };
     const getByName = vi.fn((id: string) => (id === known ? knownRoom : unknownRoom));
     const { index, RACE_INDEX } = fakeIndex();
-    const env = { TASK_ROOM: { getByName }, RACE_INDEX } as unknown as Pick<Env, "TASK_ROOM" | "RACE_INDEX">;
+    const env = { TASK_ROOM: { getByName }, RACE_INDEX } as unknown as Pick<Env, "TASK_ROOM" | "RACE_INDEX" | "ARTIFACTS">;
     return { env, task, board, index, indexByName: RACE_INDEX.getByName, unknownRoom };
   }
 
@@ -314,6 +316,80 @@ describe("GET /tasks/:id/forks/:agent/diff", () => {
     expect(wrong.status).toBe(405);
     expect(wrong.headers.get("allow")).toBe("GET");
     expect(stub.forkDiff).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /tasks/:id/commits/:sha", () => {
+  const FUSE = "f".repeat(40);
+  const MERGE = "a".repeat(40);
+  const url = (sha: string) => `https://thunderdome.test/tasks/t-0123abcd/commits/${sha}`;
+  const judged = (): Task => ({
+    ...readyTask({ id: "t-0123abcd", repo: "source", prompt: "p", agents: 3 }),
+    status: "finished",
+    verdict: {
+      winner: "ponder",
+      why: "w",
+      judgedAt: "2026-10-05T00:00:00.000Z",
+      ship: { status: "merged", winner: "ponder", commit: MERGE, locks: [] },
+      fusion: { tried: [{ agent: "testy", files: ["test/a.test.ts"], status: "added" }, { agent: "zippy", files: ["b.ts"], status: "rejected" }], commit: FUSE },
+    },
+  });
+  const meta = (hash: string): ArtifactsCommitMetadata => ({
+    hash,
+    treeHash: "e".repeat(40),
+    message: "Thunderdome fusion: add testy's test/a.test.ts to ponder's fix",
+    author: { name: "Thunderdome testy", email: "testy@thunderdome.local" },
+    committer: { name: "Thunderdome", email: "thunderdome@thunderdome.local" },
+    parents: ["b".repeat(40)],
+    authoredAt: 1,
+    committedAt: 2,
+  });
+
+  it("returns the fusion commit from the winner's fork with the files it added, cached for good", async () => {
+    const repo = fakeRepo({ readCommit: vi.fn(async (hash: string) => meta(hash)), readFile: vi.fn(async () => new Blob(["it('adds', () => {});\n"])) });
+    const artifacts = fakeArtifacts(repo);
+    const { env } = fakeEnv({ state: async () => judged() }, [], artifacts);
+    const res = await handleTasks(new Request(url(FUSE)), env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toContain("immutable");
+    const body = (await res.json()) as { kind: string; repo: string; author: { name: string }; files: unknown[] };
+    expect(body).toMatchObject({ kind: "fusion", repo: "t-0123abcd-ponder", author: { name: "Thunderdome testy" } });
+    expect(body.files).toEqual([{ path: "test/a.test.ts", content: "it('adds', () => {});\n" }]);
+    expect(artifacts.get).toHaveBeenCalledWith("t-0123abcd-ponder");
+    expect(repo.readFile).toHaveBeenCalledWith({ ref: FUSE, path: "test/a.test.ts" });
+  });
+
+  it("reads the merge from the source repo, and answers 404 for any hash the verdict does not name", async () => {
+    const repo = fakeRepo({ readCommit: vi.fn(async (hash: string) => meta(hash)) });
+    const artifacts = fakeArtifacts(repo);
+    const { env } = fakeEnv({ state: async () => judged() }, [], artifacts);
+    const merge = await handleTasks(new Request(url(MERGE)), env);
+    expect(merge.status).toBe(200);
+    expect(await merge.json()).toMatchObject({ kind: "merge", repo: "source", files: [] });
+    expect(artifacts.get).toHaveBeenCalledWith("source");
+
+    vi.mocked(artifacts.get).mockClear();
+    for (const sha of ["c".repeat(40), "b".repeat(40)]) expect((await handleTasks(new Request(url(sha)), env)).status).toBe(404);
+    // A short or uppercase hash is not a route at all.
+    for (const sha of ["fffffff", "F".repeat(40)]) expect((await handleTasks(new Request(url(sha)), env)).status).toBe(404);
+    expect(artifacts.get).not.toHaveBeenCalled();
+    expect((await handleTasks(new Request(url(FUSE), { method: "POST" }), env)).status).toBe(405);
+  });
+
+  it("404s before judging, and when Artifacts has no such commit", async () => {
+    const repo = fakeRepo({ readCommit: vi.fn(async () => null) });
+    const notJudged = fakeEnv({ state: async () => ({ ...judged(), verdict: undefined }) }, [], fakeArtifacts(repo));
+    expect((await handleTasks(new Request(url(FUSE)), notJudged.env)).status).toBe(404);
+    const gone = fakeEnv({ state: async () => judged() }, [], fakeArtifacts(repo));
+    const res = await handleTasks(new Request(url(FUSE)), gone.env);
+    expect(res.status).toBe(404);
+    expect(res.headers.get("cache-control")).toBeNull();
+  });
+
+  it("clips long files and leaves out binary ones", () => {
+    expect(fileView("a", "x".repeat(COMMIT_FILE_MAX + 5))).toEqual({ path: "a", content: "x".repeat(COMMIT_FILE_MAX), clipped: true });
+    expect(fileView("b", "PNG\u0000data")).toEqual({ path: "b", binary: true });
+    expect(fileView("c", undefined)).toEqual({ path: "c" });
   });
 });
 

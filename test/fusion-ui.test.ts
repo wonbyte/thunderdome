@@ -6,6 +6,7 @@ import type { Task, Verdict } from "../src/room/task";
 import { applyEvent, emptyBoard, type WireTask, type WireVerdict } from "../src/ui/board";
 import { assistsOf, FUSE_BAR, fusionView } from "../src/ui/fusion";
 import { fusionOf, gitGraph } from "../src/ui/gitgraph";
+import { gitLog, LOG_PUSHES_MAX } from "../src/ui/gitlog";
 import { raceStats, standings, type RaceRow } from "../src/ui/leaderboard";
 import { applyPlatform, emptyPlatform, STAGES } from "../src/ui/platform";
 
@@ -50,6 +51,8 @@ describe("fusion view", () => {
     expect(view).toEqual({
       winner: "testy",
       commit: "660ef87",
+      hash: "660ef87bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      author: "ponder",
       shipped: true,
       rows: [
         { agent: "ponder", files: ["test/ponder.test.ts"], outcome: "added", tests: "20/20", green: true, clef: 0.6098, asked: "tests something new the task asks?" },
@@ -90,7 +93,7 @@ describe("fusion on the board", () => {
 describe("fusion in the git graph", () => {
   it("F6 fusionOf places the round at the judge time, and the graph shows it only once t reaches it", () => {
     const fusion = fusionOf(task(verdict()));
-    expect(fusion).toMatchObject({ at: Date.parse(JUDGED), winner: "testy", commit: "660ef87" });
+    expect(fusion).toMatchObject({ at: Date.parse(JUDGED), winner: "testy", commit: "660ef87", hash: "660ef87bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", author: "ponder" });
     expect(fusion?.tries.map((t) => [t.agent, t.added])).toEqual([["ponder", true], ["zippy", false]]);
     const start = Date.parse("2026-10-06T05:30:00.000Z");
     const base = { agents: ["ponder", "zippy", "testy"], start, ends: {}, dots: [], domainEnd: Date.parse(JUDGED), ...(fusion ? { fusion } : {}) };
@@ -100,6 +103,49 @@ describe("fusion in the git graph", () => {
     expect(graph.fusion?.tries[0]?.label).toBe("Ponder's test/ponder.test.ts: fused into Testy's fork");
     expect(graph.fusion?.tries[1]?.label).toBe("Zippy's test/zippy.test.ts: left out (the judge found nothing new)");
     expect(fusionOf(task(undefined))).toBeUndefined();
+  });
+});
+
+describe("git log --graph", () => {
+  const pushed = (n: number): WireTask => {
+    const t = task(verdict());
+    const log = Array.from({ length: n }, (_, i) => ({ at: `2026-10-06T05:3${i}:00.000Z`, commit: `${i}`.repeat(40), commits: i === 0 ? 2 : 1, message: `fix ${i}` }));
+    return { ...t, baseCommit: "fd8e0e1cccccccccccccccccccccccccccccccc", agents: t.agents.map((a) => (a.name === "testy" ? { ...a, push: { commits: n + 1, log } } : a)) };
+  };
+
+  it("G1 the merge on top, the fusion head on the winner's side, its pushes newest first, then the base", () => {
+    const lines = gitLog(pushed(2));
+    expect(lines?.map((l) => [l.graph, l.sha ?? "", l.message ?? "", l.who ?? ""])).toEqual([
+      ["*   ", "33d07d7", "Thunderdome: ship Testy's fork", "Thunderdome"],
+      ["|\\  ", "", "", ""],
+      ["| * ", "660ef87", "fusion: add Ponder's test/ponder.test.ts", "Ponder"],
+      ["| * ", "1111111", "fix 1", "Testy"],
+      ["| * ", "0000000", "fix 0 (+1 more)", "Testy"],
+      ["|/  ", "", "", ""],
+      ["* ", "fd8e0e1", "base: where every fork started", ""],
+    ]);
+    // The merge and the fusion head open as commits; the author column is in the robot's color.
+    expect(lines?.[0]?.hash).toBe("33d07d7aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
+    expect(lines?.[2]).toMatchObject({ hash: "660ef87bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", color: "#d97757" });
+    expect(lines?.[3]?.hash).toBeUndefined();
+  });
+
+  it("G3 the fusion push in the winner's push log is not shown twice", () => {
+    const t = pushed(1);
+    const testy = t.agents.find((a) => a.name === "testy")!;
+    const fusionPush = { at: "2026-10-06T05:39:00.000Z", commit: verdict().fusion!.commit!, commits: 1, message: "Thunderdome fusion: add ponder's test/ponder.test.ts" };
+    const withFusion = { ...t, agents: t.agents.map((a) => (a === testy ? { ...a, push: { commits: 2, log: [...(testy.push?.log ?? []), fusionPush] } } : a)) };
+    expect(gitLog(withFusion)?.filter((l) => l.sha === "660ef87")).toHaveLength(1);
+  });
+
+  it("G2 no fusion line when nothing was added, no log until the winner merged, and long push logs fold", () => {
+    const none = { ...pushed(1), verdict: { ...verdict(), fusion: { tried: [verdict().fusion!.tried[1]!] } } };
+    expect(gitLog(none)?.some((l) => l.message?.startsWith("fusion") === true)).toBe(false);
+    expect(gitLog({ ...pushed(1), verdict: verdict("conflict") })).toBeUndefined();
+    expect(gitLog(task(undefined))).toBeUndefined();
+    const long = gitLog(pushed(LOG_PUSHES_MAX + 2)) ?? [];
+    expect(long.filter((l) => l.who === "Testy")).toHaveLength(LOG_PUSHES_MAX);
+    expect(long.find((l) => l.graph === "| ⋮ ")?.message).toBe("2 earlier pushes");
   });
 });
 

@@ -14,6 +14,7 @@ import {
   FUSE_BUNDLE_PATH,
   FUSE_REF,
   FUSE_THRESHOLD,
+  fusedAgents,
   fusionBundle,
   fusionCandidates,
   fusionProblem,
@@ -261,6 +262,18 @@ describe("fusionCandidates", () => {
     const inputs = [fork({ agent: "ponder", fix: "same" }), fork({ agent: "testy", filesChanged: ["src/a.ts", "x.ts"], filesClaimed: ["src/a.ts", "x.ts"], fix: "same" })];
     const { ranked } = scoreForks(inputs);
     expect(fusionCandidates(ranked, inputs.map(judged), "ponder", { testy: { remote: "r", branch: "main" } })).toEqual([]);
+  });
+});
+
+describe("fusedAgents", () => {
+  it("names each agent with an added try once, and none when no fusion commit was pushed", () => {
+    const tried = [
+      { agent: "testy", files: ["a.test.ts"], status: "added" as const },
+      { agent: "zippy", files: ["b.ts"], status: "rejected" as const },
+      { agent: "testy", files: ["c.test.ts"], status: "added" as const },
+    ];
+    expect(fusedAgents({ tried, commit: "f".repeat(40) })).toEqual(["testy"]);
+    expect(fusedAgents({ tried })).toEqual([]);
   });
 });
 

@@ -3,6 +3,7 @@ import { judgeInstanceId } from "../judge/judge";
 import { RACE_INDEX_MAX, RACE_LIST_LIMIT, summaryOf } from "../room/races";
 import { isTaskId, judgeInput, newTaskId, parseCreateTask } from "../room/task";
 import { isForkAgent } from "./access";
+import { commitResponse, isCommitSha } from "./commits";
 
 // The room starts the judge with the same params, so both come from one place.
 export { judgeInput } from "../room/task";
@@ -13,7 +14,7 @@ const RACE_INDEX_NAME = "all";
 /** Ids one backfill call may record. */
 const MAX_BACKFILL_IDS = 50;
 
-type TasksEnv = Pick<Env, "TASK_ROOM" | "RACE_INDEX">;
+type TasksEnv = Pick<Env, "TASK_ROOM" | "RACE_INDEX" | "ARTIFACTS">;
 
 /** True for /tasks and every route under it. */
 export function isTasksPath(pathname: string): boolean {
@@ -27,8 +28,8 @@ export function judgeTaskId(pathname: string): string | undefined {
 }
 
 /**
- * The /tasks routes: list and create races, read one, run it, and its forks, diffs, steps and
- * claims. The caller checks admin auth first.
+ * The /tasks routes: list and create races, read one, run it, and its forks, diffs, commits,
+ * steps and claims. The caller checks admin auth first.
  */
 export async function handleTasks(request: Request, env: TasksEnv): Promise<Response> {
   const { pathname } = new URL(request.url);
@@ -43,6 +44,8 @@ export async function handleTasks(request: Request, env: TasksEnv): Promise<Resp
   // /tasks/:id/forks/:agent/diff
   const [agent = "", leaf] = rest;
   if (action === "forks" && rest.length === 2 && leaf === "diff" && isForkAgent(agent)) return forkDiff(request, env, id, agent);
+  // /tasks/:id/commits/:sha
+  if (action === "commits" && rest.length === 1 && isCommitSha(agent)) return verdictCommit(request, env, id, agent);
   if (rest.length > 0) return notFound();
   const room = env.TASK_ROOM.getByName(id);
   if (action === undefined) {
@@ -95,6 +98,13 @@ async function forkDiff(request: Request, env: TasksEnv, id: string, agent: stri
   if (request.method !== "GET") return methodNotAllowed("GET");
   const saved = await env.TASK_ROOM.getByName(id).forkDiff(agent);
   return saved === null ? notFound() : Response.json({ agent, diff: saved.diff, clipped: saved.clipped });
+}
+
+/** GET /tasks/:id/commits/:sha: the fusion commit or the merge the verdict names, read from Artifacts. */
+async function verdictCommit(request: Request, env: TasksEnv, id: string, sha: string): Promise<Response> {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const task = await env.TASK_ROOM.getByName(id).state();
+  return task === null ? notFound() : commitResponse(env.ARTIFACTS, task, sha);
 }
 
 /** POST /admin/races: records races made before the index. Unknown ids come back in missing. */

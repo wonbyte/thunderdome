@@ -1,6 +1,8 @@
 // Draws gitgraph.ts's model as SVG: main on top, a lane per fork, push dots, the merge.
 // Built with createElementNS and textContent only, so commit messages stay text.
+import { colorFor, displayName } from "./board";
 import type { GitGraph, GraphFusion, Lane } from "./gitgraph";
+import { robotSvg } from "./sprites";
 
 const NS = "http://www.w3.org/2000/svg";
 const W = 1000;
@@ -36,8 +38,11 @@ function titled<T extends SVGElement>(node: T, title: string): T {
 
 let shown = new Set<string>();
 
-/** Replaces the graph in `host`. Dots and the merge that were not drawn before pop in. */
-export function drawGraph(host: Element, graph: GitGraph, live: boolean, onLane: (agent: string) => void): void {
+/**
+ * Replaces the graph in `host`. Dots and the merge that were not drawn before pop in. `onCommit`
+ * opens a commit by its full hash (the fusion commit node).
+ */
+export function drawGraph(host: Element, graph: GitGraph, live: boolean, onLane: (agent: string) => void, onCommit?: (hash: string) => void): void {
   const height = TOP + (graph.lanes.length + 1) * LANE_H - 8;
   const root = svg("svg", { viewBox: `0 0 ${W} ${height}`, role: "img", "aria-label": "Git graph of the race" }, "graph-svg");
   const mainY = TOP;
@@ -54,7 +59,7 @@ export function drawGraph(host: Element, graph: GitGraph, live: boolean, onLane:
 
   graph.lanes.forEach((lane, i) => drawLane(root, lane, mainY + (i + 1) * LANE_H, mainY, live, isNew, onLane));
 
-  if (graph.fusion !== undefined) drawFusion(root, graph, graph.fusion, mainY, isNew);
+  if (graph.fusion !== undefined) drawFusion(root, graph, graph.fusion, mainY, isNew, onCommit);
 
   if (graph.merge !== undefined) {
     const lane = graph.lanes.findIndex((l) => l.agent === graph.merge?.agent);
@@ -121,9 +126,16 @@ function drawLane(
 /**
  * The fusion round: an arrow from each loser's lane into the winner's lane, just before the merge.
  * A kept try is a solid arrow in the loser's color into a fusion commit; a left-out try is a faint
- * dashed arrow that stops short with a cross.
+ * dashed arrow that stops short with a cross. With `onCommit`, the fusion commit is a button.
  */
-function drawFusion(root: SVGSVGElement, graph: GitGraph, fusion: GraphFusion, mainY: number, isNew: (key: string) => boolean): void {
+function drawFusion(
+  root: SVGSVGElement,
+  graph: GitGraph,
+  fusion: GraphFusion,
+  mainY: number,
+  isNew: (key: string) => boolean,
+  onCommit: ((hash: string) => void) | undefined,
+): void {
   const wi = graph.lanes.findIndex((l) => l.agent === fusion.winner);
   const winner = graph.lanes[wi];
   if (winner === undefined) return;
@@ -148,9 +160,50 @@ function drawFusion(root: SVGSVGElement, graph: GitGraph, fusion: GraphFusion, m
     if (t.added) added += 1;
     else g.append(titled(text(ex + 2, ey + 4, "✗", "fuse-x"), t.label));
   });
-  const dot = svg("circle", { cx: fx, cy: wy, r: added > 0 ? 7 : 4 }, `fuse-dot${added > 0 ? " kept" : ""}`);
   const kept = fusion.tries.filter((t) => t.added).map((t) => t.label);
-  g.append(titled(dot, added > 0 ? `fusion commit${fusion.commit === undefined ? "" : ` ${fusion.commit}`}: ${kept.join("; ")}` : "fusion round: every try was left out"));
-  g.append(text(fx, wy + 20, added > 0 ? "⚡ fused" : "fusion: none kept", `fuse-tag${added > 0 ? " kept" : ""}`, "middle"));
+  if (added > 0 && fusion.hash !== undefined && fusion.author !== undefined && onCommit !== undefined) {
+    g.append(commitNode(fx, wy, fusion.hash, fusion.author, kept, onCommit));
+  } else {
+    const dot = svg("circle", { cx: fx, cy: wy, r: added > 0 ? 7 : 4 }, `fuse-dot${added > 0 ? " kept" : ""}`);
+    g.append(titled(dot, added > 0 ? `fusion commit${fusion.commit === undefined ? "" : ` ${fusion.commit}`}: ${kept.join("; ")}` : "fusion round: every try was left out"));
+    g.append(text(fx, wy + 20, added > 0 ? "⚡ fused" : "fusion: none kept", `fuse-tag${added > 0 ? " kept" : ""}`, "middle"));
+  }
   root.append(g);
+}
+
+/** Width of one 10.5px mono character, to fit the commit label inside the graph. */
+const MONO_CH = 6.4;
+const SPRITE = 13;
+
+/**
+ * The fusion commit as a real commit: the dot, the author robot and "<sha7> · by <Name>". A button
+ * that opens the commit.
+ */
+function commitNode(fx: number, wy: number, hash: string, author: string, kept: string[], onCommit: (hash: string) => void): SVGGElement {
+  const sha = hash.slice(0, 7);
+  const name = displayName(author);
+  const label = `${sha} · by ${name}`;
+  const node = svg("g", { tabindex: 0, role: "button", "aria-label": `Fusion commit ${sha} by ${name}: open the commit` }, "fuse-commit");
+  node.addEventListener("click", () => onCommit(hash));
+  node.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onCommit(hash);
+    }
+  });
+  node.append(titled(svg("circle", { cx: fx, cy: wy, r: 7 }, "fuse-dot kept"), `fusion commit ${sha} by ${name}: ${kept.join("; ")}`));
+  // Sprite and label as one row under the dot, kept inside the graph's right edge.
+  const width = SPRITE + 4 + label.length * MONO_CH;
+  const left = Math.max(LEFT, Math.min(W - 4 - width, fx - width / 2));
+  node.append(robot(left, wy + 9, SPRITE, colorFor(author)), text(left + SPRITE + 4, wy + 20, label, "fuse-tag kept fuse-sha"));
+  return node;
+}
+
+/** The robot sprite (sprites.ts output only) as a nested svg at x, y. */
+function robot(x: number, y: number, size: number, color: string): SVGElement {
+  const parsed = new DOMParser().parseFromString(robotSvg(color), "image/svg+xml").documentElement;
+  const node = document.importNode(parsed, true) as unknown as SVGSVGElement;
+  for (const [name, value] of Object.entries({ x, y, width: size, height: size })) node.setAttribute(name, String(value));
+  node.setAttribute("class", "fuse-robot");
+  return node;
 }

@@ -6,9 +6,11 @@ import type { Action, Board, BoardEvent, Fighter, WireClaimBoard, WirePreview, W
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
+import { openCommit } from "./commitdialog";
 import { openDiff } from "./diffdialog";
 import { assistsOf, FUSE_BAR, fusionView, type FuseOutcome, type FuseRow } from "./fusion";
 import { fusionOf, gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
+import { gitLog, type LogLine } from "./gitlog";
 import { drawGraph } from "./graphview";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
 import type { TimedEvent, Timeline } from "./timeline";
@@ -712,13 +714,49 @@ function renderGraph(b: Board): void {
     input = { agents, start, ends, dots: liveDots, t, domainEnd: t, ...(merge ? { merge } : {}), ...(fusion ? { fusion } : {}) };
   }
   const graph = gitGraph(input);
+  // The log of main shows once the graph draws the merge (in a replay, once it reaches it).
+  renderGitLog(graph.merge === undefined ? undefined : gitLog(replay !== undefined && recorded !== undefined ? recorded : task));
   const key = JSON.stringify(graph, (_k, v: unknown) => (typeof v === "number" ? Math.round(v * 400) : v));
   if (key === graphKey) return;
   graphKey = key;
-  drawGraph(byId("graph"), graph, replay === undefined && !b.ended, (agent) => void openDiff(taskId, agent));
+  drawGraph(byId("graph"), graph, replay === undefined && !b.ended, (agent) => void openDiff(taskId, agent), (hash) => void openCommit(taskId, hash));
   const pushes = graph.lanes.reduce((n, l) => n + l.dots.length, 0);
   const fused = graph.fusion?.tries.filter((t) => t.added).length ?? 0;
   byId("graph-stat").textContent = `${graph.lanes.length} forks · ${pushes} push${pushes === 1 ? "" : "es"}${fused > 0 ? ` · ${fused} fused` : ""}${graph.merge ? " · 1 merge" : ""}`;
+}
+
+let gitLogKey = "";
+
+/** `git log --graph main` under the graph: text only, the author column in each robot's color. */
+function renderGitLog(lines: LogLine[] | undefined): void {
+  const key = JSON.stringify(lines ?? null);
+  if (key === gitLogKey) return;
+  gitLogKey = key;
+  byId("gitlog").hidden = lines === undefined;
+  if (lines === undefined) return;
+  byId("gitlog-lines").replaceChildren(
+    ...lines.map((line) => {
+      const item = el("li", line.sha === undefined && line.message === undefined ? "gl-row edge" : "gl-row");
+      item.append(el("span", "gl-graph", line.graph));
+      if (line.hash !== undefined) {
+        const open = el("button", "gl-sha link", line.sha);
+        open.type = "button";
+        open.setAttribute("aria-label", `Open commit ${line.sha ?? ""}`);
+        const hash = line.hash;
+        open.addEventListener("click", () => void openCommit(taskId, hash));
+        item.append(open);
+      } else if (line.message !== undefined) {
+        item.append(el("span", "gl-sha", line.sha ?? "·······"));
+      }
+      if (line.message !== undefined) item.append(el("span", "gl-msg", line.message));
+      if (line.who !== undefined) {
+        const who = el("span", "gl-who", line.who);
+        who.style.setProperty("--color", line.color ?? "#8b8d98");
+        item.append(who);
+      }
+      return item;
+    }),
+  );
 }
 
 /** What the robots were told about earlier races on this app. Rebuilt only when it changes. */
@@ -1657,12 +1695,23 @@ function renderFusion(b: Board): void {
   const result = byId("fusion-result");
   result.classList.toggle("kept", kept.length > 0);
   const winner = displayName(view.winner);
-  result.textContent =
-    view.error !== undefined && view.rows.length === 0
-      ? `The fusion round could not run: ${view.error}`
-      : kept.length === 0
-        ? `Nothing was added: ${winner}'s fix shipped as it was.`
-        : `${kept.map((r) => `${displayName(r.agent)}'s ${r.files.join(", ")}`).join(" and ")} ${view.shipped ? "shipped" : "joined"} with ${winner}'s fix${view.commit === undefined ? "" : ` in fusion commit ${view.commit}`}: the losing fork${kept.length === 1 ? "" : "s"} still made the code better.`;
+  if (view.error !== undefined && view.rows.length === 0) result.textContent = `The fusion round could not run: ${view.error}`;
+  else if (kept.length === 0) result.textContent = `Nothing was added: ${winner}'s fix shipped as it was.`;
+  else {
+    const what = `${kept.map((r) => `${displayName(r.agent)}'s ${r.files.join(", ")}`).join(" and ")} ${view.shipped ? "shipped" : "joined"} with ${winner}'s fix`;
+    const tail = `: the losing fork${kept.length === 1 ? "" : "s"} still made the code better.`;
+    result.replaceChildren(document.createTextNode(what));
+    if (view.hash !== undefined && view.commit !== undefined) {
+      // The commit is a button: it opens the real commit, read from Artifacts.
+      const hash = view.hash;
+      const open = el("button", "commit-link", view.commit);
+      open.type = "button";
+      open.setAttribute("aria-label", `Open fusion commit ${view.commit}`);
+      open.addEventListener("click", () => void openCommit(taskId, hash));
+      result.append(document.createTextNode(" in fusion commit "), open);
+    }
+    result.append(document.createTextNode(tail));
+  }
   byId("fusion-rows").replaceChildren(...view.rows.map((row, i) => fuseRow(row, i)));
 }
 

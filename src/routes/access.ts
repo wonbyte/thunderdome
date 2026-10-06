@@ -18,6 +18,13 @@ function isDiffPath(pathname: string): boolean {
   return parts.length === 6 && empty === "" && root === "tasks" && isTaskId(id) && forks === "forks" && isForkAgent(agent) && diff === "diff";
 }
 
+/** GET /tasks/:id/commits/:sha with a valid id and a full commit hash. */
+function isCommitPath(pathname: string): boolean {
+  const parts = pathname.split("/");
+  const [empty, root, id = "", commits, sha = ""] = parts;
+  return parts.length === 5 && empty === "" && root === "tasks" && isTaskId(id) && commits === "commits" && /^[0-9a-f]{40}$/.test(sha);
+}
+
 /**
  * Who may call `method pathname`: anyone (public), anyone for a page asset (page), or only the
  * admin.
@@ -27,7 +34,7 @@ export function accessFor(method: string, pathname: string): Access {
   if (method !== "GET") return "admin";
   if (pathname === "/" || pathname === "/tasks" || pathname === "/play/quota") return "public";
   if (pathname === "/races" || pathname === "/play") return "page";
-  if (isDiffPath(pathname)) return "public";
+  if (isDiffPath(pathname) || isCommitPath(pathname)) return "public";
   const [empty, root, id = "", action, ...rest] = pathname.split("/");
   if (empty !== "" || rest.length > 0 || !isTaskId(id)) return "admin";
   if (root === "race" && action === undefined) return "page";
