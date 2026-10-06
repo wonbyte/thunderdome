@@ -133,7 +133,7 @@ npm run deploy       # builds the page scripts and the sandbox image, then deplo
 ```
 
 Options, set at deploy with `--var`:
-- `AGENT_MODEL:<model id>`: the model the robots and conflict resolvers run (default `claude-sonnet-5-5`; empty means Claude Code's default).
+- `AGENT_MODEL:<model id>`: the model the robots and conflict resolvers run (default `claude-opus-5-5`; empty means Claude Code's default).
 - `AGENT_MODEL:<model id>`: the agents' model (empty means Claude Code's default).
 - `PLAY_INVITE:<code>`: require an invite code on `/play` (empty means none).
 - `PLAY_DAILY_LIMIT:<n>`: races `/play` may start per UTC day (default 10, at most 2 per IP).

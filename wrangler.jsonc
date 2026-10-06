@@ -15,7 +15,7 @@
   "vars": {
     // Model the agents run. Empty means Claude Code's default. Override with:
     // npm run deploy -- --var AGENT_MODEL:<model id>
-    "AGENT_MODEL": "claude-sonnet-5-5",
+    "AGENT_MODEL": "claude-opus-5-5",
     // The Worker each fork push is previewed under (wrangler preview --name <task>-<agent>).
     "PREVIEW_WORKER": "thunderdome-sample",
     // The account that owns PREVIEW_WORKER. Preview sandboxes may call only its previews API.
