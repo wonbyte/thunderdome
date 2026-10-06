@@ -1262,16 +1262,19 @@ function renderPipeline(hits: PlatformHit[]): void {
     const view = stageViews.get(stage);
     if (view === undefined) continue;
     const count = platform.counts[stage];
+    const working = platform.working[stage];
     view.count.textContent = String(Math.min(count, 99)).padStart(2, "0");
-    view.root.classList.toggle("used", count > 0);
+    view.root.classList.toggle("used", count > 0 || working !== undefined);
+    // Working: powered and churning for as long as the work runs (Clef while the judge runs).
+    view.root.classList.toggle("working", working !== undefined);
     // Seeking back can power a unit down while it still works; it stops at once.
-    if (count === 0 && view.busy !== undefined) {
+    if (count === 0 && working === undefined && view.busy !== undefined) {
       clearTimeout(view.busy);
       view.busy = undefined;
       view.root.classList.remove("busy");
     }
     const last = platform.last[stage];
-    typeLine(view, last === undefined ? STAGE_INFO[stage].role : `${last.text}${last.ms === undefined ? "" : ` · ${formatMs(last.ms)}`}`);
+    typeLine(view, working ?? (last === undefined ? STAGE_INFO[stage].role : `${last.text}${last.ms === undefined ? "" : ` · ${formatMs(last.ms)}`}`));
   }
   for (const h of hits) {
     const view = stageViews.get(h.stage);

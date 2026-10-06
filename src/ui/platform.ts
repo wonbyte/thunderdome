@@ -42,11 +42,13 @@ export interface PlatformState {
   pushAt: Record<string, number>;
   forked: boolean;
   agents: number;
+  /** Stages working right now, with what they are doing: they churn until their next hit. */
+  working: Partial<Record<Stage, string>>;
 }
 
 /** A pipeline with nothing done yet. */
 export function emptyPlatform(): PlatformState {
-  return { counts: { fork: 0, containers: 0, claims: 0, events: 0, workflows: 0, previews: 0, ai: 0, fusion: 0, merge: 0 }, last: {}, pushAt: {}, forked: false, agents: 0 };
+  return { counts: { fork: 0, containers: 0, claims: 0, events: 0, workflows: 0, previews: 0, ai: 0, fusion: 0, merge: 0 }, last: {}, pushAt: {}, forked: false, agents: 0, working: {} };
 }
 
 const ms = (iso: string | undefined): number | undefined => {
@@ -65,7 +67,7 @@ function hit(stage: Stage, text: string, extra: { ms?: number | undefined; agent
 /** The hits one event makes, and the state after it. `at` is when the event happened (ms). */
 export function applyPlatform(state: PlatformState, event: BoardEvent, at: number): { state: PlatformState; hits: PlatformHit[] } {
   const hits: PlatformHit[] = [];
-  const next: PlatformState = { ...state, counts: { ...state.counts }, last: { ...state.last }, pushAt: { ...state.pushAt } };
+  const next: PlatformState = { ...state, counts: { ...state.counts }, last: { ...state.last }, pushAt: { ...state.pushAt }, working: { ...state.working } };
   switch (event.kind) {
     case "snapshot":
     case "status": {
@@ -115,6 +117,8 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
       if (event.status === "finished" && next.finishedAt === undefined) {
         next.finishedAt = at;
         hits.push(hit("workflows", "judge started: tests in every fork"));
+        // Clef scores every diff while the judge runs; its unit churns until the verdict.
+        next.working.ai = `scoring ${next.agents > 0 ? `${next.agents} ` : ""}diffs…`;
       }
       break;
     case "verdict": {
@@ -138,6 +142,8 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
     next.counts[h.stage] += 1;
     next.last[h.stage] = h;
   }
+  // The verdict ends the judging, whatever it holds.
+  if (event.kind === "verdict") next.working = {};
   return { state: next, hits };
 }
 

@@ -195,6 +195,20 @@ describe("git log --graph", () => {
   });
 });
 
+describe("Clef while the judge runs", () => {
+  it("P1 the Clef unit works from the last robot's end until the verdict, live and in a replay", () => {
+    let p = applyPlatform(emptyPlatform(), { kind: "snapshot", taskId: "t", task: task(undefined) }, 0).state;
+    expect(p.working.ai).toBeUndefined();
+    p = applyPlatform(p, { kind: "agent-end", taskId: "t", agent: "ponder", outcome: { end: "done" }, status: "running" }, 1).state;
+    expect(p.working.ai).toBeUndefined();
+    p = applyPlatform(p, { kind: "agent-end", taskId: "t", agent: "testy", outcome: { end: "done" }, status: "finished" }, 2).state;
+    expect(p.working).toEqual({ ai: "scoring 3 diffs…" });
+    const judged = applyPlatform(p, { kind: "verdict", taskId: "t", verdict: verdict() }, 3);
+    expect(judged.state.working).toEqual({});
+    expect(judged.hits.some((h) => h.stage === "ai")).toBe(true);
+  });
+});
+
 describe("fusion in the pipeline", () => {
   it("F7 the fusion stage sits between Clef and the merge, and the verdict lights it", () => {
     expect(STAGES.indexOf("fusion")).toBe(STAGES.indexOf("ai") + 1);

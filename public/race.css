@@ -681,7 +681,7 @@ h2 {
 }
 .unit.used { border-color: #f6821f55; }
 .unit.used::after { background: #f6821f77; }
-.unit.busy { box-shadow: inset 0 1px 0 #ffffff12, 0 0 16px #f6821f40, 0 4px 10px #0006; }
+.unit.busy, .unit.working { box-shadow: inset 0 1px 0 #ffffff12, 0 0 16px #f6821f40, 0 4px 10px #0006; }
 .unit-top { display: flex; align-items: flex-start; gap: 6px; padding: 0 4px; min-height: 28px; }
 .product { font-weight: 800; font-size: 11.5px; line-height: 1.2; min-width: 0; color: #c9cede; letter-spacing: .01em; }
 .unit.used .product { color: #fff; }
@@ -695,7 +695,7 @@ h2 {
 .led { width: 5px; height: 5px; border-radius: 1px; background: #2a2f40; }
 .unit.used .led.power { background: #3ddc97; box-shadow: 0 0 5px #3ddc97; }
 .unit.used .led.act { background: #6b3f1a; }
-.unit.busy .led.act { animation: led-flicker .32s steps(2, jump-none) infinite; animation-delay: calc(var(--k) * -.11s); }
+.unit.busy .led.act, .unit.working .led.act { animation: led-flicker .32s steps(2, jump-none) infinite; animation-delay: calc(var(--k) * -.11s); }
 .vents {
   flex: 1; height: 10px; border-radius: 2px; opacity: .8;
   background: repeating-linear-gradient(90deg, #0d1018 0 2px, transparent 2px 5px);
@@ -705,7 +705,7 @@ h2 {
 .fan-blades { fill: #3a4058; transform-origin: 0 0; }
 .fan-hub { fill: #565e78; }
 .unit.used .fan-blades { fill: #7a6248; animation: spin 2.6s linear infinite; }
-.unit.busy .fan-blades { fill: #f6821f; animation-duration: .35s; }
+.unit.busy .fan-blades, .unit.working .fan-blades { fill: #f6821f; animation-duration: .35s; }
 .screen {
   position: relative; display: flex; align-items: flex-start; gap: 4px; min-height: 34px; overflow: hidden;
   padding: 4px 6px; border-radius: 4px; background: #04060a; border: 1px solid #1c2131;
@@ -721,7 +721,7 @@ h2 {
 .caret { flex: none; align-self: flex-end; width: 6px; height: 11px; margin-bottom: 1px; background: currentColor; opacity: 0; }
 .unit.used .screen { color: #57e3a6; text-shadow: 0 0 6px #3ddc9766; }
 .unit.used .caret { animation: caret 1.05s steps(1) infinite; }
-.unit.busy .screen { border-color: #3ddc9744; }
+.unit.busy .screen, .unit.working .screen { border-color: #3ddc9744; }
 .unit.ping { animation: ping .9s var(--ease); }
 .packet {
   position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 2px; pointer-events: none; z-index: 2;
