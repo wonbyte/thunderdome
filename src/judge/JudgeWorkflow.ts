@@ -11,7 +11,7 @@ import { gitRepoPath } from "../sandbox/policy";
 import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
 import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { clipDiff } from "./diffs";
-import { fusionCandidates, fusionWhy, runFusion, type FusionResult } from "./fusion";
+import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusionCandidates, fusionProblem, fusionWhy, runFusion, type FusionResult } from "./fusion";
 import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
@@ -46,6 +46,11 @@ const FUSE_STEP = {
   retries: { limit: 0, delay: "10 seconds", backoff: "constant" },
   timeout: "10 minutes",
 } as const;
+// No new candidate starts after this; with one test run (FUSE_TEST_TIMEOUT_S) and the push after
+// it, the round ends well inside FUSE_STEP's timeout.
+const FUSE_BUDGET_MS = 5 * 60 * 1_000;
+// A push may not start later than this after the budget.
+const FUSE_PUSH_MS = 2 * 60 * 1_000;
 // Screenshots and Clef questions for every fork, after waiting for the final previews.
 const LOOK_STEP = {
   retries: { limit: 1, delay: "10 seconds", backoff: "constant" },
@@ -251,8 +256,10 @@ async function shipInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   }
 }
 
-// The fusion round runs in its own sandbox on a clone of the winner's fork. It holds a write token
-// for that fork only, and read tokens for the losers' forks.
+// The fusion round in two sandboxes, like the conflict race. The fuse sandbox runs the losers'
+// agent-written tests, so it holds read tokens only; the kept commits leave it as a bundle. A
+// second sandbox holds the winner fork's write token, runs only git, checks the bundle
+// (fusionProblem) and pushes it. Time-boxed so nothing is pushed after the step gives up.
 async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): Promise<FusionResult> {
   const winner = input.forks.find((f) => f.agent === result.winner);
   const judged = result.forks.find((f) => f.agent === result.winner);
@@ -260,32 +267,64 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   const remotes = Object.fromEntries(input.forks.map((f) => [f.agent, { remote: f.remote, branch: f.defaultBranch }]));
   const candidates = fusionCandidates(result.scores.ranked, result.forks, winner.agent, remotes);
   if (candidates.length === 0) return { tried: [] };
-  using fork = await env.ARTIFACTS.get(winner.fork);
-  const write = await fork.createToken("write", TOKEN_TTL_S);
+  const deadline = Date.now() + FUSE_BUDGET_MS;
+  const winnerRead = await readToken(env.ARTIFACTS, winner.fork);
+  const repoTokens: Record<string, string> = { [repoPath(winner.remote)]: winnerRead };
+  for (const c of candidates) {
+    const loser = input.forks.find((f) => f.agent === c.agent);
+    if (loser !== undefined) repoTokens[repoPath(loser.remote)] = await readToken(env.ARTIFACTS, loser.fork);
+  }
   const box = env.SANDBOX.getByName(`fuse-${input.taskId}`);
+  let fused: FusionResult;
+  let bundle: string | undefined;
   try {
-    const repoTokens: Record<string, string> = { [repoPath(winner.remote)]: write.plaintext };
-    for (const c of candidates) {
-      const loser = input.forks.find((f) => f.agent === c.agent);
-      if (loser !== undefined) repoTokens[repoPath(loser.remote)] = await readToken(env.ARTIFACTS, loser.fork);
-    }
-    const props: OutboundProps = { gitHost: new URL(winner.remote).hostname, gitToken: write.plaintext, repoTokens };
+    const props: OutboundProps = { gitHost: new URL(winner.remote).hostname, gitToken: winnerRead, repoTokens };
     await retry(() => box.clone(props, winner.remote), { attempts: 10, delayMs: 2_000, shouldRetry: () => true });
-    const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e), ai: env.AI };
-    const fused = await runFusion(deps, { task: input.task, winner: winner.agent, testsPassed: judged.tests.passed, candidates });
-    if (fused.commit !== undefined) {
-      const pushed = await box.exec(["git", "push", "--quiet", "origin", `HEAD:refs/heads/${winner.defaultBranch}`]);
-      if (pushed.exitCode !== 0) {
-        // Nothing reached the fork, so nothing was added after all.
-        const error = `pushing the fusion failed: ${pushed.stderr.slice(-300)}`;
-        return { tried: fused.tried.map((t) => (t.status === "added" ? { ...t, status: "failed" as const, note: error } : t)), error };
-      }
-    }
-    return fused;
+    const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e), ai: env.AI, now: () => Date.now(), deadline };
+    fused = await runFusion(deps, { task: input.task, winner: winner.agent, testsPassed: judged.tests.passed, candidates });
+    if (fused.commit !== undefined && fused.base !== undefined) bundle = await fusionBundle(deps, fused.base, fused.commit);
   } finally {
     await box.stop().catch((cause: unknown) => console.error({ event: "fuse.stop_failed", error: String(cause) }));
+  }
+  if (bundle === undefined) return fused;
+  const problem = bundle.length > FUSE_BUNDLE_MAX ? "the fusion bundle is too big to push" : Date.now() > deadline + FUSE_PUSH_MS ? "the fusion round ran out of time" : await pushFusion(env, winner, winnerRead, fused, bundle);
+  if (problem === undefined) return fused;
+  // Nothing reached the fork, so nothing was added after all.
+  const { commit: _commit, ...rest } = fused;
+  return { ...rest, tried: fused.tried.map((t) => (t.status === "added" ? { ...t, status: "failed" as const, note: problem } : t)), error: problem };
+}
+
+// Pushes a checked fusion bundle to the winner's fork. Runs no agent code. Returns why it did not push.
+async function pushFusion(env: Env, winner: JudgeFork, winnerRead: string, fused: FusionResult, bundle: string): Promise<string | undefined> {
+  using fork = await env.ARTIFACTS.get(winner.fork);
+  const write = await fork.createToken("write", TOKEN_TTL_S);
+  const box = env.SANDBOX.getByName(`fuse-push-${winner.fork}`);
+  try {
+    // The write token goes only to the winner's fork; anything else on the host gets the read token.
+    const props: OutboundProps = { gitHost: new URL(winner.remote).hostname, gitToken: winnerRead, repoTokens: { [repoPath(winner.remote)]: write.plaintext } };
+    await retry(() => box.clone(props, winner.remote), { attempts: 10, delayMs: 2_000, shouldRetry: () => true });
+    await writeBundle(box, bundle, FUSE_BUNDLE_PATH);
+    const fetched = await box.exec(["git", "fetch", "--quiet", FUSE_BUNDLE_PATH, `+${FUSE_REF}:${FUSE_REF}`]);
+    if (fetched.exitCode !== 0) return `the fusion bundle did not load: ${fetched.stderr.slice(-200)}`;
+    const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e) };
+    const problem = await fusionProblem(deps, fused);
+    if (problem !== undefined) return problem;
+    const pushed = await box.exec(["git", "push", "--quiet", "origin", `${FUSE_REF}:refs/heads/${winner.defaultBranch}`]);
+    return pushed.exitCode === 0 ? undefined : `pushing the fusion failed: ${pushed.stderr.slice(-300)}`;
+  } finally {
+    await box.stop().catch((cause: unknown) => console.error({ event: "fuse.push_stop_failed", error: String(cause) }));
     await fork.revokeToken(write.id).catch((cause: unknown) => console.error({ event: "fuse.revoke_failed", error: String(cause) }));
   }
+}
+
+// Writes a base64 bundle into a sandbox in chunks (one exec argument has a size limit), then decodes it.
+async function writeBundle(box: Sandbox, bundle: string, path: string): Promise<void> {
+  const b64 = `${path}.b64`;
+  await mustIn(box, ["rm", "-f", b64, path]);
+  for (let i = 0; i < bundle.length; i += BUNDLE_CHUNK) {
+    await mustIn(box, ["/bin/sh", "-c", 'printf %s "$1" >> "$2"', "chunk", bundle.slice(i, i + BUNDLE_CHUNK), b64]);
+  }
+  await mustIn(box, ["/bin/sh", "-c", 'base64 -d "$1" > "$2"', "decode", b64, path]);
 }
 
 // The conflict race runs in its own sandbox with read tokens and the model API. The source write
@@ -368,12 +407,7 @@ function shipGit(
     async importBundle(bundle) {
       opened ??= open();
       const box = await opened;
-      const b64 = `${BUNDLE_PATH}.b64`;
-      await mustIn(box, ["rm", "-f", b64, BUNDLE_PATH]);
-      for (let i = 0; i < bundle.length; i += BUNDLE_CHUNK) {
-        await mustIn(box, ["/bin/sh", "-c", 'printf %s "$1" >> "$2"', "chunk", bundle.slice(i, i + BUNDLE_CHUNK), b64]);
-      }
-      await mustIn(box, ["/bin/sh", "-c", 'base64 -d "$1" > "$2"', "decode", b64, BUNDLE_PATH]);
+      await writeBundle(box, bundle, BUNDLE_PATH);
       return BUNDLE_PATH;
     },
     // Best effort: a failed stop or revoke must not lose the ship result.

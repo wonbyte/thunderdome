@@ -1,14 +1,28 @@
 // The fusion round against real git: real repos, fetches, checkouts and commits. Only `npm test`
 // and Clef are stand-ins.
 import { execFile } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { BETTER_QUESTION, COVERAGE_QUESTION, FUSE_THRESHOLD, fusionCandidates, fusionWhy, isTestFile, runFusion, type CommandResult, type FuseDeps } from "../src/judge/fusion";
+import {
+  BETTER_QUESTION,
+  COVERAGE_QUESTION,
+  FUSE_BUNDLE_PATH,
+  FUSE_REF,
+  FUSE_THRESHOLD,
+  fusionBundle,
+  fusionCandidates,
+  fusionProblem,
+  fusionWhy,
+  isTestFile,
+  runFusion,
+  type CommandResult,
+  type FuseDeps,
+} from "../src/judge/fusion";
 import type { JudgedFork } from "../src/judge/judge";
 import { scoreForks, type ForkInput } from "../src/judge/score";
 
@@ -272,5 +286,67 @@ describe("isTestFile", () => {
   it("knows test files by folder or name", () => {
     for (const f of ["test/a.ts", "src/test/a.ts", "tests/x.py", "__tests__/a.js", "src/a.test.ts", "a.spec.js", "test/zippy.test.ts"]) expect(isTestFile(f), f).toBe(true);
     for (const f of ["src/a.ts", "testing.md", "src/latest/a.ts", "contest/a.ts", "README.md"]) expect(isTestFile(f), f).toBe(false);
+  });
+});
+
+describe("the fusion push", () => {
+  // Runs a fusion that keeps testy's test, bundles it, then makes a fresh clone of the winner
+  // (the push sandbox) and loads the bundle into it, as the workflow does.
+  async function fusedAndLoaded(tamper?: (repo: string) => Promise<void>) {
+    const { forks } = await setup();
+    const deps = fuseDeps();
+    const fused = await runFusion(deps, {
+      task: "Fix the app",
+      winner: "ponder",
+      testsPassed: 2,
+      candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
+    });
+    const repo = join(root, "workspace/repo");
+    if (tamper !== undefined) await tamper(repo);
+    const commit = await git(repo, "rev-parse", "HEAD");
+    const bundle = await fusionBundle(deps, fused.base!, commit);
+    const saved = join(root, "saved.bundle");
+    writeFileSync(saved, Buffer.from(bundle, "base64"));
+    rmSync(repo, { recursive: true, force: true });
+    await git(root, "clone", "-q", forks.ponder!, repo);
+    copyFileSync(saved, local(FUSE_BUNDLE_PATH));
+    await git(repo, "fetch", "-q", local(FUSE_BUNDLE_PATH), `+${FUSE_REF}:${FUSE_REF}`);
+    return { deps, fused: { ...fused, commit }, repo, forks };
+  }
+
+  it("passes a bundle that only adds the kept files on top of the winner's head", async () => {
+    const { deps, fused, repo } = await fusedAndLoaded();
+    expect(fused.base).toBe(await git(repo, "rev-parse", "HEAD"));
+    expect(await fusionProblem(deps, fused)).toBeUndefined();
+    expect(await git(repo, "log", "-1", "--format=%an", FUSE_REF)).toBe("Thunderdome testy");
+  });
+
+  it("refuses a bundle whose commits change a file no gate passed", async () => {
+    const { deps, fused } = await fusedAndLoaded(async (repo) => {
+      writeFileSync(join(repo, "app.txt"), "sneaky\n");
+      await git(repo, "commit", "-qam", "sneaky");
+    });
+    expect(await fusionProblem(deps, fused)).toBe("the fusion changes files no gate passed: app.txt");
+  });
+
+  it("refuses when the winner's fork moved, or the bundle does not hold the fused commit", async () => {
+    const { deps, fused, repo } = await fusedAndLoaded();
+    expect(await fusionProblem(deps, { ...fused, commit: "0".repeat(40) })).toBe("the fusion bundle does not hold the fused commit");
+    writeFileSync(join(repo, "app.txt"), "moved\n");
+    await git(repo, "commit", "-qam", "moved");
+    expect(await fusionProblem(deps, fused)).toMatch(/^the winner's fork moved during the fusion round/);
+  });
+
+  it("skips candidates once the round is out of time", async () => {
+    const { forks } = await setup();
+    const deps = { ...fuseDeps(), now: () => 100, deadline: 50 };
+    const result = await runFusion(deps, {
+      task: "Fix the app",
+      winner: "ponder",
+      testsPassed: 2,
+      candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
+    });
+    expect(result.tried).toEqual([{ agent: "testy", files: ["test-cart.txt"], status: "rejected", note: "the fusion round ran out of time" }]);
+    expect(result.commit).toBeUndefined();
   });
 });

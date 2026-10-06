@@ -92,10 +92,16 @@ h2 {
   position: relative; margin-top: 14px; padding: 14px; border-radius: 14px;
   background: radial-gradient(120% 140% at 0% 0%, #7fe3ff1c, transparent 55%), #0b0e18;
   border: 1px solid #7fe3ff55;
-  box-shadow: 0 0 0 1px #7fe3ff14, 0 0 28px #7fe3ff1f;
-  animation: mem-glow 3.2s ease-in-out infinite;
+  box-shadow: 0 0 0 1px #7fe3ff14, 0 0 22px #7fe3ff14;
 }
-@keyframes mem-glow { 0%, 100% { box-shadow: 0 0 0 1px #7fe3ff14, 0 0 22px #7fe3ff14; } 50% { box-shadow: 0 0 0 1px #7fe3ff33, 0 0 34px #7fe3ff33; } }
+/* The pulse is a second, stronger glow faded in and out: opacity runs on the compositor, while an
+   animated box-shadow would repaint the box every frame. */
+.memory::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  box-shadow: 0 0 0 1px #7fe3ff33, 0 0 34px #7fe3ff33;
+  opacity: 0; animation: mem-glow 3.2s ease-in-out infinite;
+}
+@keyframes mem-glow { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
 .mem-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .mem-chip {
   flex: none; font-size: 11.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
@@ -241,7 +247,7 @@ h2 {
   align-self: center; font: 800 10px var(--mono); color: #07080d; background: var(--cyan);
   padding: 1px 6px; border-radius: 999px; box-shadow: 0 0 10px #7fe3ff99; cursor: help;
 }
-@media (prefers-reduced-motion: reduce) { .memory { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .memory::after, .act-flag .fx-mascot, .act-push .fx-mascot { animation: none; } }
 .meta { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); }
 .pips { display: inline-flex; gap: 3px; align-items: center; }
 .pips i { width: 7px; height: 7px; border-radius: 2px; background: #ffffff1a; }

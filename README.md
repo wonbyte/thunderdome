@@ -360,6 +360,8 @@ one storage value.
   made for it (a source given as `repo` stays), its stored state, and its gallery entry. Send
   `{ ids }` for some races or `{}` for every race in the list. A race that is running or being
   judged is skipped. It needs `ADMIN_TOKEN` and returns `{ purged, skipped }`. This can't be undone.
+  Workers Previews are not deleted; remove them with `npx wrangler preview delete --name
+  <race id>-<agent> --worker-name <preview worker> -y` (and `<race id>-base` for the before page).
 
 ```sh
 curl https://thunderdome.<your-subdomain>.workers.dev/tasks
@@ -444,8 +446,12 @@ winner's fix, then three gates must pass:
    they repeat it, stray from it, or only make it bigger?
 3. That yes is at least 0.6.
 
-An addition that passes becomes its own commit on the winner's fork, authored by the robot that
-wrote it ("Thunderdome fusion: add testy's test/cart.test.ts to ponder's fix"), so `git log` and
+The sandbox that runs the losers' tests (agent-written code) holds read tokens only. The kept
+commits leave it as a git bundle; a second sandbox with the winner fork's write token runs only
+git, checks that the bundle builds on the fork's current head and changes only the files that
+passed the gates, and pushes it. The round is time-boxed (no new try after 5 minutes), so it never
+pushes after its step has given up. An addition that passes becomes its own commit on the winner's
+fork, authored by the robot that wrote it ("Thunderdome fusion: add testy's test/cart.test.ts to ponder's fix"), so `git log` and
 `git blame` credit each robot. The ship then merges the fused fork as usual, the fused commit gets
 its own preview, and the why gains a "Fusion" section listing every try and why it was kept or
 left out. The race page shows what was fused in the winner's banner. Only whole files the winner

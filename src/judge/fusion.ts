@@ -17,6 +17,12 @@ export const FUSE_TEST_TIMEOUT_S = 180;
 export const FUSE_DIFF_CHARS = 40_000;
 // The winner fork's clone (ThunderdomeSandbox REPO_DIR).
 export const FUSE_REPO_DIR = "/workspace/repo";
+// The kept commits leave the read-only fusion sandbox as a bundle of this ref, so the sandbox that
+// runs the losers' tests never holds a write token.
+export const FUSE_REF = "refs/fusion/result";
+export const FUSE_BUNDLE_PATH = "/workspace/fusion.bundle";
+// Fusion bundles past this many base64 characters are not pushed (test files are small).
+export const FUSE_BUNDLE_MAX = 512 * 1_024;
 const NOTE_CHARS = 300;
 // The fusion commit names Thunderdome as committer; its author is the agent whose files it adds.
 const COMMITTER = { GIT_COMMITTER_NAME: "Thunderdome", GIT_COMMITTER_EMAIL: "thunderdome@thunderdome.local" };
@@ -43,6 +49,9 @@ export interface FuseDeps {
   exec(argv: string[], cwd: string, env?: Record<string, string>): Promise<CommandResult>;
   ai: AiRunner;
   sleep?: (ms: number) => Promise<void>;
+  // When now() passes deadline (ms), candidates not yet tried are skipped, so the round ends inside its step.
+  now?: () => number;
+  deadline?: number;
 }
 
 // "coverage": the additions are all tests, so Clef judges what they check that the winner's tests do
@@ -69,6 +78,7 @@ export interface FuseTry {
 
 export interface FusionResult {
   tried: FuseTry[];
+  base?: string; // the winner fork's head the fusion started from
   commit?: string; // the winner fork's new head, only when something was added
   error?: string; // why the fusion round itself did not run
 }
@@ -163,11 +173,16 @@ const round2 = (x: number): number => Math.round(x * 100) / 100;
 export async function runFusion(deps: FuseDeps, input: FuseInput): Promise<FusionResult> {
   const dir = FUSE_REPO_DIR;
   const tried: FuseTry[] = [];
+  const base = (await must(deps, ["git", "rev-parse", "HEAD"], dir)).stdout.trim();
   let passed = input.testsPassed;
   let added = false;
   for (const candidate of input.candidates) {
     const attempt: FuseTry = { agent: candidate.agent, files: candidate.files, status: "failed" };
     tried.push(attempt);
+    if (deps.deadline !== undefined && (deps.now ?? Date.now)() > deps.deadline) {
+      Object.assign(attempt, { status: "rejected", note: "the fusion round ran out of time" });
+      continue;
+    }
     try {
       const outcome = await tryOne(deps, input, candidate, passed);
       Object.assign(attempt, outcome);
@@ -178,10 +193,38 @@ export async function runFusion(deps: FuseDeps, input: FuseInput): Promise<Fusio
     } catch (err) {
       attempt.note = clip(err instanceof Error ? err.message : String(err), NOTE_CHARS);
     }
-    if (attempt.status !== "added") await reset(deps, dir);
+    // Drops a rejected try, and whatever the tests wrote after a kept one.
+    await reset(deps, dir);
   }
-  if (!added) return { tried };
-  return { tried, commit: (await must(deps, ["git", "rev-parse", "HEAD"], dir)).stdout.trim() };
+  if (!added) return { tried, base };
+  return { tried, base, commit: (await must(deps, ["git", "rev-parse", "HEAD"], dir)).stdout.trim() };
+}
+
+// The kept commits (base..commit) as a base64 git bundle of FUSE_REF.
+export async function fusionBundle(deps: Pick<FuseDeps, "exec">, base: string, commit: string): Promise<string> {
+  const dir = FUSE_REPO_DIR;
+  await must(deps, ["git", "update-ref", FUSE_REF, commit], dir);
+  await must(deps, ["git", "bundle", "create", "--quiet", FUSE_BUNDLE_PATH, FUSE_REF, `^${base}`], dir);
+  return (await must(deps, ["base64", "-w0", FUSE_BUNDLE_PATH], dir)).stdout.trim();
+}
+
+// Run in the push sandbox (a fresh clone of the winner fork, after the bundle is fetched into
+// FUSE_REF). The bundle came from a sandbox that ran agent-written tests, so it is pushed only when
+// the fork has not moved, the fusion only adds commits on top of it, and it changes only the files
+// that passed the gates. Returns why not, or undefined when it may be pushed.
+export async function fusionProblem(deps: Pick<FuseDeps, "exec">, fusion: FusionResult): Promise<string | undefined> {
+  const dir = FUSE_REPO_DIR;
+  const head = (await must(deps, ["git", "rev-parse", "HEAD"], dir)).stdout.trim();
+  if (fusion.base === undefined || head !== fusion.base) return `the winner's fork moved during the fusion round (${head.slice(0, 7)})`;
+  const fused = (await must(deps, ["git", "rev-parse", FUSE_REF], dir)).stdout.trim();
+  if (fused !== fusion.commit) return "the fusion bundle does not hold the fused commit";
+  const ancestor = await deps.exec(["git", "merge-base", "--is-ancestor", head, fused], dir);
+  if (ancestor.exitCode !== 0) return "the fused commit does not build on the winner's fork";
+  const allowed = new Set(fusion.tried.filter((t) => t.status === "added").flatMap((t) => t.files));
+  const changed = (await must(deps, ["git", "diff", "--name-only", "--no-renames", head, fused], dir)).stdout.split("\n").filter((f) => f !== "");
+  const extra = changed.filter((f) => !allowed.has(f));
+  if (extra.length > 0) return `the fusion changes files no gate passed: ${clip(extra.join(", "), 200)}`;
+  return undefined;
 }
 
 async function tryOne(deps: FuseDeps, input: FuseInput, c: FuseCandidate, passed: number): Promise<Omit<FuseTry, "agent" | "files">> {
@@ -258,7 +301,7 @@ function outputOf(result: CommandResult): string {
   return `${result.stdout}\n${result.stderr}`;
 }
 
-async function must(deps: FuseDeps, argv: string[], cwd: string, env?: Record<string, string>): Promise<CommandResult> {
+async function must(deps: Pick<FuseDeps, "exec">, argv: string[], cwd: string, env?: Record<string, string>): Promise<CommandResult> {
   const result = await deps.exec(argv, cwd, env);
   if (result.exitCode !== 0) throw new Error(`${argv.slice(0, 3).join(" ")} exited with ${result.exitCode}: ${result.stderr.slice(-300)}`);
   return result;
