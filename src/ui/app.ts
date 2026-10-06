@@ -1,7 +1,7 @@
 // The race page: follows a race live (WebSocket) or replays a recorded one (?replay), and draws
 // the board, the Cloudflare pipeline under it, the judging and the before/after compare.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
-import { AGENT_IDS, applyEvent, applyScores, colorFor, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
+import { AGENT_IDS, applyEvent, applyScores, colorFor, styleLabel, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
 import type { Action, Board, BoardEvent, Fighter, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
@@ -712,6 +712,14 @@ function renderGraph(b: Board): void {
 
 // What the robots were told about earlier races on this app. Rebuilt only when it changes.
 let memoryKey = "";
+// Earlier races in this race's memory, for the tag on each robot's nameplate.
+let memoryCount = 0;
+
+function setMemoryTag(tag: HTMLElement, agent: string): void {
+  tag.hidden = memoryCount === 0;
+  tag.textContent = `◆ ${memoryCount}`;
+  tag.title = `${displayName(agent)} remembers ${memoryCount} earlier race${memoryCount === 1 ? "" : "s"} on this app`;
+}
 function renderMemory(memory: WireMemory[] | undefined): void {
   const list = memory ?? [];
   const key = JSON.stringify(list);
@@ -719,8 +727,13 @@ function renderMemory(memory: WireMemory[] | undefined): void {
   memoryKey = key;
   const box = byId("memory");
   box.hidden = list.length === 0;
+  memoryCount = list.length;
+  for (const [agent, view] of bots) {
+    const tag = view.root.querySelector<HTMLElement>(".mem-tag");
+    if (tag !== null) setMemoryTag(tag, agent);
+  }
   const races = list.length === 1 ? "1 earlier race" : `${list.length} earlier races`;
-  byId("memory-count").textContent = `Every robot started this race knowing what ${races} on this app taught.`;
+  byId("memory-count").textContent = `The robots remember ${races} on this app`;
   byId("memory-list").replaceChildren(
     ...list.map((m) => {
       const card = el("li", "mem-card");
@@ -840,7 +853,11 @@ function botView(f: Fighter, index: number): BotView {
   body.append(meter);
   const plate = el("div", "plate");
   plate.append(el("span", "name", displayName(f.agent)));
-  if (displayName(f.agent) !== f.agent) plate.append(el("span", "style", f.agent));
+  const style = styleLabel(f.agent);
+  if (style !== undefined) plate.append(el("span", "style", style));
+  const tag = el("span", "mem-tag");
+  setMemoryTag(tag, f.agent);
+  plate.append(tag);
   const pips = el("span", "pips");
   const state = el("span", "state");
   const meta = el("div", "meta");

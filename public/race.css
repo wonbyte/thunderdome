@@ -88,14 +88,24 @@ h2 {
   margin: 0; font-size: 15px; line-height: 1.55; color: #cfd4e4;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
 }
-.memory { margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--line); }
-.mem-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.mem-chip {
-  font-size: 10.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
-  color: var(--cyan); padding: 3px 9px; border-radius: 999px;
-  border: 1px solid #7fe3ff44; background: #7fe3ff12;
+.memory {
+  position: relative; margin-top: 14px; padding: 14px; border-radius: 14px;
+  background: radial-gradient(120% 140% at 0% 0%, #7fe3ff1c, transparent 55%), #0b0e18;
+  border: 1px solid #7fe3ff55;
+  box-shadow: 0 0 0 1px #7fe3ff14, 0 0 28px #7fe3ff1f;
+  animation: mem-glow 3.2s ease-in-out infinite;
 }
+@keyframes mem-glow { 0%, 100% { box-shadow: 0 0 0 1px #7fe3ff14, 0 0 22px #7fe3ff14; } 50% { box-shadow: 0 0 0 1px #7fe3ff33, 0 0 34px #7fe3ff33; } }
+.mem-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.mem-chip {
+  flex: none; font-size: 11.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: #07080d; padding: 6px 11px; border-radius: 999px;
+  background: var(--cyan); box-shadow: 0 0 16px #7fe3ff88;
+}
+.mem-title { display: grid; gap: 2px; min-width: 0; }
+.mem-title strong { font-size: 16px; color: var(--text); }
 .mem-note { font-size: 12.5px; color: var(--dim); }
+@media (max-width: 560px) { .mem-head { flex-direction: column; align-items: flex-start; gap: 8px; } }
 .mem-cards { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
 .mem-card {
   --color: var(--text);
@@ -227,6 +237,11 @@ h2 {
 }
 .name { font-weight: 800; color: color-mix(in srgb, var(--color) 70%, white); letter-spacing: .02em; }
 .style { font: 600 10px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
+.mem-tag {
+  align-self: center; font: 800 10px var(--mono); color: #07080d; background: var(--cyan);
+  padding: 1px 6px; border-radius: 999px; box-shadow: 0 0 10px #7fe3ff99; cursor: help;
+}
+@media (prefers-reduced-motion: reduce) { .memory { animation: none; } }
 .meta { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); }
 .pips { display: inline-flex; gap: 3px; align-items: center; }
 .pips i { width: 7px; height: 7px; border-radius: 2px; background: #ffffff1a; }

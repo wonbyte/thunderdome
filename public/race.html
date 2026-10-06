@@ -36,7 +36,13 @@
       <h2>Task</h2>
       <p id="prompt" class="prompt">Loading the race…</p>
       <div id="memory" class="memory" hidden>
-        <div class="mem-head"><span class="mem-chip">◆ Memory</span><span id="memory-count" class="mem-note"></span></div>
+        <div class="mem-head">
+          <span class="mem-chip">◆ Memory</span>
+          <div class="mem-title">
+            <strong id="memory-count"></strong>
+            <span class="mem-note">Each robot was told who won and why, so it starts the race knowing what the judge rewards.</span>
+          </div>
+        </div>
         <ul id="memory-list" class="mem-cards"></ul>
       </div>
     </section>
