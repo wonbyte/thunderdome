@@ -727,7 +727,7 @@ function renderMemory(memory: WireMemory[] | undefined): void {
       const what = el("span", "what", `“${m.prompt}”`);
       what.title = m.prompt;
       item.append(el("span", "who", `${displayName(m.winner)} won`), what);
-      if (m.headline !== undefined) item.append(el("span", "why", whyWithNames(m.headline, [m.winner, ...AGENT_IDS])));
+      if (m.headline !== undefined) item.append(el("span", "mem-why", whyWithNames(m.headline, [m.winner, ...AGENT_IDS])));
       return item;
     }),
   );

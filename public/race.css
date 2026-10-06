@@ -95,7 +95,7 @@ h2 {
 .memory li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 8px; font-size: 13px; line-height: 1.45; }
 .memory .who { color: var(--color, var(--text)); font-weight: 700; }
 .memory .what { color: #c9cede; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.memory .why { grid-column: 2; color: var(--faint); font-size: 12px; }
+.memory .mem-why { grid-column: 2; color: var(--faint); font-size: 12px; }
 .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
 .thunderdome > * { min-width: 0; }
 .empty { margin: 0; color: var(--faint); }
