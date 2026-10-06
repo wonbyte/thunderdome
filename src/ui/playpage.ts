@@ -37,7 +37,7 @@ const TEMPLATES: [Template, ...Template[]] = [
     title: "Four parts, one fusion",
     blurb: "Four separate parts, tests for two: losers' hunks can join the winner.",
     prompt:
-      "The shop page in `src/shop.ts` has four parts. Build 1 and 2, which the tests cover: 1) Sale badge: a product on sale shows \"Sale -N%\" (the percent off, rounded). 2) Sort: `/?sort=price` lists the cheapest first (sale prices count), `/?sort=name` lists A to Z. Then build ONE of 3 and 4, your pick (both are wanted; another robot may build the other): 3) Cart line: `/?cart=0` says \"Your cart is empty\", 1 says \"1 item in your cart\", more says \"N items in your cart\". 4) Prices: round a fraction of a cent to the nearest cent and add a thousands comma (\"$1,299.00\").",
+      "The shop page in `src/shop.ts` has four parts. Build 1 and 2, which the tests cover: 1) Sale badge: a product on sale shows \"Sale -N%\" (the percent off, rounded). 2) Sort: `/?sort=price` lists the cheapest first (sale prices count), `/?sort=name` lists A to Z. Then Zippy and Snip build part 4 and everyone else builds part 3 (both are wanted; the judge can fuse them): 3) Cart line: `/?cart=0` says \"Your cart is empty\", 1 says \"1 item in your cart\", more says \"N items in your cart\". 4) Prices: round a fraction of a cent to the nearest cent and add a thousands comma (\"$1,299.00\").",
   },
 ];
 const MIN = 10;

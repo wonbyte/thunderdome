@@ -17,7 +17,7 @@ curl -X POST $THUNDERDOME/tasks -H "authorization: Bearer $ADMIN_TOKEN" -d '{"te
 | `ui` | `thunderdome-ui` | Visible UI change: the tests pin down a sale badge and a price sort, the look is up to each agent, so the 3 previews differ. |
 | `clash` | `thunderdome-clash` | Claim clash: a reviews feature that every agent must route through `src/routes.ts`. |
 | | | `clash-full` is the same app with a bigger prompt: the tests cover only the GET API and the stars on the page, so the POST API, the quoted review and the "Top rated" badge are left to each agent. The fixes differ, and task fit decides more than claim order. |
-| `fusion` | `thunderdome-fusion` | Fusion: four parts in four functions of `src/shop.ts`, far apart, with failing tests for two. The prompt asks each robot for only one of the two untested parts, so robots that pick differently leave the winner a part it never touched, and the fusion round can add a loser's hunk (say, the cart line) to the winner's fix. |
+| `fusion` | `thunderdome-fusion` | Fusion: four parts in four functions of `src/shop.ts`, far apart, with failing tests for two. The prompt splits the two untested parts by robot (Zippy and Snip build part 4, the rest part 3), so whoever wins, a robot on the other part has a hunk in a function the winner never touched, and the fusion round can add a loser's hunk (say, the cart line) to the winner's fix. |
 
 ## Prompts
 
@@ -41,7 +41,7 @@ curl -X POST $THUNDERDOME/tasks -H "authorization: Bearer $ADMIN_TOKEN" -d '{"te
 
 **fusion**
 
-> The shop page in `src/shop.ts` has four parts. Build 1 and 2, which the tests cover: 1) Sale badge: a product on sale shows "Sale -N%" (the percent off, rounded). 2) Sort: `/?sort=price` lists the cheapest first (sale prices count), `/?sort=name` lists A to Z. Then build ONE of 3 and 4, your pick (both are wanted; another robot may build the other): 3) Cart line: `/?cart=0` says "Your cart is empty", 1 says "1 item in your cart", more says "N items in your cart". 4) Prices: round a fraction of a cent to the nearest cent and add a thousands comma ("$1,299.00").
+> The shop page in `src/shop.ts` has four parts. Build 1 and 2, which the tests cover: 1) Sale badge: a product on sale shows "Sale -N%" (the percent off, rounded). 2) Sort: `/?sort=price` lists the cheapest first (sale prices count), `/?sort=name` lists A to Z. Then Zippy and Snip build part 4 and everyone else builds part 3 (both are wanted; the judge can fuse them): 3) Cart line: `/?cart=0` says "Your cart is empty", 1 says "1 item in your cart", more says "N items in your cart". 4) Prices: round a fraction of a cent to the nearest cent and add a thousands comma ("$1,299.00").
 
 **clash-full** (template `thunderdome-clash`; the video race)
 
