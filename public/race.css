@@ -354,6 +354,14 @@ h2 {
 .banner[data-kind="win"] { border-color: var(--color); box-shadow: 0 0 40px color-mix(in srgb, var(--color) 45%, transparent); }
 .banner[data-kind="win"] strong { color: color-mix(in srgb, var(--color) 65%, white); font-size: 22px; }
 .banner.show { animation: drop .6s var(--ease); }
+.fused { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px; margin-top: 8px; }
+.banner .fused b { font: 800 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+.banner .fused-chip {
+  font: 700 11.5px var(--mono); padding: 2px 8px; border-radius: 999px;
+  color: color-mix(in srgb, var(--color) 70%, white);
+  background: color-mix(in srgb, var(--color) 18%, #0c0f1c);
+  border: 1px solid color-mix(in srgb, var(--color) 55%, transparent);
+}
 .banner em { max-width: min(560px, 80vw); white-space: normal; font: 600 12.5px/1.4 var(--sans); font-style: normal; color: #d5d9e6; margin-top: 4px; }
 .decided {
   width: fit-content; max-width: 100%; margin: 0 auto 48px; padding: 8px 16px; border-radius: 12px;

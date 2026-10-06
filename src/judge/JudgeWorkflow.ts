@@ -11,6 +11,7 @@ import { gitRepoPath } from "../sandbox/policy";
 import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
 import { shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { clipDiff } from "./diffs";
+import { fusionCandidates, fusionWhy, runFusion, type FusionResult } from "./fusion";
 import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
@@ -39,6 +40,11 @@ const FORK_STEP = {
 const SHIP_STEP = {
   retries: { limit: 1, delay: "30 seconds", backoff: "constant" },
   timeout: "20 minutes",
+} as const;
+// Tests and one Clef question per losing fork with new files. No retries: see the fuse step.
+const FUSE_STEP = {
+  retries: { limit: 0, delay: "10 seconds", backoff: "constant" },
+  timeout: "10 minutes",
 } as const;
 // Screenshots and Clef questions for every fork, after waiting for the final previews.
 const LOOK_STEP = {
@@ -85,7 +91,18 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
     const [looked, ...judged] = await Promise.all([looking, ...judging]);
     const forks = judged.map((text) => JSON.parse(text) as JudgedFork);
     const look = JSON.parse(looked) as LookResult;
-    const result = { ...decide(input, applyLook(forks, look)), look };
+    const decided = { ...decide(input, applyLook(forks, look)), look };
+    // The fusion round tries the losers' other files on top of the winner and pushes what it keeps
+    // to the winner's fork, so the ship merges it. Not retried: a retry after the push would find
+    // nothing new. A failed round is only noted; the winner ships as judged.
+    let fusedText: string;
+    try {
+      fusedText = await step.do("fuse", FUSE_STEP, async () => JSON.stringify(await fuseInSandbox(this.env, input, decided)));
+    } catch (cause) {
+      fusedText = JSON.stringify({ tried: [], error: `the fusion step failed: ${String(cause).slice(0, 300)}` } satisfies FusionResult);
+    }
+    const fusion = JSON.parse(fusedText) as FusionResult;
+    const result = { ...decided, why: `${decided.why}${fusionWhy(fusion)}`, fusion };
     // JSON text, like the fork steps: ShipResult has optional keys.
     const shipped = await step.do("ship", SHIP_STEP, async () => JSON.stringify(await shipInSandbox(this.env, input, result)));
     const ship = JSON.parse(shipped) as ShipResult;
@@ -102,6 +119,7 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
         ...(decided === undefined ? {} : { decidedBy: decided }),
         ...(line === undefined ? {} : { headline: line }),
         ...(point === undefined ? {} : { lesson: point }),
+        ...(fusion.tried.length === 0 && fusion.error === undefined ? {} : { fusion }),
       });
       // 409: a retried step already saved it.
       if (!saved.ok && saved.status !== 409) throw new Error(`Saving the verdict failed (${saved.status}): ${saved.error}`);
@@ -230,6 +248,43 @@ async function shipInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
     return await shipTask(deps(git.run, resolver), ship);
   } finally {
     await git.close();
+  }
+}
+
+// The fusion round runs in its own sandbox on a clone of the winner's fork. It holds a write token
+// for that fork only, and read tokens for the losers' forks.
+async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): Promise<FusionResult> {
+  const winner = input.forks.find((f) => f.agent === result.winner);
+  const judged = result.forks.find((f) => f.agent === result.winner);
+  if (winner === undefined || judged === undefined) return { tried: [] };
+  const remotes = Object.fromEntries(input.forks.map((f) => [f.agent, { remote: f.remote, branch: f.defaultBranch }]));
+  const candidates = fusionCandidates(result.scores.ranked, result.forks, winner.agent, remotes);
+  if (candidates.length === 0) return { tried: [] };
+  using fork = await env.ARTIFACTS.get(winner.fork);
+  const write = await fork.createToken("write", TOKEN_TTL_S);
+  const box = env.SANDBOX.getByName(`fuse-${input.taskId}`);
+  try {
+    const repoTokens: Record<string, string> = { [repoPath(winner.remote)]: write.plaintext };
+    for (const c of candidates) {
+      const loser = input.forks.find((f) => f.agent === c.agent);
+      if (loser !== undefined) repoTokens[repoPath(loser.remote)] = await readToken(env.ARTIFACTS, loser.fork);
+    }
+    const props: OutboundProps = { gitHost: new URL(winner.remote).hostname, gitToken: write.plaintext, repoTokens };
+    await retry(() => box.clone(props, winner.remote), { attempts: 10, delayMs: 2_000, shouldRetry: () => true });
+    const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e), ai: env.AI };
+    const fused = await runFusion(deps, { task: input.task, winner: winner.agent, testsPassed: judged.tests.passed, candidates });
+    if (fused.commit !== undefined) {
+      const pushed = await box.exec(["git", "push", "--quiet", "origin", `HEAD:refs/heads/${winner.defaultBranch}`]);
+      if (pushed.exitCode !== 0) {
+        // Nothing reached the fork, so nothing was added after all.
+        const error = `pushing the fusion failed: ${pushed.stderr.slice(-300)}`;
+        return { tried: fused.tried.map((t) => (t.status === "added" ? { ...t, status: "failed" as const, note: error } : t)), error };
+      }
+    }
+    return fused;
+  } finally {
+    await box.stop().catch((cause: unknown) => console.error({ event: "fuse.stop_failed", error: String(cause) }));
+    await fork.revokeToken(write.id).catch((cause: unknown) => console.error({ event: "fuse.revoke_failed", error: String(cause) }));
   }
 }
 

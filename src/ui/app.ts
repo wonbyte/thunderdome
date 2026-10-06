@@ -993,14 +993,27 @@ function fireBeam(agent: string): void {
   kick(byId("core"), "hit");
 }
 
-function toast(title: string, detail: string, kind: string, note?: string): void {
-  const key = `${title}|${detail}|${note ?? ""}`;
+// One added fusion: whose files joined the winner's fix.
+interface Fused { agent: string; files: string[] }
+
+function toast(title: string, detail: string, kind: string, note?: string, fused: Fused[] = []): void {
+  const key = `${title}|${detail}|${note ?? ""}|${JSON.stringify(fused)}`;
   if (key === toastKey) return;
   toastKey = key;
   const banner = byId("banner");
   banner.dataset.kind = kind;
   banner.replaceChildren(el("strong", undefined, title), el("span", undefined, detail));
   if (note !== undefined) banner.append(el("em", undefined, note));
+  if (fused.length > 0) {
+    const row = el("div", "fused");
+    row.append(el("b", undefined, "⚡ Fused in"));
+    for (const f of fused) {
+      const chip = el("span", "fused-chip", `${displayName(f.agent)}'s ${f.files.join(", ")}`);
+      chip.style.setProperty("--color", colorFor(f.agent));
+      row.append(chip);
+    }
+    banner.append(row);
+  }
   banner.hidden = false;
   kick(banner, "show");
   if (toastTimer !== undefined) clearTimeout(toastTimer);
@@ -1034,7 +1047,15 @@ function renderBanner(b: Board, final: boolean): void {
     const merged = ship?.status === "merged" && ship.commit !== undefined ? ` · merged ${ship.commit.slice(0, 7)}` : "";
     const detail = winner.score === undefined ? `the judge has spoken${merged}` : `${winner.score.total.toFixed(2)} / 100${merged}`;
     const decided = decidedLine(b.why);
-    toast(`${displayName(winner.agent)} wins`, detail, "win", decided === undefined ? undefined : whyWithNames(decided, b.fighters.map((f) => f.agent)));
+    // Only a fusion that reached the merge counts: the ship merges the winner's fork with it.
+    const fused = ship?.status === "merged" ? (b.task?.verdict?.fusion?.tried ?? []).filter((t) => t.status === "added") : [];
+    toast(
+      `${displayName(winner.agent)} wins`,
+      detail,
+      "win",
+      decided === undefined ? undefined : whyWithNames(decided, b.fighters.map((f) => f.agent)),
+      fused.map(({ agent, files }) => ({ agent, files })),
+    );
   } else {
     toast("No winner", "no fork passed", "none");
   }

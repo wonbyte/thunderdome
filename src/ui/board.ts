@@ -28,6 +28,7 @@ export interface WireVerdict {
   why: string;
   judgedAt?: string;
   ship?: { status: string; commit?: string; resolve?: { chosen?: string } };
+  fusion?: { tried: { agent: string; files: string[]; status: string }[]; commit?: string };
 }
 export interface WireTask {
   id: string;

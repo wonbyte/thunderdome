@@ -76,7 +76,11 @@ flowchart LR
    judge also screenshots each fork's preview with Browser Rendering and Clef scores how the page
    looks; then the score is tests 45, task fit 20, clarity 10, look 15 and claims 10. It writes a
    "why" that names what decided the race.
-5. **Ship.** The winner's fork is merged into the source repo with the why as the merge commit
+5. **Fusion.** The losers' work on files the winner never touched (often a new test) is tried on
+   top of the winning fix. It is kept only when every test still passes and Clef says it makes the
+   change better (see [Fusion round](#fusion-round)). So the shipped change can hold the best of
+   several robots, each credited as the author of its part.
+6. **Ship.** The winner's fork is merged into the source repo with the why as the merge commit
    body, and every fork is locked and kept as a record. There is no pull request: the race replaces it.
 
 The TaskRoom sends every change to the race page on a WebSocket. The RaceIndex keeps the race
@@ -425,6 +429,25 @@ clean and readable it is (40%). A fork whose preview is missing or does not load
 points, and the why says so. If the screenshots or Clef fail for every fork, or the look runs past
 its 8-minute budget, the race is judged without look rather than give the forks left 0. The merge commit holds the "why". Then it makes every fork read-only and saves
 the verdict on the task.
+
+**Fusion round.** <a id="fusion-round"></a>Before the merge, the judge tries to add the losers' best
+work to the winner. For each losing fork that could have won, best first, it takes the files that
+fork changed and the winner did not (often a test file the test-first robot wrote). In a sandbox
+on a clone of the winner's fork, it checks out the loser's version of those files on top of the
+winner's fix, then three gates must pass:
+
+1. Every test passes, and no fewer pass than for the winner alone.
+2. Clef answers a yes/no question: do these additions make the change better for the task, or do
+   they repeat it, stray from it, or only make it bigger?
+3. That yes is at least 0.6.
+
+An addition that passes becomes its own commit on the winner's fork, authored by the robot that
+wrote it ("Thunderdome fusion: add testy's test/cart.test.ts to ponder's fix"), so `git log` and
+`git blame` credit each robot. The ship then merges the fused fork as usual, the fused commit gets
+its own preview, and the why gains a "Fusion" section listing every try and why it was kept or
+left out. The race page shows what was fused in the winner's banner. Only whole files the winner
+did not touch are tried, so a fusion never conflicts with the winning fix. The code is
+`src/judge/fusion.ts`.
 
 If the source moved on during the race (another race shipped first, or someone pushed), the
 winner's merge can conflict. Then the ship starts a **conflict race**: a second sandbox clones

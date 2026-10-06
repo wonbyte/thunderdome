@@ -9,6 +9,7 @@ import type { DecidedBy } from "../judge/why";
 import type { BaseRequest } from "../push/push"; // type-only: push.ts imports isTaskId from here
 import { retry } from "../retry";
 import type { ShipResult } from "../ship/ship";
+import type { FusionResult } from "../judge/fusion";
 import { claimsOf, type ClaimBoard } from "./claims";
 import type { RaceMemory } from "./races";
 
@@ -101,6 +102,7 @@ export interface Verdict {
   decidedBy?: DecidedBy; // missing with no winner or no eligible runner-up
   headline?: string; // the judge's one-line reason; missing with no winner or no eligible runner-up
   lesson?: string; // the winner's strongest point, as a clause; see why.ts lesson()
+  fusion?: FusionResult; // the fusion round, when it tried something or failed
 }
 
 export interface Task {

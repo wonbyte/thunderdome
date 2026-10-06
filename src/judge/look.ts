@@ -133,7 +133,7 @@ function scoreOf(answers: Record<string, unknown>, id: keyof typeof LOOK_QUESTIO
   return clamp01(answer.score / (LOOK_QUESTIONS[id].criteria.length - 1));
 }
 
-async function ask(deps: LookDeps, body: unknown): Promise<Record<string, unknown>> {
+export async function ask(deps: Pick<LookDeps, "ai" | "sleep">, body: unknown): Promise<Record<string, unknown>> {
   const once = async (): Promise<Record<string, unknown>> => {
     let raw: unknown;
     try {
