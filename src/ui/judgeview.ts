@@ -83,7 +83,12 @@ function columnOrder(a: CrossColumn, b: CrossColumn): number {
   return rank(a) < rank(b) ? -1 : rank(a) > rank(b) ? 1 : 0;
 }
 
-function crossOf(forks: unknown[], split: boolean): CrossView | undefined {
+/**
+ * The grid of who passes whose tests. `counted` is the judge's list of shared-suite files; verdicts
+ * from before it was recorded are counted here by the judge's rules. No fork with a shared total
+ * means the judge fell back to each fork's own npm test, so no file counted.
+ */
+function crossOf(forks: unknown[], split: boolean, counted: unknown): CrossView | undefined {
   const runs = forks.filter(isObject).flatMap((f) => {
     const agent = str(f.agent);
     if (agent === undefined || !Array.isArray(f.crossTests)) return [];
@@ -97,20 +102,28 @@ function crossOf(forks: unknown[], split: boolean): CrossView | undefined {
     return [{ agent, tests, ...(shared === undefined ? {} : { shared }) }];
   });
   if (runs.length === 0) return undefined;
-  // Counted as the judge counts it: files every fork ran; base files always, others when they pass in full on two forks.
+  // Older verdicts: counted as the judge counts it. Files every fork ran and some fork loaded; base files always, others when they pass in full on two forks.
   const passes = new Map<string, number>();
   const ran = new Map<string, number>();
+  const size = new Map<string, number>();
   const columns = new Map<string, CrossColumn>();
   for (const run of runs) {
     for (const t of run.tests) {
       const k = key(t.author, t.file);
       if (t.total > 0 && t.passed === t.total) passes.set(k, (passes.get(k) ?? 0) + 1);
       ran.set(k, (ran.get(k) ?? 0) + 1);
+      size.set(k, Math.max(size.get(k) ?? 0, t.total));
       columns.set(k, { author: t.author, file: t.file, counted: false });
     }
   }
+  const recorded = Array.isArray(counted)
+    ? new Set(counted.filter(isObject).flatMap((c) => (typeof c.author === "string" && typeof c.file === "string" ? [key(c.author, c.file)] : [])))
+    : undefined;
+  const used = runs.some((r) => r.shared !== undefined);
+  const isCounted = (k: string, c: CrossColumn): boolean =>
+    recorded !== undefined ? recorded.has(k) : used && ran.get(k) === runs.length && (size.get(k) ?? 0) > 0 && (c.author === BASE_AUTHOR || (!split && (passes.get(k) ?? 0) >= 2));
   const ordered = [...columns.entries()]
-    .map(([k, c]) => ({ ...c, counted: ran.get(k) === runs.length && (c.author === BASE_AUTHOR || (!split && (passes.get(k) ?? 0) >= 2)) }))
+    .map(([k, c]) => ({ ...c, counted: isCounted(k, c) }))
     .toSorted(columnOrder);
   const rows = runs.map((run) => ({
     agent: run.agent,
@@ -144,7 +157,7 @@ export function judgeView(body: unknown): JudgeView | undefined {
   const forks = Array.isArray(out.forks) ? out.forks : [];
   const split = (num(out.split) ?? 0) >= 0.5;
   const tie = isObject(out.scores) ? tieOf(out.scores) : undefined;
-  const cross = crossOf(forks, split);
+  const cross = crossOf(forks, split, out.counted);
   return { ...(tie === undefined ? {} : { tie }), ...(cross === undefined ? {} : { cross }), fit: fitOf(forks) };
 }
 

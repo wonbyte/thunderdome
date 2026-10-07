@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { BASE_AUTHOR as SERVER_BASE, decide, judgeFork, type CrossTest } from "../src/judge/judge";
+import { JUDGE_TIE as SERVER_TIE } from "../src/judge/score";
+import { fakeDeps, fakeFork, fakeInput } from "./judge-fakes";
+
 import { applyEvent, emptyBoard, type WireTask } from "../src/ui/board";
-import { judgeSteps, judgeView } from "../src/ui/judgeview";
+import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView } from "../src/ui/judgeview";
 import { buildTimeline } from "../src/ui/timeline";
 
 const probs = (top: number) => ({ type: "score", score: top, probabilities: Object.fromEntries([0, 1, 2, 3, 4, 5].map((n) => [String(n), n === top ? 0.5 : 0.1])) });
@@ -56,6 +60,35 @@ describe("judgeView", () => {
 
   it("V4: reads Clef's task-fit probabilities per robot, lowest level first", () => {
     expect(judgeView(body())!.fit.ponder).toEqual([0.1, 0.1, 0.1, 0.5, 0.1, 0.1]);
+  });
+});
+
+describe("judgeView and the judge agree", () => {
+  const run = (author: string, file: string, passed: number, total: number): CrossTest => ({ author, file, passed, total });
+  const judged = (agent: string, crossTests?: CrossTest[]) => judgeFork(fakeDeps({ crossTests: async () => crossTests }), fakeInput(), fakeFork(agent));
+
+  it("V7: the grid marks counted exactly the files decide() counted, including a file one fork never ran", async () => {
+    const forks = [
+      await judged("ponder", [run("base", "test/a.test.ts", 4, 4), run("zippy", "test/z.test.ts", 2, 2), run("ponder", "test/p.test.ts", 3, 3)]),
+      await judged("zippy", [run("base", "test/a.test.ts", 4, 4), run("zippy", "test/z.test.ts", 2, 2), run("ponder", "test/p.test.ts", 3, 3)]),
+      await judged("snip", [run("base", "test/a.test.ts", 2, 4), run("zippy", "test/z.test.ts", 0, 2)]),
+    ];
+    const output = decide(fakeInput(), forks);
+    expect(output.counted).toEqual([{ author: "base", file: "test/a.test.ts" }, { author: "zippy", file: "test/z.test.ts" }]);
+    const counted = judgeView({ output })!.cross!.columns.filter((c) => c.counted).map((c) => `${c.author}:${c.file}`);
+    expect(counted).toEqual(["base:test/a.test.ts", "zippy:test/z.test.ts"]);
+  });
+
+  it("V8: when a fork has no shared results the judge used each fork's own npm test, and the grid counts no file", async () => {
+    const forks = [await judged("ponder", [run("base", "test/a.test.ts", 4, 4)]), await judged("zippy", undefined)];
+    const output = decide(fakeInput(), forks);
+    expect(output.counted).toBeUndefined();
+    expect(judgeView({ output })!.cross!.columns.every((c) => !c.counted)).toBe(true);
+  });
+
+  it("V9: the facts the page duplicates match the judge's", () => {
+    expect(BASE_AUTHOR).toBe(SERVER_BASE);
+    expect(JUDGE_TIE).toBe(SERVER_TIE);
   });
 });
 

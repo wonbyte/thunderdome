@@ -35,11 +35,9 @@ export interface Standing {
   losingLines: number; // lines it wrote that shipped in races it lost
 }
 
-/** Totals across every judged race: clash rate, what decided the races, and the average race and merge times. */
+/** Totals across every judged race for the stats strip: fusions, lines shipped while losing, and the average race and merge times. */
 export interface RaceStats {
   judged: number;
-  clashRate: number; // 0..1, of judged races
-  decided: Record<DecidedBy, number>;
   fusedRate: number; // 0..1, of judged races: the fusion round shipped a loser's files
   losingLines: number; // lines shipped by robots that lost, over every judged race with blame
   teamBeat: number; // judged races where the fused change scored above the winner alone
@@ -97,13 +95,11 @@ export function teamPill(team: number | undefined): string | undefined {
 /** The totals for the stats strip above the leaderboard. */
 export function raceStats(races: readonly RaceRow[]): RaceStats {
   const done = judged(races);
-  const decided: Record<DecidedBy, number> = { code: 0, claims: 0, close: 0, same: 0 };
   let secs = 0;
   let timed = 0;
   let mergeSecs = 0;
   let merged = 0;
   for (const race of done) {
-    if (race.decidedBy !== undefined) decided[race.decidedBy] += 1;
     const start = Date.parse(race.startedAt ?? "");
     const end = Date.parse(race.finishedAt ?? "");
     if (!Number.isNaN(start) && !Number.isNaN(end) && end >= start) {
@@ -119,8 +115,6 @@ export function raceStats(races: readonly RaceRow[]): RaceStats {
   }
   return {
     judged: done.length,
-    clashRate: done.length === 0 ? 0 : done.filter((r) => r.clash === true).length / done.length,
-    decided,
     fusedRate: done.length === 0 ? 0 : done.filter((r) => (r.fused?.length ?? 0) > 0).length / done.length,
     losingLines: done.reduce((sum, r) => sum + Object.entries(r.losing ?? {}).reduce((n, [agent, lines]) => n + (agent !== r.winner && Number.isFinite(lines) && lines > 0 ? lines : 0), 0), 0),
     teamBeat: done.filter((r) => typeof r.team === "number" && r.team > 0).length,

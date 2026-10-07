@@ -1,4 +1,4 @@
-// The public play routes: POST /play starts a 3-agent race on a demo template, GET /play/quota
+// The public play routes: POST /play starts a 5-agent race on a demo template, GET /play/quota
 // shows today's quota. No admin auth; a daily quota (and an invite code when set) guards them.
 import { PLAY_AGENTS, parsePlay, playDailyLimit, utcDay } from "../play/play";
 import type { PlayQuota } from "../play/PlayQuota";

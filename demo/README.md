@@ -14,7 +14,7 @@ curl -X POST $THUNDERDOME/tasks -H "authorization: Bearer $ADMIN_TOKEN" -d '{"te
 | --- | --- | --- |
 | `sample-app` | `thunderdome-sample`, `thunderdome-template` | The first sample: 2 one-line bugs in 1 file. |
 | `bugs` | `thunderdome-bugs` | Bug fix: 6 failing tests, 5 bugs in 4 files. The home page is a 500 until the slug bug is fixed, so the previews change. |
-| `ui` | `thunderdome-ui` | Visible UI change: the tests pin down a sale badge and a price sort, the look is up to each agent, so the 3 previews differ. |
+| `ui` | `thunderdome-ui` | Visible UI change: the tests pin down a sale badge and a price sort, the look is up to each agent, so the previews differ. |
 | `clash` | `thunderdome-clash` | Claim clash: a reviews feature that every agent must route through `src/routes.ts`. |
 | | | `clash-full` is the same app with a bigger prompt: the tests cover only the GET API and the stars on the page, so the POST API, the quoted review and the "Top rated" badge are left to each agent. The fixes differ, and task fit decides more than claim order. |
 | `fusion` | `thunderdome-fusion` | Fusion: four parts in four functions of `src/shop.ts`, far apart, with failing tests for two. The prompt splits the two untested parts by robot (Zippy and Snip build part 4, the rest part 3), so whoever wins, a robot on the other part has a hunk in a function the winner never touched, and the fusion round can add a loser's hunk (say, the cart line) to the winner's fix. |

@@ -184,7 +184,7 @@ describe("git log --graph", () => {
     expect(gitLog(withFusion)?.filter((l) => l.sha === "660ef87")).toHaveLength(1);
   });
 
-  it("G4 a push recorded with its whole message on one line shows its subject, without the flattened trailer", () => {
+  it("G4: a push recorded with its whole message on one line shows its subject, without the flattened trailer", () => {
     expect(subjectOf("Sale badge, sort, and price rounding Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")).toBe("Sale badge, sort, and price rounding");
     expect(subjectOf("fix the parser")).toBe("fix the parser");
     const t = pushed(1);

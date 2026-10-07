@@ -127,6 +127,7 @@ export interface JudgeResult {
   why: string;
   look?: LookResult; // whether the race was judged on look, and each fork's look
   split?: number; // Clef's yes that the task gives robots different parts, when the shared suite was asked
+  counted?: CountedFile[]; // the shared suite's files; missing when each fork was scored on its own npm test
 }
 
 /** The judge Workflow instance id for a task. One judge per task, so a second start finds the first. */
@@ -226,6 +227,13 @@ const passedAll = (t: CrossTest): boolean => t.total > 0 && t.passed === t.total
  * that changed files has cross tests.
  */
 export function sharedSuite(forks: JudgedFork[], split = 0): Map<string, TestRun> | undefined {
+  return sharedSuiteOf(forks, split)?.suite;
+}
+
+/** A test file in the shared suite, as decide() records it for the race page. */
+export interface CountedFile { author: string; file: string }
+
+function sharedSuiteOf(forks: JudgedFork[], split = 0): { suite: Map<string, TestRun>; counted: CountedFile[] } | undefined {
   const runs = forks.filter((f) => f.input.filesChanged.length > 0);
   if (runs.length === 0 || runs.some((f) => f.crossTests === undefined)) return undefined;
   const size = new Map<string, number>();
@@ -256,7 +264,8 @@ export function sharedSuite(forks: JudgedFork[], split = 0): Map<string, TestRun
     }
     suite.set(fork.agent, { passed, total });
   }
-  return suite;
+  const files = new Map(runs.flatMap((f) => f.crossTests ?? []).map((t) => [key(t), { author: t.author, file: t.file }]));
+  return { suite, counted: counted.flatMap((k) => files.get(k) ?? []) };
 }
 
 /** Gives every fork its look when the race is judged on look; a fork missing from the result gets 0. */
@@ -275,7 +284,8 @@ export function applyLook(forks: JudgedFork[], look: LookResult): JudgedFork[] {
  * side-by-side comparison's probability per agent, used only to break a tie within the judge's noise.
  */
 export function decide(input: JudgeInput, forks: JudgedFork[], prefer?: Record<string, number>, split?: number): JudgeResult {
-  const suite = sharedSuite(forks, split);
+  const run = sharedSuiteOf(forks, split);
+  const suite = run?.suite;
   const judged = forks.map(({ context: _context, ...fork }) => {
     const shared = suite?.get(fork.agent);
     return shared === undefined ? fork : { ...fork, input: { ...fork.input, shared } };
@@ -285,7 +295,8 @@ export function decide(input: JudgeInput, forks: JudgedFork[], prefer?: Record<s
     prefer,
   );
   const used = suite !== undefined && split !== undefined ? { split } : {};
-  return { taskId: input.taskId, forks: judged, scores, winner: scores.winner, why: buildWhy(scores), ...used };
+  // The page shows which files counted; it cannot redo the judge's rules from what it is sent.
+  return { taskId: input.taskId, forks: judged, scores, winner: scores.winner, why: buildWhy(scores), ...used, ...(run === undefined ? {} : { counted: run.counted }) };
 }
 
 /** Judges every fork in order, then decides. */

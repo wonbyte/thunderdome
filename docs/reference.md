@@ -35,7 +35,7 @@ demo costs at most about $9.20 a day in agent spend.
 | Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork (files left unrun count for no fork); 20 minutes per fork step | `src/judge/judge.ts` |
 | Look | waits for final previews until 3 minutes after the race ends (a retry does not wait again), and not for a build that failed; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
-| Diff the scorer reads | first 100,000 characters | `src/judge/scorer.ts` |
+| Diff the scorer reads | whole files up to 100,000 characters, the same files in both orders; the side-by-side comparison gets the first 20,000 characters | `src/judge/scorer.ts`, `src/judge/judge.ts` |
 | Diff saved for the page | 200,000 characters, cut at a whole line | `src/judge/diffs.ts` |
 | Push log per agent | newest 50 pushes | `src/room/task.ts` |
 | Race list | index keeps 200 races; `GET /tasks` returns 50; prompts cut to 280 characters | `src/room/races.ts` |

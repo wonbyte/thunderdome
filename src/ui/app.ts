@@ -721,8 +721,9 @@ function renderGraph(b: Board): void {
       }
     }
     const merge = mergeOf(task);
-    // Once judged, the graph stops at the merge instead of stretching with the clock.
-    const t = b.ended ? (merge?.at ?? msOf(task.verdict?.judgedAt) ?? now) : now;
+    // Once judged, the graph stops at the merge instead of stretching with the clock. Live, the clock
+    // moves in whole seconds, so the graph is redrawn once a second rather than on every 250 ms tick.
+    const t = b.ended ? (merge?.at ?? msOf(task.verdict?.judgedAt) ?? now) : Math.floor(now / 1_000) * 1_000;
     const fusion = fusionOf(task);
     input = { agents, start, ends, dots: liveDots, t, domainEnd: t, ...(merge ? { merge } : {}), ...(fusion ? { fusion } : {}) };
   }

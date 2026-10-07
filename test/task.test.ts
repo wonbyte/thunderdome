@@ -122,7 +122,7 @@ describe("makeForks", () => {
     expect(repo.fork).toHaveBeenCalledTimes(4);
   });
 
-  it("F1: forks every agent at once, in agent order, and waits out a busy source with up to FORK_ATTEMPTS tries", async () => {
+  it("MF1: forks every agent at once, in agent order, and waits out a busy source with up to FORK_ATTEMPTS tries", async () => {
     let started = 0;
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));

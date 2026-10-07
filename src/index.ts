@@ -32,7 +32,7 @@ const ROUTES = {
   "POST /tasks/:id/judge": "Start the judge by hand on a finished task if it did not start on its own. 409 when it exists.",
   "GET /tasks/:id/judge": "The judge's status and, when done, its output: scores, why and the ship result. No auth.",
   "GET /tasks/:id/forks/:agent/diff": "The diff the judge scored for an agent's fork: { agent, diff, clipped }. 404 before the judge saved it. No auth.",
-  "POST /play": "Start a 3-agent race on a demo template: { template, prompt, invite? }. Daily quota; 202 { id, page, remaining }. No auth.",
+  "POST /play": "Start a 5-agent race on a demo template: { template, prompt, invite? }. Daily quota; 202 { id, page, remaining }. No auth.",
   "GET /play/quota": "Today's play quota: { day, used, limit, remaining, invite }. No auth.",
   "GET /play": "The run-your-own-race page. No auth.",
   "GET /race/:id": "The live race page for a task. No auth; the read routes it uses are public too.",
