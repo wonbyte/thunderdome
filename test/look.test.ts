@@ -8,6 +8,7 @@ import {
   LOOK_QUESTIONS,
   lookRequest,
   PHONE,
+  previewWaitUntil,
   readyPreviews,
   VISUAL_THRESHOLD,
   type LookDeps,
@@ -161,6 +162,24 @@ describe("readyPreviews", () => {
     });
     const stale = { ...task, basePreview: { url: "https://old.test", commit: "zz", at: "x" } } as Task;
     expect(readyPreviews(stale).before).toBeUndefined();
+  });
+
+  it("L1: a fork whose final preview failed to build is not waited for, and is judged without one", () => {
+    const failed = { ...task, agents: [task.agents[0], { name: "zippy", push: { head: "f2", previewFailed: "f2", preview: { url: "https://zippy.test", commit: "f1", at: "x" } } }] } as Task;
+    expect(readyPreviews(failed).waiting).toEqual([]);
+    expect(readyPreviews(failed).forks[1]).toEqual({ agent: "zippy" });
+    // A failure on an older head does not count once the fork pushed again.
+    const older = { ...task, agents: [{ name: "zippy", push: { head: "f3", previewFailed: "f2" } }] } as unknown as Task;
+    expect(readyPreviews(older).waiting).toEqual(["zippy"]);
+  });
+
+  it("L2: the preview wait ends a fixed time after the race finished, so a retried look does not wait again", () => {
+    const finished = "2026-10-07T14:57:35.000Z";
+    const end = Date.parse(finished) + 180_000;
+    expect(previewWaitUntil(finished, Date.parse(finished) + 5_000, 180_000)).toBe(end);
+    // The retry 3 minutes later: the wait is already over.
+    expect(previewWaitUntil(finished, end + 10_000, 180_000)).toBe(end);
+    expect(previewWaitUntil(undefined, 1_000, 180_000)).toBe(181_000);
   });
 });
 

@@ -35,6 +35,7 @@ export type PushOutput =
 interface PushRoom {
   recordPush(push: PushInput): Promise<PushRecordResult>;
   savePreview(agent: string, preview: PreviewInput): Promise<boolean>;
+  previewFailed(agent: string, commit: string): Promise<boolean>;
   saveBasePreview(preview: PreviewInput): Promise<boolean>;
 }
 
@@ -74,7 +75,9 @@ export class PushWorkflow extends WorkflowEntrypoint<Env> {
         }),
       );
     } catch (cause) {
-      // A failed preview must not fail the instance; the push is already recorded.
+      // A failed preview must not fail the instance; the push is already recorded. The judge's look
+      // is told, so it stops waiting for this preview.
+      await step.do("note failed preview", () => room(this.env, taskId).previewFailed(agent, after)).catch(() => false);
       return { status: "preview-failed", taskId, agent, after, error: String(cause) };
     }
     const saved = await step.do("save preview", () => room(this.env, taskId).savePreview(agent, { url, commit: after }));

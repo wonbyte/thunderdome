@@ -15,7 +15,7 @@ import { runCrossTests, type CrossSource } from "./crosstests";
 import { splitTask } from "./testscope";
 import { clipDiff } from "./diffs";
 import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, scoreFusion, withoutPatches, type FusionResult } from "./fusion";
-import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
+import { judgeLook, previewWaitUntil, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
   BASE_AUTHOR,
@@ -195,18 +195,20 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
  * mark is only logged and never fails the step.
  */
 function trackStep<T>(env: Env, taskId: string, name: string, fn: () => Promise<T>): () => Promise<T> {
-  const mark = (state: "running" | "done" | "failed"): Promise<unknown> =>
+  const mark = (state: "running" | "done" | "failed", attempt: string): Promise<unknown> =>
     env.TASK_ROOM.getByName(taskId)
-      .judgeStep(name, state)
+      .judgeStep(name, state, attempt)
       .catch((cause: unknown) => console.error({ event: "judge.mark_failed", taskId, step: name, error: String(cause).slice(0, 200) }));
   return async () => {
-    await mark("running");
+    // Each attempt has its own id, so an older attempt that finishes late cannot end a retry.
+    const attempt = crypto.randomUUID();
+    await mark("running", attempt);
     try {
       const result = await fn();
-      await mark("done");
+      await mark("done", attempt);
       return result;
     } catch (cause) {
-      await mark("failed");
+      await mark("failed", attempt);
       throw cause;
     }
   };
@@ -252,8 +254,9 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
     const visual = await visualTask(deps, input.task);
     if (visual < VISUAL_THRESHOLD) return { visual, judged: false, forks: [] };
     const room = env.TASK_ROOM.getByName(input.taskId);
-    const waitUntil = Date.now() + PREVIEW_WAIT_MS;
     let task = await room.state();
+    // Anchored at the race's end: a retried look step must not start a fresh wait.
+    const waitUntil = previewWaitUntil(task?.finishedAt, Date.now(), PREVIEW_WAIT_MS);
     while (task !== null && readyPreviews(task).waiting.length > 0 && Date.now() < waitUntil) {
       await new Promise((resolve) => setTimeout(resolve, PREVIEW_POLL_MS));
       task = await room.state();

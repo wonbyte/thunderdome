@@ -4,6 +4,7 @@ import {
   applyBasePreview,
   applyOutcome,
   applyPreview,
+  applyPreviewFailure,
   applyPush,
   applyStarts,
   baseRequest,
@@ -602,5 +603,28 @@ describe("recordJudgeStep", () => {
     saveVerdict(task, verdict("ponder", "w"));
     expect(recordJudgeStep(task, "ship", "running", "t5")).toBe(false);
     expect(task.judging).toHaveLength(1);
+  });
+});
+
+describe("judge step attempts", () => {
+  it("G2: a late end from an older attempt is refused; the retry's own end is kept", () => {
+    const task = { ...runningTask(), status: "finished" as const };
+    recordJudgeStep(task, "look", "running", "t1", "a1");
+    recordJudgeStep(task, "look", "running", "t2", "a2");
+    expect(recordJudgeStep(task, "look", "done", "t3", "a1")).toBe(false);
+    expect(task.judging?.[0]).toMatchObject({ state: "running", attempt: "a2" });
+    expect(recordJudgeStep(task, "look", "done", "t4", "a2")).toBe(true);
+    expect(task.judging?.[0]).toMatchObject({ state: "done", startedAt: "t2", endedAt: "t4" });
+  });
+});
+
+describe("applyPreviewFailure", () => {
+  it("G3: notes a failed build only for the agent's newest head", () => {
+    const task = runningTask();
+    task.agents[0]!.push = { commits: 1, pushes: 1, lastPushAt: "t1", head: "c2", seen: ["c2"] };
+    expect(applyPreviewFailure(task, "ponder", "c1")).toBe(false);
+    expect(applyPreviewFailure(task, "ponder", "c2")).toBe(true);
+    expect(task.agents[0]!.push.previewFailed).toBe("c2");
+    expect(applyPreviewFailure(task, "zippy", "c2")).toBe(false);
   });
 });

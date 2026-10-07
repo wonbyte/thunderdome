@@ -35,6 +35,7 @@ import {
   purgeRefusal,
   purgeRepos,
   recordJudgeStep,
+  applyPreviewFailure,
   saveVerdict as recordVerdict,
   sourceName,
   stalledOutcomes,
@@ -281,6 +282,14 @@ export class TaskRoom extends DurableObject<Env> {
     return { known: true, recorded, build: needsPreview(task, push.agent, push.after) };
   }
 
+  /** Called by the push Workflow when a preview build failed for good, so the look stops waiting for it. */
+  previewFailed(agent: string, commit: string): boolean {
+    const task = this.#task();
+    if (task === undefined || !applyPreviewFailure(task, agent, commit)) return false;
+    this.#save(task);
+    return true;
+  }
+
   /** Called by the push Workflow with a built preview. Saved only for the agent's newest head. */
   savePreview(agent: string, preview: PreviewInput): boolean {
     const task = this.#task();
@@ -301,9 +310,9 @@ export class TaskRoom extends DurableObject<Env> {
   }
 
   /** Called by the judge Workflow as each of its steps starts and ends, so the page shows the judging. */
-  judgeStep(name: string, state: JudgeStep["state"]): boolean {
+  judgeStep(name: string, state: JudgeStep["state"], attempt?: string): boolean {
     const task = this.#task();
-    if (task === undefined || !recordJudgeStep(task, name, state, new Date().toISOString())) return false;
+    if (task === undefined || !recordJudgeStep(task, name, state, new Date().toISOString(), attempt)) return false;
     this.#save(task);
     const step = task.judging?.find((s) => s.name === name);
     if (step !== undefined) this.#broadcast({ kind: "judge", taskId: task.id, step });

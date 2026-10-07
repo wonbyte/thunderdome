@@ -83,6 +83,7 @@ export interface PushState {
   seen: string[]; // recorded `after` commits, oldest first, capped at MAX_SEEN_PUSHES
   log?: PushLogEntry[]; // recorded pushes, oldest first, capped at MAX_SEEN_PUSHES; missing (older tasks) = empty
   preview?: Preview; // newest saved preview and the commit it was built from
+  previewFailed?: string; // a commit whose preview build failed for good; the look stops waiting for it
 }
 
 /** One agent in a task: its fork, its run, and its pushes. */
@@ -145,6 +146,7 @@ export interface JudgeStep {
   state: "running" | "done" | "failed";
   startedAt: string; // ISO, the latest start (a retried step starts again)
   endedAt?: string; // ISO, set by "done" and "failed"
+  attempt?: string; // the Workflow attempt that started it; only that attempt may end it
 }
 
 /** The judge steps the race page knows. */
@@ -153,14 +155,18 @@ const JUDGE_STEPS_MAX = 16;
 
 /**
  * Records a judge step starting or ending; a later state replaces an earlier one. False, and the
- * task unchanged, for an unknown name, once the verdict is in, or past JUDGE_STEPS_MAX steps.
+ * task unchanged, for an unknown name, once the verdict is in, or past JUDGE_STEPS_MAX steps. An
+ * end from an older attempt is refused: Workflows can retry a step while the first attempt still
+ * runs, and that attempt finishing must not mark the retry done.
  */
-export function recordJudgeStep(task: Task, name: string, state: JudgeStep["state"], at: string): boolean {
+export function recordJudgeStep(task: Task, name: string, state: JudgeStep["state"], at: string, attempt?: string): boolean {
   if (!JUDGE_STEP_NAME.test(name) || task.verdict !== undefined) return false;
   const steps = task.judging ?? [];
   const found = steps.find((s) => s.name === name);
   if (found === undefined && steps.length >= JUDGE_STEPS_MAX) return false;
-  const step: JudgeStep = state === "running" ? { name, state, startedAt: at } : { name, state, startedAt: found?.startedAt ?? at, endedAt: at };
+  if (state !== "running" && found?.attempt !== undefined && attempt !== found.attempt) return false;
+  const tag = attempt === undefined ? {} : { attempt };
+  const step: JudgeStep = state === "running" ? { name, state, startedAt: at, ...tag } : { name, state, startedAt: found?.startedAt ?? at, endedAt: at, ...tag };
   task.judging = found === undefined ? [...steps, step] : steps.map((s) => (s.name === name ? step : s));
   return true;
 }
@@ -371,6 +377,14 @@ export function applyPreview(task: Task, agent: string, preview: PreviewInput, n
   const push = slotOf(task, agent)?.push;
   if (push === undefined || push.head !== preview.commit) return false;
   push.preview = { url: preview.url, commit: preview.commit, at: now };
+  return true;
+}
+
+/** Notes that the preview of the agent's newest head failed to build, so the look does not wait for it. */
+export function applyPreviewFailure(task: Task, agent: string, commit: string): boolean {
+  const push = slotOf(task, agent)?.push;
+  if (push === undefined || push.head !== commit) return false;
+  push.previewFailed = commit;
   return true;
 }
 

@@ -64,9 +64,18 @@ export interface LookResult {
 }
 
 /**
+ * When the look stops waiting for previews: `wait` after the race finished, so a retried look step
+ * does not wait all over again. From `now` when the finish time is unknown.
+ */
+export function previewWaitUntil(finishedAt: string | undefined, now: number, wait: number): number {
+  const finished = Date.parse(finishedAt ?? "");
+  return Number.isNaN(finished) ? now + wait : Math.min(now + wait, finished + wait);
+}
+
+/**
  * The previews to judge: each fork's preview only when it was built from the fork's final commit
  * (its newest pushed head), and the base preview only when built from the task's base commit.
- * `waiting` names forks that pushed but whose final preview is not saved yet.
+ * `waiting` names forks that pushed but whose final preview is not saved yet, unless its build failed.
  */
 export function readyPreviews(task: Task): { before?: string; forks: LookFork[]; waiting: string[] } {
   const forks: LookFork[] = [];
@@ -75,7 +84,8 @@ export function readyPreviews(task: Task): { before?: string; forks: LookFork[];
     const push = agent.push;
     const ready = push?.preview !== undefined && push.preview.commit === push.head;
     forks.push(ready && push?.preview !== undefined ? { agent: agent.name, preview: push.preview.url } : { agent: agent.name });
-    if (push !== undefined && !ready) waiting.push(agent.name);
+    // A head whose build failed for good is not waited for: it is judged without a preview.
+    if (push !== undefined && !ready && push.previewFailed !== push.head) waiting.push(agent.name);
   }
   const base = task.basePreview;
   const before = base !== undefined && base.commit === task.baseCommit ? base.url : undefined;
