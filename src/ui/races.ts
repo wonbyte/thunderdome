@@ -1,7 +1,7 @@
 // The race gallery: every race from GET /tasks, newest first, each a link to watch or replay it.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
 import { AGENT_IDS, colorFor, displayName, styleLabel, whyWithNames } from "./board";
-import { raceStats, standings, teamPill, type DecidedBy, type RaceStats, type Standing } from "./leaderboard";
+import { raceStats, standings, teamPill, type DecidedBy, type Standing } from "./leaderboard";
 import { coreSvg, crownSvg, robotSvg } from "./sprites";
 
 interface RaceSummary {
@@ -12,6 +12,7 @@ interface RaceSummary {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  judgedAt?: string;
   agents: string[];
   winner?: string | null;
   clash?: boolean;
@@ -120,26 +121,6 @@ function decidedLabel(by: DecidedBy): string {
   return by === "close" ? "close call" : by === "same" ? "same fix" : `by ${by}`;
 }
 
-/** What decided the races, as one stacked bar. */
-function decidedBar(stats: RaceStats): HTMLElement | undefined {
-  const parts = (["code", "claims", "close", "same"] as const).filter((k) => stats.decided[k] > 0);
-  const total = parts.reduce((n, k) => n + stats.decided[k], 0);
-  if (total === 0) return undefined;
-  const bar = el("div", "decided-bar");
-  for (const k of parts) {
-    const seg = el("i", `d-${k}`);
-    seg.style.flexGrow = String(stats.decided[k]);
-    seg.title = `${k}: ${stats.decided[k]}`;
-    bar.append(seg);
-  }
-  const box = el("div", "stat wide");
-  box.append(bar);
-  const legend = el("span", "decided-legend");
-  for (const k of parts) legend.append(el("span", `d-${k}`, `${decidedLabel(k)} ${stats.decided[k]}`));
-  box.append(legend);
-  return box;
-}
-
 function standingRow(s: Standing, i: number, top: number): HTMLElement {
   const row = el("li", `standing${i === 0 ? " first" : ""}`);
   row.style.setProperty("--color", s.color);
@@ -169,13 +150,12 @@ function renderBoard(races: RaceSummary[]): void {
   const panel = document.getElementById("board");
   if (panel === null || rows.length === 0) return;
   const stats = raceStats(races);
-  const tiles = [tile(String(stats.judged), stats.judged === 1 ? "race judged" : "races judged"), tile(`${Math.round(stats.clashRate * 100)}%`, "had a claim clash")];
+  const tiles = [tile(String(stats.judged), stats.judged === 1 ? "race judged" : "races judged")];
+  if (stats.mergeSeconds !== undefined) tiles.push(tile(mmss(stats.mergeSeconds), "start to merged, on average"));
   tiles.push(tile(`${Math.round(stats.fusedRate * 100)}%`, "shipped a loser's work too"));
   if (stats.losingLines > 0) tiles.push(tile(String(stats.losingLines), "lines shipped while losing"));
   if (stats.scoredFusions > 0) tiles.push(tile(`${stats.teamBeat} of ${stats.scoredFusions}`, "fusions beat the winner alone"));
-  if (stats.avgSeconds !== undefined) tiles.push(tile(mmss(stats.avgSeconds), "average race"));
-  const decided = decidedBar(stats);
-  if (decided !== undefined) tiles.push(decided);
+  if (stats.avgSeconds !== undefined) tiles.push(tile(mmss(stats.avgSeconds), "robots at work, on average"));
   document.getElementById("stats")?.replaceChildren(...tiles);
   const top = Math.max(...rows.map((r) => r.wins));
   const head = el("li", "standing head");

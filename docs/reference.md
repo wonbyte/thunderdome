@@ -171,8 +171,10 @@ one storage value.
   `clash` (two agents claimed the same file). Once judged it also has `scores` (`agent` and
   `total` per fork, in ranked order) and `decidedBy` (`"code"`, `"claims"` or `"close"`) for the
   leaderboard. Races judged before these fields have neither, and `decidedBy` is missing when
-  there was no winner or no eligible runner-up.
-- `$THUNDERDOME/races` is the gallery page (`public/races.html`).
+  there was no winner or no eligible runner-up. `judgedAt` (when the verdict was saved, after the
+  merge) feeds the gallery's "start to merged" average; `POST /admin/races` adds it to older races.
+- `$THUNDERDOME/races` is the gallery page (`public/races.html`). `GET /` sends a browser
+  (`Accept: text/html`) here with a 302; any other client gets the JSON route list.
   No auth. It lists `GET /tasks` and links each race to its live page, or to its replay
   (`/race/<id>?replay`) once judged.
 - `POST /admin/races` with `{ ids }` (1 to 50 task ids) adds races made before the index. It

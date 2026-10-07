@@ -98,8 +98,10 @@ interface BotView {
   bubbleKey?: string;
   pipsKey?: string;
 }
-interface PreviewView { root: HTMLElement; frame: HTMLElement; host: HTMLElement; commit: HTMLElement; link: HTMLAnchorElement; iframe?: HTMLIFrameElement; shown?: string }
-interface Slot { key: string; label: string; color?: string; preview?: WirePreview }
+interface PreviewView { root: HTMLElement; frame: HTMLElement; host: HTMLElement; commit: HTMLElement; link: HTMLAnchorElement; iframe?: HTMLIFrameElement; shown?: string; empty?: string }
+interface Slot { key: string; label: string; color?: string; preview?: WirePreview; empty: Empty }
+/** What a tile without a preview says: still coming (shimmer), or never coming once the race is over. */
+interface Empty { text: string; done: boolean }
 type Scored = Fighter & { score: NonNullable<Fighter["score"]> };
 
 interface Replay {
@@ -1352,9 +1354,13 @@ function renderClaims(b: Board): void {
 }
 
 function renderPreviews(b: Board): void {
+  const empty = (pushed: boolean): Empty =>
+    b.ended
+      ? { text: pushed ? "no preview: the build didn't finish" : "never pushed", done: true }
+      : { text: pushed ? "building the preview…" : "waiting for a push…", done: false };
   const slots: Slot[] = [
-    { key: "base", label: "Before", ...(b.basePreview === undefined ? {} : { preview: b.basePreview }) },
-    ...b.fighters.map((f) => ({ key: `agent:${f.agent}`, label: displayName(f.agent), color: f.color, ...(f.preview === undefined ? {} : { preview: f.preview }) })),
+    { key: "base", label: "Before", empty: b.ended ? { text: "no preview", done: true } : { text: "building the preview…", done: false }, ...(b.basePreview === undefined ? {} : { preview: b.basePreview }) },
+    ...b.fighters.map((f) => ({ key: `agent:${f.agent}`, label: displayName(f.agent), color: f.color, empty: empty(f.commits > 0), ...(f.preview === undefined ? {} : { preview: f.preview }) })),
   ];
   const views = slots.map(previewView);
   const key = slots.map((slot) => slot.key).join("\n");
@@ -1376,11 +1382,10 @@ function previewView(slot: Slot): PreviewView {
   const bar = el("div", "chrome");
   const dots = el("span", "dots");
   dots.append(el("i"), el("i"), el("i"));
-  const host = el("span", "host", "waiting for a push…");
+  const host = el("span", "host");
   const commit = el("span", "commit");
   bar.append(dots, host, commit);
   const frame = el("div", "frame");
-  frame.append(skeleton());
   const caption = el("figcaption");
   caption.append(el("span", "who", slot.label));
   const link = el("a", "open");
@@ -1395,6 +1400,11 @@ function previewView(slot: Slot): PreviewView {
   return view;
 }
 
+/** A finished race's tile with no preview: still, so it doesn't look like it is loading. */
+function noPreview(): HTMLElement {
+  return el("div", "skeleton done", "no preview");
+}
+
 function skeleton(): HTMLElement {
   const box = el("div", "skeleton");
   for (let i = 0; i < 4; i++) box.append(el("span"));
@@ -1407,16 +1417,19 @@ function updatePreview(view: PreviewView, slot: Slot, winner: boolean): void {
   const preview = slot.preview;
   const url = preview === undefined ? undefined : httpsUrl(preview.url);
   if (preview === undefined || url === undefined) {
-    if (view.shown !== undefined) {
+    const shown = `${slot.empty.done}${slot.empty.text}`;
+    if (view.shown !== undefined || view.empty !== shown) {
       view.shown = undefined;
+      view.empty = shown;
       delete view.iframe;
-      view.frame.replaceChildren(skeleton());
-      view.host.textContent = "waiting for a push…";
+      view.frame.replaceChildren(slot.empty.done ? noPreview() : skeleton());
+      view.host.textContent = slot.empty.text;
       view.commit.textContent = "";
       view.link.hidden = true;
     }
     return;
   }
+  delete view.empty;
   if (view.shown === preview.commit) return;
   const first = view.shown === undefined;
   view.shown = preview.commit;

@@ -98,6 +98,17 @@ describe("leaderboard", () => {
     expect(raceStats(races)).toEqual({ judged: 3, clashRate: 2 / 3, decided: { code: 1, claims: 1, close: 0, same: 0 }, fusedRate: 0, losingLines: 0, teamBeat: 0, scoredFusions: 0, avgSeconds: 150 });
     expect(raceStats([])).toEqual({ judged: 0, clashRate: 0, decided: { code: 0, claims: 0, close: 0, same: 0 }, fusedRate: 0, losingLines: 0, teamBeat: 0, scoredFusions: 0 });
   });
+
+  it("U18b raceStats averages created to judged over the races that merged and have both times", () => {
+    const timed: RaceRow[] = [
+      { id: "t-1", agents: ["zippy"], winner: "zippy", commit: "c1", createdAt: "2026-10-07T00:00:00.000Z", judgedAt: "2026-10-07T00:02:00.000Z" },
+      { id: "t-2", agents: ["zippy"], winner: "zippy", commit: "c2", createdAt: "2026-10-07T01:00:00.000Z", judgedAt: "2026-10-07T01:03:00.000Z" },
+      { id: "t-3", agents: ["zippy"], winner: "zippy", commit: "c3", createdAt: "2026-10-07T02:00:00.000Z" },
+      { id: "t-4", agents: ["zippy"], winner: null, createdAt: "2026-10-07T03:00:00.000Z", judgedAt: "2026-10-07T03:30:00.000Z" },
+    ];
+    expect(raceStats(timed).mergeSeconds).toBe(150);
+    expect(raceStats(races).mergeSeconds).toBeUndefined();
+  });
 });
 
 describe("diff view", () => {

@@ -63,6 +63,7 @@ describe("summaryOf", () => {
       finishedAt: "2025-01-01T00:30:00.000Z",
       agents: ["ponder", "zippy", "snip"],
       winner: "zippy",
+      judgedAt: "2025-01-01T00:31:00.000Z",
       clash: true,
     });
     for (const key of ["error", "verdict", "basePreview", "headline", "commit"]) expect(Object.hasOwn(summary, key), key).toBe(false);

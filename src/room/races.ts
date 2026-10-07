@@ -37,6 +37,7 @@ export interface RaceSummary {
   createdAt: string;
   startedAt?: string;
   finishedAt?: string;
+  judgedAt?: string; // when the verdict was saved, after the merge
   agents: string[];
   winner?: string | null; // only once judged
   scores?: RaceScore[]; // ranked order, only when the verdict has scores
@@ -63,7 +64,7 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     ...(task.startedAt === undefined ? {} : { startedAt: task.startedAt }),
     ...(task.finishedAt === undefined ? {} : { finishedAt: task.finishedAt }),
     agents: task.agents.map((slot) => slot.name),
-    ...(v === undefined ? {} : { winner: v.winner }),
+    ...(v === undefined ? {} : { winner: v.winner, judgedAt: v.judgedAt }),
     ...(v?.scores === undefined ? {} : { scores: v.scores.map(({ agent, total }) => ({ agent, total })) }),
     ...(v?.decidedBy === undefined ? {} : { decidedBy: v.decidedBy }),
     ...(v?.headline === undefined ? {} : { headline: v.headline }),

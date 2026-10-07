@@ -52,7 +52,11 @@ export default {
       const asset = pageAsset(url.pathname);
       if (asset !== undefined) return env.ASSETS.fetch(new URL(asset, request.url));
     }
-    if (route === "GET /") return Response.json({ name: "thunderdome", routes: ROUTES });
+    // A browser at the root lands on the gallery; API clients still get the route list.
+    if (route === "GET /") {
+      if (request.headers.get("accept")?.includes("text/html")) return Response.redirect(new URL("/races", request.url).toString(), 302);
+      return Response.json({ name: "thunderdome", routes: ROUTES });
+    }
     const tasks = isTasksPath(url.pathname);
     const play = isPlayPath(url.pathname);
     if (!tasks && !play && !(route in ROUTES)) return Response.json({ error: "not found" }, { status: 404 });

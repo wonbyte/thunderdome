@@ -15,8 +15,11 @@ export interface RaceRow {
   fused?: string[]; // agents whose files the fusion round shipped in this race
   losing?: Record<string, number>; // shipped lines by each robot that lost (races with blame only)
   team?: number; // fused score minus the winner's alone, when a scored fusion shipped
+  createdAt?: string;
+  commit?: string; // the merge commit, only when the winner merged
   startedAt?: string;
   finishedAt?: string;
+  judgedAt?: string; // when the verdict was saved, after the merge; older summaries have none
 }
 
 /** One robot's row on the leaderboard. */
@@ -32,7 +35,7 @@ export interface Standing {
   losingLines: number; // lines it wrote that shipped in races it lost
 }
 
-/** Totals across every judged race: clash rate, what decided the races, and the average race time. */
+/** Totals across every judged race: clash rate, what decided the races, and the average race and merge times. */
 export interface RaceStats {
   judged: number;
   clashRate: number; // 0..1, of judged races
@@ -42,6 +45,7 @@ export interface RaceStats {
   teamBeat: number; // judged races where the fused change scored above the winner alone
   scoredFusions: number; // judged races where a scored fusion shipped (the base for teamBeat)
   avgSeconds?: number; // start to finish, judged races with both times
+  mergeSeconds?: number; // created to judged, over the races that merged and have both times
 }
 
 const round1 = (x: number): number => Math.round(x * 10) / 10;
@@ -96,6 +100,8 @@ export function raceStats(races: readonly RaceRow[]): RaceStats {
   const decided: Record<DecidedBy, number> = { code: 0, claims: 0, close: 0, same: 0 };
   let secs = 0;
   let timed = 0;
+  let mergeSecs = 0;
+  let merged = 0;
   for (const race of done) {
     if (race.decidedBy !== undefined) decided[race.decidedBy] += 1;
     const start = Date.parse(race.startedAt ?? "");
@@ -103,6 +109,12 @@ export function raceStats(races: readonly RaceRow[]): RaceStats {
     if (!Number.isNaN(start) && !Number.isNaN(end) && end >= start) {
       secs += (end - start) / 1000;
       timed += 1;
+    }
+    const created = Date.parse(race.createdAt ?? "");
+    const judgedAt = Date.parse(race.judgedAt ?? "");
+    if (race.commit !== undefined && !Number.isNaN(created) && !Number.isNaN(judgedAt) && judgedAt >= created) {
+      mergeSecs += (judgedAt - created) / 1000;
+      merged += 1;
     }
   }
   return {
@@ -114,5 +126,6 @@ export function raceStats(races: readonly RaceRow[]): RaceStats {
     teamBeat: done.filter((r) => typeof r.team === "number" && r.team > 0).length,
     scoredFusions: done.filter((r) => typeof r.team === "number" && Number.isFinite(r.team)).length,
     ...(timed === 0 ? {} : { avgSeconds: Math.round(secs / timed) }),
+    ...(merged === 0 ? {} : { mergeSeconds: Math.round(mergeSecs / merged) }),
   };
 }

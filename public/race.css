@@ -466,6 +466,7 @@ h2 {
 .skeleton span:first-child { height: 22px; width: 60%; }
 .skeleton span:nth-child(3) { width: 80%; }
 .skeleton span:nth-child(4) { width: 45%; }
+.skeleton.done { place-content: center; color: var(--faint); font: 600 12px/1 ui-monospace, monospace; letter-spacing: .08em; text-transform: uppercase; }
 .preview.updated .frame { animation: updated 1.2s var(--ease); }
 .preview.winner .frame, .preview.winner .chrome { border-color: var(--color); box-shadow: 0 0 24px color-mix(in srgb, var(--color) 35%, transparent); }
 
@@ -1008,15 +1009,6 @@ h2 {
 .stat { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); }
 .stat b { font: 800 22px var(--mono); }
 .stat span { color: var(--dim); font-size: 12px; }
-.stat.wide { grid-column: span 2; justify-content: center; gap: 8px; }
-.decided-bar { display: flex; height: 10px; border-radius: 99px; overflow: hidden; gap: 2px; }
-.decided-bar i { display: block; animation: grow-x .9s var(--ease) both; transform-origin: left; }
-.d-code { background: var(--green); color: var(--green); }
-.d-claims { background: var(--red); color: var(--red); }
-.d-close { background: var(--accent); color: var(--accent); }
-.d-same { background: var(--dim); color: var(--dim); }
-.decided-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-.decided-legend span { background: none; font: 700 11.5px var(--mono); }
 .standings { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .standing {
   display: grid; grid-template-columns: 22px 40px minmax(90px, 160px) minmax(0, 1fr) 64px 76px 64px 64px;
@@ -1048,9 +1040,8 @@ h2 {
 @media (max-width: 640px) {
   .standing { grid-template-columns: 18px 32px minmax(0, 1fr) 52px 40px 44px; gap: 8px; }
   .standing .col-bar, .standing .col-rate { display: none; }
-  .stat.wide { grid-column: 1 / -1; }
 }
-@media (prefers-reduced-motion: reduce) { .cta-btn, .standing, .wins-bar i, .decided-bar i { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .cta-btn, .standing, .wins-bar i { animation: none; } }
 
 /* ---------- run your own race ---------- */
 .hero-bots { flex: none; display: flex; gap: 6px; align-items: flex-end; }
