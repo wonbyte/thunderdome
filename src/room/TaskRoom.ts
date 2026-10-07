@@ -34,11 +34,13 @@ import {
   needsPreview,
   purgeRefusal,
   purgeRepos,
+  recordJudgeStep,
   saveVerdict as recordVerdict,
   sourceName,
   stalledOutcomes,
   WATCHDOG_MS,
   type CreateTaskResult,
+  type JudgeStep,
   type LoggedStep,
   type NewTask,
   type Preview,
@@ -75,6 +77,7 @@ export type LiveEvent =
   | { kind: "preview"; taskId: string; agent: string; preview: Preview }
   | { kind: "agent-end"; taskId: string; agent: string; outcome: AgentOutcome; status: TaskStatus }
   | { kind: "verdict"; taskId: string; verdict: Verdict }
+  | { kind: "judge"; taskId: string; step: JudgeStep }
   | { kind: "base-preview"; taskId: string; preview: Preview };
 
 /**
@@ -294,6 +297,16 @@ export class TaskRoom extends DurableObject<Env> {
     if (task === undefined || !applyBasePreview(task, preview, new Date().toISOString())) return false;
     this.#save(task);
     if (task.basePreview !== undefined) this.#broadcast({ kind: "base-preview", taskId: task.id, preview: task.basePreview });
+    return true;
+  }
+
+  /** Called by the judge Workflow as each of its steps starts and ends, so the page shows the judging. */
+  judgeStep(name: string, state: JudgeStep["state"]): boolean {
+    const task = this.#task();
+    if (task === undefined || !recordJudgeStep(task, name, state, new Date().toISOString())) return false;
+    this.#save(task);
+    const step = task.judging?.find((s) => s.name === name);
+    if (step !== undefined) this.#broadcast({ kind: "judge", taskId: task.id, step });
     return true;
   }
 

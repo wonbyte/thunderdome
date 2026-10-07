@@ -29,7 +29,7 @@ const RELEASED = /^released\s+(.+)$/;
 
 /** The task as it looked when it was created: forks made, nothing run yet. */
 function createdTask(task: WireTask): WireTask {
-  const { verdict: _v, basePreview: _b, finishedAt: _f, startedAt: _s, ...rest } = task;
+  const { verdict: _v, basePreview: _b, finishedAt: _f, startedAt: _s, judging: _j, ...rest } = task;
   return {
     ...rest,
     status: "ready",
@@ -130,6 +130,13 @@ export function buildTimeline(task: WireTask, steps: WireStep[], claims: WireCla
     const status = i === ends.length - 1 && ends.length === task.agents.length ? "finished" : "running";
     events.push({ at, event: { kind: "agent-end", taskId, agent: slot.name, outcome: { end }, status } });
   });
+  // Each judge step as it started and as it ended.
+  for (const step of task.judging ?? []) {
+    const stepAt = ms(step.startedAt);
+    const endedAt = ms(step.endedAt);
+    if (stepAt !== undefined) events.push({ at: stepAt, event: { kind: "judge", taskId, step: { name: step.name, state: "running", startedAt: step.startedAt } } });
+    if (endedAt !== undefined && step.state !== "running") events.push({ at: endedAt, event: { kind: "judge", taskId, step } });
+  }
   const judgedAt = ms(task.verdict?.judgedAt) ?? ms(task.finishedAt);
   if (task.verdict !== undefined && judgedAt !== undefined) events.push({ at: judgedAt, event: { kind: "verdict", taskId, verdict: task.verdict } });
   // Stable sort: same-time events keep build order (a snapshot before its steps).

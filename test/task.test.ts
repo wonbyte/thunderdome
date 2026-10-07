@@ -16,6 +16,7 @@ import {
   needsPreview,
   newTaskId,
   parseCreateTask,
+  recordJudgeStep,
   saveVerdict,
   type Task,
   type Verdict,
@@ -586,5 +587,20 @@ describe("the watchdog", () => {
   it("lets a stalled race be purged, but not one still in its time", () => {
     expect(purgeRefusal(running(), start + 60_000)).toBe("Task is running");
     expect(purgeRefusal(running(), start + WATCHDOG_MS)).toBeUndefined();
+  });
+});
+
+describe("recordJudgeStep", () => {
+  it("G1: a step starts, ends with its start kept, and starts again on a retry; unknown names and steps after the verdict are refused", () => {
+    const task = { ...runningTask(), status: "finished" as const };
+    expect(recordJudgeStep(task, "fork ponder", "running", "t1")).toBe(true);
+    expect(recordJudgeStep(task, "fork ponder", "done", "t2")).toBe(true);
+    expect(task.judging).toEqual([{ name: "fork ponder", state: "done", startedAt: "t1", endedAt: "t2" }]);
+    expect(recordJudgeStep(task, "fork ponder", "running", "t3")).toBe(true);
+    expect(task.judging).toEqual([{ name: "fork ponder", state: "running", startedAt: "t3" }]);
+    expect(recordJudgeStep(task, "rm -rf", "running", "t4")).toBe(false);
+    saveVerdict(task, verdict("ponder", "w"));
+    expect(recordJudgeStep(task, "ship", "running", "t5")).toBe(false);
+    expect(task.judging).toHaveLength(1);
   });
 });

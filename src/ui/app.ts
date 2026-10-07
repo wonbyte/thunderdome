@@ -13,6 +13,7 @@ import { assistsOf, FUSE_BAR, fusionView, scoreBars, type FuseOutcome, type Fuse
 import { fusionOf, gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
 import { gitLog, type LogLine } from "./gitlog";
 import { drawGraph } from "./graphview";
+import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type JudgeView, type TieView } from "./judgeview";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
 import type { TimedEvent, Timeline } from "./timeline";
 
@@ -117,6 +118,8 @@ let taskId = "";
 let board: Board | undefined;
 let log: WireStep[] = [];
 let ranked: WireScore[] | undefined;
+/** The judge's work beyond the scores (tie, shared suite, Clef's probabilities), from the same GET as `ranked`. */
+let judged: JudgeView | undefined;
 let scoresLoading = false;
 let loading = false;
 let stopped = false;
@@ -405,9 +408,11 @@ async function loadScores(): Promise<void> {
   try {
     for (let i = 0; i < SCORE_TRIES; i++) {
       if (i > 0) await sleep(SCORE_WAIT_MS);
-      const found = rankedOf(await getJson(`/tasks/${taskId}/judge`));
+      const body = await getJson(`/tasks/${taskId}/judge`);
+      const found = rankedOf(body);
       if (found === undefined) continue;
       ranked = found;
+      judged = judgeView(body);
       if (board !== undefined) {
         // Watched live to the end: play the judging. Opened after the end: show the result.
         if (revealArmed) startReveal();
@@ -456,7 +461,9 @@ async function startReplay(id: string): Promise<void> {
     location.replace(`/race/${id}`);
     return;
   }
-  ranked = rankedOf(await getJson(`/tasks/${id}/judge`));
+  const body = await getJson(`/tasks/${id}/judge`);
+  ranked = rankedOf(body);
+  judged = judgeView(body);
   recorded = race.task;
   const built = buildTimeline(race.task, race.steps, race.claims);
   // Start a moment before the run: the time between create and run is only waiting.
@@ -658,10 +665,12 @@ function render(b: Board): void {
   drawBeams(b);
   renderGraph(b);
   renderBanner(b, revealStart === undefined && !revealArmed);
+  renderJudgeSteps(b);
   renderClaims(b);
   renderPreviews(b);
   renderWipe(b);
   renderResult(b);
+  renderCross(b);
   renderFusion(b);
   renderBlame(b);
   renderLog(b);
@@ -1526,7 +1535,7 @@ function renderWipe(b: Board): void {
 
 function renderResult(b: Board): void {
   const scored = b.fighters.filter((f): f is Scored => f.score !== undefined).toSorted((x, y) => x.score.place - y.score.place);
-  const key = JSON.stringify([b.ended, b.winner, b.why, scored.map((f) => [f.agent, f.score])]);
+  const key = JSON.stringify([b.ended, b.winner, b.why, scored.map((f) => [f.agent, f.score]), judged?.tie, judged?.fit]);
   if (key === resultKey) return;
   resultKey = key;
   byId("result-panel").hidden = !b.ended && scored.length === 0;
@@ -1541,6 +1550,150 @@ function renderResult(b: Board): void {
   byId("podium").replaceChildren(...top.map(podiumStep));
   byId("scoreboard").replaceChildren(...scored.map(scoreRow));
   byId("legend-look").hidden = !scored.some((f) => f.score.parts.look !== undefined);
+  renderPhotoFinish(b.ended ? judged?.tie : undefined);
+}
+
+const TIE_BY: Record<string, string> = {
+  diff: "Clef's side-by-side vote was too close to call, so the smaller diff took it.",
+  finish: "Same diff size too, so the earlier finish took it.",
+  order: "Nothing told them apart, so the first listed took it.",
+};
+
+/**
+ * The photo finish: each tied robot in its own lane at its Clef points, inside the band the judge
+ * cannot tell apart, then the side-by-side vote that picked the winner.
+ */
+function renderPhotoFinish(tie: TieView | undefined): void {
+  const box = byId("photo-finish");
+  box.hidden = tie === undefined;
+  if (tie === undefined) return box.replaceChildren();
+  const lead = tie.judgment[tie.agents[0] ?? ""] ?? 0;
+  const span = JUDGE_TIE + 0.7;
+  const x = (points: number): string => `${Math.max(0, Math.min(100, ((points - (lead - span)) / (2 * span)) * 100))}%`;
+  const head = el("div", "pf-head");
+  head.append(el("b", undefined, "Photo finish"), el("span", undefined, `${tie.agents.length} robots within ${tie.gap.toFixed(2)} points of Clef's ratings: closer than its noise (±${JUDGE_TIE})`));
+  const track = el("div", "pf-track");
+  track.setAttribute("role", "img");
+  track.setAttribute("aria-label", tie.agents.map((a) => `${displayName(a)} ${(tie.judgment[a] ?? 0).toFixed(2)}`).join(", "));
+  const band = el("span", "pf-band");
+  band.style.left = x(lead - JUDGE_TIE);
+  band.style.width = `calc(${x(lead + JUDGE_TIE)} - ${x(lead - JUDGE_TIE)})`;
+  band.append(el("i", undefined, "the judge's noise"));
+  track.append(band);
+  tie.agents.forEach((agent, i) => {
+    const lane = el("div", "pf-lane");
+    lane.style.setProperty("--color", colorFor(agent));
+    const runner = el("span", "pf-runner");
+    runner.style.left = x(tie.judgment[agent] ?? lead);
+    runner.style.animationDelay = `${0.12 * i}s`;
+    runner.append(el("b", undefined, displayName(agent)), el("em", undefined, (tie.judgment[agent] ?? 0).toFixed(2)));
+    lane.append(runner);
+    track.append(lane);
+  });
+  box.replaceChildren(head, track);
+  if (tie.prefer !== undefined) {
+    const vote = el("div", "pf-vote");
+    vote.append(el("b", undefined, "Side by side: Clef reads the tied diffs together and picks one to merge"));
+    for (const agent of tie.agents.toSorted((a, b) => (tie.prefer?.[b] ?? 0) - (tie.prefer?.[a] ?? 0))) {
+      const p = tie.prefer[agent] ?? 0;
+      const row = el("div", "pf-bar");
+      row.style.setProperty("--color", colorFor(agent));
+      const fill = el("span", "pf-fill");
+      fill.style.width = `${Math.max(1, p * 100)}%`;
+      const meter = el("span", "pf-meter");
+      meter.append(fill);
+      row.append(el("span", "pf-name", displayName(agent)), meter, el("span", "pf-pct", `${Math.round(p * 100)}%`));
+      vote.append(row);
+    }
+    box.append(vote);
+  }
+  const note = TIE_BY[tie.by];
+  if (note !== undefined) box.append(el("p", "pf-note", note));
+}
+
+let crossKey = "";
+
+/** Who passes whose tests: every fork (rows) on every test file (columns), with its shared suite total. */
+function renderCross(b: Board): void {
+  const cross: CrossView | undefined = b.ended ? judged?.cross : undefined;
+  const key = JSON.stringify(cross ?? null);
+  if (key === crossKey) return;
+  crossKey = key;
+  byId("cross-panel").hidden = cross === undefined;
+  byId("cross-split").hidden = cross?.split !== true;
+  const grid = byId("cross-grid");
+  if (cross === undefined) return grid.replaceChildren();
+  const counted = cross.columns.filter((c) => c.counted).length;
+  byId("cross-stat").textContent = `${counted} of ${cross.columns.length} files counted`;
+  const head = el("tr");
+  head.append(el("th", "corner", "fork ↓  ·  tests by →"));
+  for (const col of cross.columns) {
+    const th = el("th", col.counted ? "col" : "col left-out");
+    th.style.setProperty("--color", col.author === BASE_AUTHOR ? "#8a90a6" : colorFor(col.author));
+    th.title = `${col.file}${col.counted ? "" : " (not counted)"}`;
+    th.append(el("b", undefined, col.author === BASE_AUTHOR ? "repo" : displayName(col.author)), el("span", undefined, col.file.split("/").pop() ?? col.file));
+    head.append(th);
+  }
+  head.append(el("th", "col total", "shared"));
+  const thead = el("thead");
+  thead.append(head);
+  const tbody = el("tbody");
+  for (const row of cross.rows) {
+    const tr = el("tr");
+    const name = el("th", "row");
+    name.style.setProperty("--color", colorFor(row.agent));
+    name.textContent = displayName(row.agent);
+    tr.append(name);
+    row.cells.forEach((cell, i) => {
+      const col = cross.columns[i];
+      const state = cell === undefined || cell.total === 0 ? "none" : cell.passed === cell.total ? "pass" : cell.passed === 0 ? "fail" : "part";
+      const td = el("td", `cell ${state}${col === undefined || col.counted ? "" : " left-out"}`, cell === undefined ? "–" : `${cell.passed}/${cell.total}`);
+      td.style.animationDelay = `${0.03 * i}s`;
+      tr.append(td);
+    });
+    tr.append(el("td", "cell total", row.shared === undefined ? "–" : `${row.shared.passed}/${row.shared.total}`));
+    tbody.append(tr);
+  }
+  grid.replaceChildren(thead, tbody);
+}
+
+let judgeStepsKey = "";
+
+/** The judge's steps as chips under the banner while it works: a live view of the judge Workflow. */
+function renderJudgeSteps(b: Board): void {
+  const judging = b.task?.status === "finished" && !b.ended;
+  const steps = judging ? judgeSteps(b.fighters.map((f) => f.agent), b.task?.judging ?? []) : [];
+  const key = JSON.stringify(steps);
+  if (key === judgeStepsKey) return;
+  judgeStepsKey = key;
+  const list = byId("judge-steps");
+  list.hidden = steps.length === 0;
+  list.replaceChildren(
+    ...steps.map((s) => {
+      const item = el("li", `jstep ${s.state}`);
+      if (s.name.startsWith("fork ")) item.style.setProperty("--color", colorFor(s.name.slice(5)));
+      item.append(el("i", undefined, s.state === "done" ? "✓" : s.state === "failed" ? "✗" : ""), document.createTextNode(s.label));
+      return item;
+    }),
+  );
+}
+
+/** Clef's task-fit answer as a tiny histogram: one bar per level, lowest first. */
+function fitSpark(agent: string): HTMLElement | undefined {
+  const probs = judged?.fit[agent];
+  if (probs === undefined) return undefined;
+  const spark = el("span", "fit-spark");
+  spark.setAttribute("role", "img");
+  const top = Math.max(...probs);
+  spark.setAttribute("aria-label", `Clef's task fit: ${probs.map((p, i) => `level ${i} ${Math.round(p * 100)}%`).join(", ")}`);
+  spark.title = `How sure Clef was about task fit, level 0 to ${probs.length - 1}:\n${probs.map((p, i) => `${i}: ${Math.round(p * 100)}%`).join("\n")}`;
+  probs.forEach((p, i) => {
+    const bar = el("span", p === top ? "lvl peak" : "lvl");
+    bar.style.height = `${Math.max(6, (p / Math.max(top, 0.01)) * 100)}%`;
+    bar.style.animationDelay = `${0.05 * i}s`;
+    spark.append(bar);
+  });
+  return spark;
 }
 
 function podiumStep(f: Scored): HTMLElement {
@@ -1577,7 +1730,7 @@ function scoreRow(f: Scored): HTMLElement {
   code.type = "button";
   code.title = `See ${displayName(f.agent)}'s code`;
   code.addEventListener("click", () => void openDiff(taskId, f.agent));
-  row.append(name, bar, total, code);
+  row.append(name, bar, fitSpark(f.agent) ?? el("span", "fit-spark empty"), total, code);
   if (!f.score.eligible) row.append(el("span", "tag", "not eligible"));
   return row;
 }
@@ -1754,7 +1907,19 @@ function renderBlame(b: Board): void {
 
 let fusionKey = "";
 
-const FUSE_BADGE: Record<FuseOutcome, string> = { added: "⚡ fused", rejected: "left out", failed: "could not try" };
+const FUSE_BADGE: Record<FuseOutcome, string> = { added: "fused", rejected: "left out", failed: "could not try" };
+
+/** A bolt drawn in the badge's ink: the ⚡ emoji keeps its own yellow and vanishes on the orange badge. */
+function boltIcon(): SVGSVGElement {
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("class", "bolt");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("aria-hidden", "true");
+  const path = document.createElementNS(svgNs, "path");
+  path.setAttribute("d", "M13 2 4 14h7l-1 8 9-12h-7z");
+  svg.append(path);
+  return svg;
+}
 
 /** The fusion panel: one row per loser's try, with each gate it passed or failed. */
 function renderFusion(b: Board): void {
@@ -1840,6 +2005,7 @@ function fuseRow(row: FuseRow, index: number): HTMLElement {
   }
   if (row.clef !== undefined) gates.append(clefGate(row));
   const badge = el("span", "fuse-badge", FUSE_BADGE[row.outcome]);
+  if (row.outcome === "added") badge.prepend(boltIcon());
   item.append(who, files, gates, badge);
   if (row.note !== undefined) item.append(el("p", "fuse-note", row.note));
   return item;

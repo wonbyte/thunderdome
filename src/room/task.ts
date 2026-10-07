@@ -136,6 +136,33 @@ export interface Task {
   baseCommit?: string; // the source head when the forks were made; the base preview is built from it
   basePreview?: Preview; // the "before" preview of the source at baseCommit
   memory?: RaceMemory[]; // earlier races on the same app, told to every agent; missing = none
+  judging?: JudgeStep[]; // the judge Workflow's steps as they ran, for the race page; missing on older races
+}
+
+/** One judge Workflow step as the race page shows it. */
+export interface JudgeStep {
+  name: string; // JUDGE_STEP_NAME: "fork <agent>", "look", "split", "compare", "fuse" or "ship"
+  state: "running" | "done" | "failed";
+  startedAt: string; // ISO, the latest start (a retried step starts again)
+  endedAt?: string; // ISO, set by "done" and "failed"
+}
+
+/** The judge steps the race page knows. */
+export const JUDGE_STEP_NAME = /^(fork [a-z]{1,20}|look|split|compare|fuse|ship)$/;
+const JUDGE_STEPS_MAX = 16;
+
+/**
+ * Records a judge step starting or ending; a later state replaces an earlier one. False, and the
+ * task unchanged, for an unknown name, once the verdict is in, or past JUDGE_STEPS_MAX steps.
+ */
+export function recordJudgeStep(task: Task, name: string, state: JudgeStep["state"], at: string): boolean {
+  if (!JUDGE_STEP_NAME.test(name) || task.verdict !== undefined) return false;
+  const steps = task.judging ?? [];
+  const found = steps.find((s) => s.name === name);
+  if (found === undefined && steps.length >= JUDGE_STEPS_MAX) return false;
+  const step: JudgeStep = state === "running" ? { name, state, startedAt: at } : { name, state, startedAt: found?.startedAt ?? at, endedAt: at };
+  task.judging = found === undefined ? [...steps, step] : steps.map((s) => (s.name === name ? step : s));
+  return true;
 }
 
 /** A type alias, not an interface, so it fits the SQL row type. */

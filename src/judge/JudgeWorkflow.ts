@@ -12,16 +12,19 @@ import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } fro
 import { shipBlame, shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
 import { compareForks } from "./compare";
 import { runCrossTests, type CrossSource } from "./crosstests";
+import { splitTask } from "./testscope";
 import { clipDiff } from "./diffs";
 import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, scoreFusion, withoutPatches, type FusionResult } from "./fusion";
 import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
+  BASE_AUTHOR,
   decide,
   CROSS_TEST_STEP_MARGIN_S,
   FORK_STEP_TIMEOUT_S,
   forkPoint,
   judgeFork,
+  sharedSuite,
   parseNumstat,
   parseTestSummary,
   type JudgeDeps,
@@ -100,15 +103,16 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
   /** Judges, fuses and ships one race. Each part is a durable step. */
   override async run(event: WorkflowEvent<JudgeInput>, step: WorkflowStep): Promise<JudgeOutput> {
     const input = event.payload;
+    const tracked = <T>(name: string, fn: () => Promise<T>) => trackStep(this.env, input.taskId, name, fn);
     // Every fork is judged in its own sandbox, and the look needs only the previews, so all of
     // these steps run at once: the judge takes as long as its slowest step, not their sum.
     // JSON text: the scorer's raw legend is typed unknown, which step.do's Serializable type rejects.
     const judging = input.forks.map((fork) =>
-      step.do(`fork ${fork.agent}`, FORK_STEP, async () => JSON.stringify(await judgeInSandbox(this.env, input, fork))),
+      step.do(`fork ${fork.agent}`, FORK_STEP, tracked(`fork ${fork.agent}`, async () => JSON.stringify(await judgeInSandbox(this.env, input, fork)))),
     );
     // JSON text: LookResult has optional keys. A failed look never stops the judge: lookAtPreviews
     // does not throw, and a step that still fails (a timeout) is judged without look.
-    const looking = step.do("look", LOOK_STEP, async () => JSON.stringify(await lookAtPreviews(this.env, input))).catch((cause: unknown) => {
+    const looking = step.do("look", LOOK_STEP, tracked("look", async () => JSON.stringify(await lookAtPreviews(this.env, input)))).catch((cause: unknown) => {
       const failed: LookResult = { visual: 0, judged: false, forks: [], error: `the look step failed: ${String(cause).slice(0, 300)}` };
       return JSON.stringify(failed);
     });
@@ -118,7 +122,19 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
       judged.map((text) => JSON.parse(text) as JudgedFork),
       look,
     );
-    let decided: JudgeResult & { look: LookResult } = { ...decide(input, forks), look };
+    // When the task gives robots different parts, each robot's added tests check its own part, so
+    // the shared suite keeps only the repo's tests. Asked only when robots added tests to share; a
+    // failed step keeps them.
+    const added = forks.some((f) => f.crossTests?.some((t) => t.author !== BASE_AUTHOR) === true);
+    const split = sharedSuite(forks) === undefined || !added
+      ? undefined
+      : await step
+          .do("split", COMPARE_STEP, tracked("split", async () => splitTask(this.env.AI, input.task)))
+          .catch((cause: unknown) => {
+            console.error({ event: "judge.split_failed", taskId: input.taskId, error: String(cause).slice(0, 300) });
+            return undefined;
+          });
+    let decided: JudgeResult & { look: LookResult } = { ...decide(input, forks, undefined, split), look };
     // A tie within the judge's noise: Clef compares the tied changes side by side. A failed
     // comparison only leaves the tie to diff size and finish time.
     const tied = decided.scores.tie?.agents ?? [];
@@ -129,27 +145,27 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
     // Only with every tied fork's diff: a fork left out would count as the comparison's last pick.
     if (tied.length > 1 && changes.length === tied.length) {
       const prefer = await step
-        .do("compare", COMPARE_STEP, async () => JSON.stringify(await compareForks(this.env.AI, input.task, changes)))
+        .do("compare", COMPARE_STEP, tracked("compare", async () => JSON.stringify(await compareForks(this.env.AI, input.task, changes))))
         .then((text) => JSON.parse(text) as Record<string, number>)
         .catch((cause: unknown) => {
           console.error({ event: "judge.compare_failed", taskId: input.taskId, error: String(cause).slice(0, 300) });
           return undefined;
         });
-      if (prefer !== undefined) decided = { ...decide(input, forks, prefer), look };
+      if (prefer !== undefined) decided = { ...decide(input, forks, prefer, split), look };
     }
     // The fusion round tries the losers' other files on top of the winner and pushes what it keeps
     // to the winner's fork, so the ship merges it. Not retried: a retry after the push would find
     // nothing new. A failed round is only noted; the winner ships as judged.
     let fusedText: string;
     try {
-      fusedText = await step.do("fuse", FUSE_STEP, async () => JSON.stringify(withoutPatches(await fuseInSandbox(this.env, input, decided))));
+      fusedText = await step.do("fuse", FUSE_STEP, tracked("fuse", async () => JSON.stringify(withoutPatches(await fuseInSandbox(this.env, input, decided)))));
     } catch (cause) {
       fusedText = JSON.stringify({ tried: [], error: `the fusion step failed: ${String(cause).slice(0, 300)}` } satisfies FusionResult);
     }
     const fusion = JSON.parse(fusedText) as FusionResult;
     const result = { ...decided, why: `${decided.why}${fusionWhy(fusion, decided.winner ?? undefined)}`, fusion };
     // JSON text, like the fork steps: ShipResult has optional keys.
-    const shipped = await step.do("ship", SHIP_STEP, async () => JSON.stringify(await shipInSandbox(this.env, input, result)));
+    const shipped = await step.do("ship", SHIP_STEP, tracked("ship", async () => JSON.stringify(await shipInSandbox(this.env, input, result))));
     const ship = JSON.parse(shipped) as ShipResult;
     await step.do("save verdict", async () => {
       const by = decidedBy(result.scores);
@@ -172,6 +188,28 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
     });
     return { ...result, ship };
   }
+}
+
+/**
+ * Wraps a step's work so the race page sees it start and end. The marks are best effort: a failed
+ * mark is only logged and never fails the step.
+ */
+function trackStep<T>(env: Env, taskId: string, name: string, fn: () => Promise<T>): () => Promise<T> {
+  const mark = (state: "running" | "done" | "failed"): Promise<unknown> =>
+    env.TASK_ROOM.getByName(taskId)
+      .judgeStep(name, state)
+      .catch((cause: unknown) => console.error({ event: "judge.mark_failed", taskId, step: name, error: String(cause).slice(0, 200) }));
+  return async () => {
+    await mark("running");
+    try {
+      const result = await fn();
+      await mark("done");
+      return result;
+    } catch (cause) {
+      await mark("failed");
+      throw cause;
+    }
+  };
 }
 
 /** The verdict's scores: one per fork, in ranked order. */

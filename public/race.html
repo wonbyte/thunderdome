@@ -60,6 +60,7 @@
       </div>
       <div id="bots" class="bots"></div>
       <div id="banner" class="banner" hidden></div>
+      <ol id="judge-steps" class="judge-steps" aria-label="The judge's steps" hidden></ol>
       <ol id="ticker" class="ticker" aria-live="polite"></ol>
     </section>
 
@@ -124,6 +125,7 @@
     <section id="result-panel" class="card result" aria-labelledby="result-title" hidden>
       <h2 id="result-title">Result</h2>
       <p id="decided" class="decided" hidden></p>
+      <div id="photo-finish" class="photo-finish" hidden></div>
       <div id="podium" class="podium"></div>
       <ol id="scoreboard" class="scoreboard"></ol>
       <ul class="legend" aria-hidden="true">
@@ -137,6 +139,16 @@
         <summary>Why the judge picked <span id="winner"></span></summary>
         <pre id="why" class="why"></pre>
       </details>
+    </section>
+
+    <section id="cross-panel" class="card cross-panel" aria-labelledby="cross-title" hidden>
+      <div class="fusion-head">
+        <h2 id="cross-title">Who passes whose tests</h2>
+        <span id="cross-stat" class="count-pill"></span>
+      </div>
+      <p class="hint">Every fork ran the repo's tests and every robot's new test files, one file at a time, in its own judge sandbox. A robot's file counts in the shared suite when it passes in full on at least two forks; greyed columns did not count. The tests part of the score is the shared suite, so no robot is graded only on tests it wrote itself.</p>
+      <p id="cross-split" class="hint" hidden>Clef found that the task gives robots different parts, so each robot's tests check its own part: only the repo's tests counted.</p>
+      <div class="cross-scroll"><table id="cross-grid" class="cross-grid"></table></div>
     </section>
 
     <section id="blame-panel" class="card blame-panel" aria-labelledby="blame-title" hidden>

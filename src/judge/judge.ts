@@ -3,6 +3,7 @@ import { retry } from "../retry";
 import type { ForkLook, LookResult } from "./look";
 import { fixFingerprint, scoreForks, type ForkInput, type ScoreResult } from "./score";
 import { authorName, type Scorer, type ScorerResult } from "./scorer";
+import { SPLIT_YES } from "./testscope";
 import { buildWhy } from "./why";
 
 /** Test runs per fork: one run plus two retries, for a flaky container start. */
@@ -125,6 +126,7 @@ export interface JudgeResult {
   winner: string | null;
   why: string;
   look?: LookResult; // whether the race was judged on look, and each fork's look
+  split?: number; // Clef's yes that the task gives robots different parts, when the shared suite was asked
 }
 
 /** The judge Workflow instance id for a task. One judge per task, so a second start finds the first. */
@@ -218,9 +220,11 @@ const passedAll = (t: CrossTest): boolean => t.total > 0 && t.passed === t.total
  * that passes in full on at least two forks. A file that passes only on its author's fork is left
  * out for everyone: it may test that fork's own helpers, or expect behavior the task never asked
  * for. A file's size is the most tests any fork ran from it, so a file that fails to load counts
- * as 0 passed. undefined unless every fork that changed files has cross tests.
+ * as 0 passed. When the task gives robots different parts (`split`, Clef's yes), only the repo's
+ * files count: each robot's added files check its own part. undefined unless every fork that
+ * changed files has cross tests.
  */
-export function sharedSuite(forks: JudgedFork[]): Map<string, TestRun> | undefined {
+export function sharedSuite(forks: JudgedFork[], split = 0): Map<string, TestRun> | undefined {
   const runs = forks.filter((f) => f.input.filesChanged.length > 0);
   if (runs.length === 0 || runs.some((f) => f.crossTests === undefined)) return undefined;
   const size = new Map<string, number>();
@@ -233,7 +237,7 @@ export function sharedSuite(forks: JudgedFork[]): Map<string, TestRun> | undefin
       if (t.author === BASE_AUTHOR) base.add(key(t));
     }
   }
-  const counted = [...size.keys()].filter((k) => (size.get(k) ?? 0) > 0 && (base.has(k) || (passes.get(k) ?? 0) >= 2));
+  const counted = [...size.keys()].filter((k) => (size.get(k) ?? 0) > 0 && (base.has(k) || (split < SPLIT_YES && (passes.get(k) ?? 0) >= 2)));
   if (counted.length === 0) return undefined;
   const suite = new Map<string, TestRun>();
   for (const fork of runs) {
@@ -262,11 +266,11 @@ export function applyLook(forks: JudgedFork[], look: LookResult): JudgedFork[] {
 
 /**
  * Pure: scores, winner and why from the judged forks. The tests part uses the shared suite when
- * every fork has one. `prefer` holds the side-by-side comparison's probability per agent, used only
- * to break a tie within the judge's noise.
+ * every fork has one, the repo's tests only when `split` says the task splits the work. `prefer` holds the
+ * side-by-side comparison's probability per agent, used only to break a tie within the judge's noise.
  */
-export function decide(input: JudgeInput, forks: JudgedFork[], prefer?: Record<string, number>): JudgeResult {
-  const suite = sharedSuite(forks);
+export function decide(input: JudgeInput, forks: JudgedFork[], prefer?: Record<string, number>, split?: number): JudgeResult {
+  const suite = sharedSuite(forks, split);
   const judged = forks.map(({ context: _context, ...fork }) => {
     const shared = suite?.get(fork.agent);
     return shared === undefined ? fork : { ...fork, input: { ...fork.input, shared } };
@@ -275,7 +279,8 @@ export function decide(input: JudgeInput, forks: JudgedFork[], prefer?: Record<s
     judged.map((f) => f.input),
     prefer,
   );
-  return { taskId: input.taskId, forks: judged, scores, winner: scores.winner, why: buildWhy(scores) };
+  const used = suite !== undefined && split !== undefined ? { split } : {};
+  return { taskId: input.taskId, forks: judged, scores, winner: scores.winner, why: buildWhy(scores), ...used };
 }
 
 /** Judges every fork in order, then decides. */

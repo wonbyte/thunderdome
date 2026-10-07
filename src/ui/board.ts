@@ -72,7 +72,10 @@ export interface WireTask {
   basePreview?: WirePreview;
   baseCommit?: string;
   memory?: WireMemory[];
+  judging?: WireJudgeStep[];
 }
+/** One judge Workflow step (src/room/task.ts JudgeStep). */
+export interface WireJudgeStep { name: string; state: "running" | "done" | "failed"; startedAt: string; endedAt?: string }
 /** One earlier race the robots were told about (src/room/races.ts RaceMemory). */
 export interface WireMemory { id: string; prompt: string; winner: string; headline?: string; lesson?: string; commit?: string }
 /** One logged agent step (src/room/task.ts LoggedStep). */
@@ -103,6 +106,7 @@ export type BoardEvent =
   | { kind: "preview"; taskId: string; agent: string; preview: WirePreview }
   | { kind: "agent-end"; taskId: string; agent: string; outcome: { end: "done" | "failed" | "timeout" }; status: WireTaskStatus }
   | { kind: "verdict"; taskId: string; verdict: WireVerdict }
+  | { kind: "judge"; taskId: string; step: WireJudgeStep }
   | { kind: "base-preview"; taskId: string; preview: WirePreview };
 
 /** Each robot's color on the page. */
@@ -410,9 +414,16 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
     }
     case "base-preview":
       return { ...board, basePreview: { ...event.preview } };
+    case "judge":
+      return board.task === undefined ? board : { ...board, task: { ...board.task, judging: withJudgeStep(board.task.judging ?? [], event.step) } };
     default:
       return board;
   }
+}
+
+/** The judge's steps with one step's newest state in place (or added at the end). */
+export function withJudgeStep(steps: WireJudgeStep[], step: WireJudgeStep): WireJudgeStep[] {
+  return steps.some((s) => s.name === step.name) ? steps.map((s) => (s.name === step.name ? { ...step } : s)) : [...steps, { ...step }];
 }
 
 /** Gives each fighter its score and place (index in the judge's ranking + 1). Order is unchanged. */

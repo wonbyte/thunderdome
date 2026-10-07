@@ -248,5 +248,17 @@ describe("the shared suite", () => {
     const fork = await judgeFork(fakeDeps({ crossTests: () => Promise.reject(new Error("boom")) }), fakeInput(), fakeFork("ponder"));
     expect(fork.crossTests).toBeUndefined();
   });
+
+  it("S6: when the task splits the work, only the repo's test files count, and the split answer is kept on the result", async () => {
+    const forks = [
+      await judged("ponder", [run(BASE_AUTHOR, "test/a.test.ts", 4, 4), run("zippy", "test/z.test.ts", 0, 2), run("ponder", "test/p.test.ts", 3, 3)]),
+      await judged("zippy", [run(BASE_AUTHOR, "test/a.test.ts", 4, 4), run("zippy", "test/z.test.ts", 2, 2), run("ponder", "test/p.test.ts", 0, 3)]),
+      await judged("snip", [run(BASE_AUTHOR, "test/a.test.ts", 3, 4), run("zippy", "test/z.test.ts", 2, 2), run("ponder", "test/p.test.ts", 3, 3)]),
+    ];
+    expect(sharedSuite(forks, 0.02)!.get("ponder")).toEqual({ passed: 7, total: 9 });
+    expect(Object.fromEntries(sharedSuite(forks, 0.97)!)).toEqual({ ponder: { passed: 4, total: 4 }, zippy: { passed: 4, total: 4 }, snip: { passed: 3, total: 4 } });
+    expect(decide(fakeInput(), forks, undefined, 0.97).split).toBe(0.97);
+    expect(decide(fakeInput(), forks).split).toBeUndefined();
+  });
 });
 

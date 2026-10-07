@@ -72,7 +72,8 @@ flowchart LR
    of that commit.
 4. **Judge.** When the last agent ends, the `thunderdome-judge` Workflow clones each fork, runs a
    shared test suite on it (the repo's tests as the source has them, plus every robot's added test
-   files that pass on at least two forks), and scores its diff for task fit and clarity with Clef on Workers AI. The score is
+   files that pass on at least two forks; when Clef says the task gives robots different parts,
+   only the repo's tests count, so no robot is tested on another's part), and scores its diff for task fit and clarity with Clef on Workers AI. The score is
    tests 50, task fit 25, clarity 15 and claims 10. When the task asks for a visible change, the
    judge also screenshots each fork's preview with Browser Rendering and Clef scores how the page
    looks; then the score is tests 45, task fit 20, clarity 10, look 15 and claims 10. It writes a
