@@ -4,726 +4,171 @@
 
 # Thunderdome
 
-Agents compete on each task. A judge picks the best change. The winner ships, and the
-"why" stays with the commit.
+Agents compete on each task. A judge picks the best change. The winner ships, and the "why" stays
+with the commit.
 
-You give one task. Thunderdome forks the repo once per agent, and 3 Claude Code agents (Ponder,
-Zippy and Testy) race at the same time, each in its own container on its own fork. They claim
-files before they edit, so clashes show up before they become merge conflicts. Every push
-builds a live preview. When the last agent ends, a judge runs each fork's tests, scores the
-diffs with Workers AI, merges the winner into the source repo, and writes why it won into
-the merge commit. There is no pull request: the race replaces it.
+You give one task. Thunderdome forks the repo once per agent, and 3 to 5 Claude Code agents
+(Ponder, Zippy, Testy, Snip and Sparkle) race at once, each in its own container on its own fork.
+They claim files before they edit, so clashes show up before they become merge conflicts, and
+every push builds a live preview. When the last agent ends, a judge tests every fork, scores the
+diffs with Workers AI, folds the losers' best work into the winner, merges it, and writes why it
+won into the merge commit. There is no pull request: the race replaces it.
 
-Built on Cloudflare: Artifacts (git repos with a Workers binding, plus push events), Sandbox
-containers, Durable Objects, Workflows, Workers Previews, Workers AI (Clef), Browser Rendering
-and Workers static assets. See [PLAN.md](PLAN.md) for the build plan and [docs/api-notes.md](docs/api-notes.md)
-for the platform APIs we use.
+Built entirely on Cloudflare: Artifacts (git), Sandbox containers, Durable Objects, Workflows,
+Workers Previews, Workers AI (Clef), Browser Rendering and static assets.
 
 ## Quickstart
 
-No setup needed: the live deploy runs races for anyone.
+No setup: the live deploy runs races for anyone.
 
 1. Open **[thunderdome.git-bc1.workers.dev/play](https://thunderdome.git-bc1.workers.dev/play)**.
-2. Pick a demo app (`bugs`, `ui` or `clash`) and type a task, for example *"Make the shop page a
-   responsive grid of product cards"*. Press start.
-3. Watch Ponder, Zippy, Testy, Snip and Sparkle race live. In 2 to 4 minutes the judge picks a
-   winner, merges it, and says why. Click a robot to see its code; open **replay** to watch it again.
+2. Pick a demo app (`bugs`, `ui`, `clash` or `fusion`), edit the task if you like, and start.
+3. Watch five robots race. In 2 to 4 minutes the judge picks a winner, merges it and says why.
+   Click a robot to see its code, or open **replay** to watch it again.
 4. Every race is in the **[gallery](https://thunderdome.git-bc1.workers.dev/races)**, with a
    leaderboard and the judge's reason for each winner.
-
-To run your own copy, see [Run it yourself](#run-it-yourself): one Cloudflare account on the
-Workers Paid plan, an Anthropic API key, then `npm install`, your account id in `wrangler.jsonc`, three secrets and `npm run deploy`.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-  U([You or a judge]) -->|"POST /play or /tasks"| W[Worker: routes and pages]
+  U([You]) -->|"POST /play"| W[Worker]
   W --> TR[(TaskRoom<br/>Durable Object, 1 per race)]
-  TR -->|"fork x3"| AF[(Artifacts<br/>source repo and forks)]
+  TR -->|"fork x3-5"| AF[(Artifacts<br/>source repo and forks)]
   TR -->|"start"| SB[[Sandbox containers<br/>Claude Code, 1 per agent]]
   SB -->|"claim files"| TR
   SB -->|"git push"| AF
   AF -->|"repo.pushed event"| PW{{PushWorkflow}}
-  PW -->|"record push"| TR
-  PW -->|"wrangler preview"| PV[Workers Previews<br/>1 per push]
+  PW -->|"preview per push"| PV[Workers Previews]
   TR -->|"last agent ends"| JW{{JudgeWorkflow}}
-  JW -->|"run tests, get diff"| SB
-  JW -->|"score the diffs"| AI[Workers AI: Clef]
-  JW -->|"screenshot each preview"| BR[Browser Rendering]
-  BR -.->|"screenshots"| AI
-  JW -->|"merge winner, why in commit,<br/>lock every fork"| AF
-  JW -->|"verdict"| TR
-  TR -->|"race summary"| RI[(RaceIndex)]
+  JW -->|"tests, diffs"| SB
+  JW -->|"score, compare"| AI[Workers AI: Clef]
+  JW -->|"screenshots"| BR[Browser Rendering]
+  JW -->|"fuse, merge, lock forks"| AF
+  JW -->|"steps, verdict"| TR
   TR -.->|"live WebSocket"| UI([Race page])
 ```
 
-1. **Fork.** A race forks the source repo once per agent with the Artifacts binding, and each
-   fork gets its own write token. A demo template is first forked into a fresh source repo, so
-   the template never changes.
-2. **Race.** Each agent runs Claude Code in its own Sandbox container, with its own style
-   (Ponder is careful, Zippy is fast, Testy writes its tests first). Every robot adds its tests in a file of its own (`test/<name>.test.ts`). Before editing, it claims files on the TaskRoom's claim board; a
-   file another agent holds becomes a shared claim (a clash), which costs claim points when another
-   agent did the task without that file. Each agent is also told what earlier races on the same
-   app taught: the task, who won and the winner's strongest point (see [Race memory](#race-memory)). Agents
-   push to their fork as they work. Tokens stay outside the sandbox: the outbound proxy adds them.
-3. **Push events.** Each push fires an Artifacts `repo.pushed` event into the `thunderdome-push`
-   Workflow. It records the push on the TaskRoom (the git graph) and builds a Workers Preview
-   of that commit.
-4. **Judge.** When the last agent ends, the `thunderdome-judge` Workflow clones each fork, runs a
-   shared test suite on it (the repo's tests as the source has them, plus every robot's added test
-   files that pass on at least two forks; when Clef says the task gives robots different parts,
-   only the repo's tests count, so no robot is tested on another's part), and scores its diff for task fit and clarity with Clef on Workers AI. The score is
-   tests 50, task fit 25, clarity 15 and claims 10. When the task asks for a visible change, the
-   judge also screenshots each fork's preview with Browser Rendering and Clef scores how the page
-   looks; then the score is tests 45, task fit 20, clarity 10, look 15 and claims 10. It writes a
-   "why" that names what decided the race. Forks within 1.5 points on Clef's ratings and equal on
-   tests and claims are a tie: Clef then compares their diffs side by side, and if that is close
-   too, the smaller diff wins.
-5. **Fusion.** The losers' work is tried on top of the winning fix: files the winner never touched
-   (often a new test), and up to 3 hunks per loser in files the winner did change, when they apply
-   cleanly. An addition is kept only when every test still passes and Clef says it makes the
-   change better (see [Fusion round](#fusion-round)). Then the fused code is scored the same way
-   as the forks, and the fusion ships only if it scores at least the winner alone. So the shipped
-   change can hold the best of several robots, each credited as the author of its part.
-6. **Ship.** The winner's fork is merged into the source repo with the why as the merge commit
-   body, and every fork is locked and kept as a record. There is no pull request: the race replaces it.
+1. **Fork.** The race forks the source repo once per agent, each fork with its own write token.
+   Tokens never enter a sandbox: the outbound proxy adds them.
+2. **Race.** Each agent runs Claude Code in its own container with its own style (careful, fast,
+   test-first, lean, tidy) and writes its tests in a file of its own. It claims files on the
+   TaskRoom's claim board before editing; a file someone else holds becomes a clash. Agents also
+   hear what earlier races on the same app taught: who won and why.
+3. **Previews.** Every push fires an Artifacts event into a Workflow that records it for the git
+   graph and builds a Workers Preview of that commit.
+4. **Judge.** A Workflow judges every fork in its own sandbox, in parallel (see [The judge](#the-judge)).
+5. **Fusion.** The losers' files and hunks are tried on top of the winner. One is kept only when
+   every test passes and Clef says it makes the change better, and the fusion ships only when the
+   fused code scores at least the winner alone. Each kept part is a commit by the robot that wrote it.
+6. **Ship.** The winner is merged into the source repo with the why as the merge commit body, and
+   every fork is locked as a record. If the source moved on, three resolvers race to fix the
+   conflict, and the first one whose tests all pass is merged.
 
-The TaskRoom sends every change to the race page on a WebSocket. The RaceIndex keeps the race
-list for the gallery and leaderboard, and PlayQuota guards `/play`.
+The race page shows all of it live: the robots act out each real step, with the Cloudflare
+pipeline, the git graph, the claim board, the previews, the judge's steps and the scores below.
 
-## Try it
+## The judge
 
-The live deploy is at **https://thunderdome.git-bc1.workers.dev**:
+| Part | Points | How |
+|---|---|---|
+| Tests | 50 | A shared suite: the repo's tests from the base commit, plus each robot's new test files that pass in full on at least two forks |
+| Task fit | 25 | Clef: does the diff do what the task asks of this robot (6 levels) |
+| Clarity | 15 | Clef: readability (4 levels) and a yes/no on edits the task does not need |
+| Claims | 10 | 2 off for a clash that another fork that passed tests avoided |
 
-- [`/races`](https://thunderdome.git-bc1.workers.dev/races): every race, a leaderboard, and a replay of each one.
-- [`/play`](https://thunderdome.git-bc1.workers.dev/play): start your own race on a demo app (a few races per day).
-- `/race/<id>`: one race, live or as a replay (`?replay`). The robots act out each real
-  step; below them are the Cloudflare pipeline, the git graph of the forks, the claim board,
-  the previews, a before/after view and the judge's scores. Click a robot to see its code.
+When the task asks for a visible change, Clef also scores screenshots of each preview, and the
+split is tests 45, task fit 20, clarity 10, look 15, claims 10.
 
-## Needs
-
-- A Cloudflare account on the **Workers Paid** plan, with Artifacts on. Workers AI and Browser Rendering need no extra setup.
-- An Anthropic API key for the agents.
-- Node.js 22.18 or later.
-- Docker or Podman: wrangler builds the sandbox image on deploy. For Podman, see
-  [Using Podman instead of Docker](#using-podman-instead-of-docker).
+- **Fair tests.** No robot is graded only on tests it wrote itself. When the task gives robots
+  different parts, Clef spots it and only the repo's tests count.
+- **Clef sees whole functions.** It gets each changed function in full (`git diff --function-context`)
+  and is asked twice, with the diff's files in both orders, averaged. One call moves by up to 3 points
+  on a harmless rewrite of the diff; the average moves by at most 0.54 (measured on 38 forks).
+- **Ties are honest.** Forks equal on tests and claims and within 0.75 points on Clef's ratings
+  tie. Clef then reads the tied diffs side by side and picks one; if that is too close, the
+  smaller diff wins, then the earlier finish. The why says which.
+- **Agent output is data.** Diffs and test files go only in a Clef request's state, never in its
+  questions.
 
 ## Run it yourself
 
-**1. Install and test.**
+You need a Cloudflare account on **Workers Paid** with Artifacts on, an Anthropic API key with
+credits, Node.js 22.18+, and Docker or Podman (wrangler builds the sandbox image).
 
 ```sh
 npm install
-npm run check        # typecheck, lint (oxlint, type-aware) and unit tests
-```
-
-**2. Point it at your account.** In `wrangler.jsonc`, set `CF_ACCOUNT_ID` to your account id
-(`npx wrangler whoami` shows it). The Worker is named `thunderdome`.
-
-**3. Log in and set the secrets.**
-
-```sh
+npm run check                                     # build, typecheck, lint, unit tests
 npx wrangler login
-npx wrangler secret put ADMIN_TOKEN                # any long random string; guards the admin routes
-npx wrangler secret put ANTHROPIC_API_KEY          # the agents' model key; it never enters a sandbox
-npx wrangler secret put CLOUDFLARE_PREVIEW_TOKEN   # API token with Account → Workers Scripts: Edit; builds previews, never enters a sandbox
+npx wrangler secret put ADMIN_TOKEN               # any long random string; guards the admin routes
+npx wrangler secret put ANTHROPIC_API_KEY         # the agents' key; never enters a sandbox
+npx wrangler secret put CLOUDFLARE_PREVIEW_TOKEN  # API token with Workers Scripts: Edit, for previews
 ```
 
-**4. Deploy.**
+Set `CF_ACCOUNT_ID` in `wrangler.jsonc` to your account id (`npx wrangler whoami`), then deploy
+and make the Worker that previews live under (once):
 
 ```sh
-npm run deploy       # builds the page scripts and the sandbox image, then deploys
+npm run deploy
+npx wrangler deploy -c scripts/preview-worker.jsonc
 ```
 
-Options, set at deploy with `--var`:
-- `AGENT_MODEL:<model id>`: the model the robots and conflict resolvers run (default `claude-opus-5-5`; empty means Claude Code's default).
-- `AGENT_MODEL:<model id>`: the agents' model (empty means Claude Code's default).
-- `PLAY_INVITE:<code>`: require an invite code on `/play` (empty means none).
-- `PLAY_DAILY_LIMIT:<n>`: races `/play` may start per UTC day (default 10, at most 3 per IP).
+With Podman, see [Using Podman](docs/reference.md#using-podman-instead-of-docker). Optional vars,
+set with `npm run deploy -- --var NAME:value`: `AGENT_MODEL` (default `claude-opus-5-5`),
+`PLAY_INVITE` (an invite code for `/play`) and `PLAY_DAILY_LIMIT` (default 10).
 
-For example: `npm run deploy -- --var PLAY_INVITE:letmein`.
-
-**5. Seed the demo apps (once).** Each call makes a template repo from a folder in
-[`demo/`](demo/README.md). A race forks the template into a fresh repo, so templates never change.
+Seed the demo apps once, then start a race:
 
 ```sh
-export THUNDERDOME=https://thunderdome.<your-subdomain>.workers.dev
-export ADMIN_TOKEN=<the token from step 3>
-for app in bugs ui clash; do
+export THUNDERDOME=https://thunderdome.<your-subdomain>.workers.dev ADMIN_TOKEN=<your token>
+for app in bugs ui clash fusion; do
   curl -X POST $THUNDERDOME/spike/seed -H "authorization: Bearer $ADMIN_TOKEN" \
     -H "content-type: application/json" -d "{\"repo\":\"thunderdome-$app\",\"app\":\"$app\"}"
 done
 ```
 
-**6. Start a race.** Pick one:
-
-- Open `$THUNDERDOME/play`, pick a demo app, edit the task if you like, and press **Start the race**.
-  It opens the race page.
-- Or with curl (no token; counts against the daily quota):
-
-  ```sh
-  curl -X POST $THUNDERDOME/play -H "content-type: application/json" \
-    -d '{"template":"thunderdome-bugs","prompt":"The shop'\''s cart is broken and the tests show it. Fix every failing test."}'
-  ```
-
-- Or as admin, with the prompts from [`demo/README.md`](demo/README.md). This script creates the
-  race (it prints the task id), follows the live feed until the verdict, and checks the previews.
-  It reads `ADMIN_TOKEN` and `THUNDERDOME_URL` from the environment:
-
-  ```sh
-  THUNDERDOME_URL=$THUNDERDOME node scripts/race.mjs bugs     # or ui, clash, clash-full
-  ```
-
-**7. Watch it.** Open `$THUNDERDOME/race/<id>`. Agents get at most 8 minutes, and most races end
-sooner; the judge needs about a minute more. Then the winner's fork is merged into the race's
-source repo, and the race is on `$THUNDERDOME/races` with a replay.
-
-If previews fail on a new account, check that a Worker named `thunderdome-sample` (`PREVIEW_WORKER`
-in `wrangler.jsonc`) exists; previews are made under it. To make it, deploy it once:
+Open `$THUNDERDOME/play`, or run a demo race from the terminal and follow it to the verdict:
 
 ```sh
-npx wrangler deploy -c scripts/preview-worker.jsonc
+THUNDERDOME_URL=$THUNDERDOME node scripts/race.mjs bugs   # or ui, clash, clash-full, fusion; AGENTS=5
 ```
 
-If git fails with 401, see the open items in [docs/api-notes.md](docs/api-notes.md).
+Agents get at most 8 minutes and usually finish in 1 to 2; judging takes about a minute more.
 
 ## Costs
 
-Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
-
-| Part | Cost per race | Notes |
-|---|---|---|
-| Agents (Anthropic API) | $0.43–0.55 | Reported by Claude Code per agent (`costUsd` on each agent). The `bugs` and `ui` demos cost $0.29–0.46 (PLAN.md, Day 9). |
-| Conflict race | about $0.10–0.30 | Only when the winner conflicts with a newer source: 3 short resolver runs. |
-| Judge (Workers AI, Clef) | small | 3 short questions per fork, asked twice (files in both orders), 2 side-by-side questions on a tie, plus 1 question per race and 1 question with 3 screenshots per fork when the task is visual; billed as Workers AI usage. |
-| Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. |
-| Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 1 agent container per robot (3 to 5) busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
-| Artifacts | — | Not billed before Oct 15, 2026, when Artifacts billing starts. |
-
-The plan itself is Workers Paid. Each race's agents ran for 53–83 s, and the judge and merge
-took 13–29 s more. `/play` races 5 robots, so its agent spend is about 5/3 of the table:
-$0.72–0.92 a race. It caps public races at `PLAY_DAILY_LIMIT` per day (default 10), so the public
-demo costs at most about $9.20 a day in agent spend.
+Agents are the main cost: $0.43–0.55 a race with 3 agents on Anthropic's API (measured Oct 5),
+about $0.72–0.92 with the 5 that `/play` uses. `/play` allows 10 races a day, so the public demo
+costs at most about $9 a day. Clef, Browser Rendering, containers, Durable Objects, Workflows and
+previews are small Workers Paid usage. Artifacts is not billed before Oct 15, 2026.
 
 ## Limits
 
-| What | Limit | Where |
-|---|---|---|
-| Agents per race | 3 to 5 (`/play` always uses 5) | `src/room/task.ts` |
-| Agent run time | 8 minutes each; what it pushed by then still counts | `src/agents/runner.ts` |
-| Race watchdog | 12 minutes after the start, any agent that never reported back (its sandbox lost track, e.g. a deploy reset it) is ended as failed, so the judge still runs on what the forks hold | `src/room/task.ts`, `src/room/TaskRoom.ts` |
-| Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
-| Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
-| Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
-| Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork; 20 minutes per fork step | `src/judge/judge.ts` |
-| Look | waits up to 3 minutes for final previews; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
-| Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
-| Diff the scorer reads | first 100,000 characters | `src/judge/scorer.ts` |
-| Diff saved for the page | 200,000 characters, cut at a whole line | `src/judge/diffs.ts` |
-| Push log per agent | newest 50 pushes | `src/room/task.ts` |
-| Race list | index keeps 200 races; `GET /tasks` returns 50; prompts cut to 280 characters | `src/room/races.ts` |
-| Workers Previews | 500 per Worker (oldest deleted first), 100 deployments per preview | Cloudflare limit |
-| Sandbox idle | a container stops after 30 minutes without use | `src/sandbox/ThunderdomeSandbox.ts` |
-
-What it does not do yet:
-
-- The look score sees screenshots, not behavior: a sort control that shows but does not sort
-  scores as well as one that works (the tests cover behavior). Look is judged only on the page at
-  `/` at two widths, and Clef's look scores for nearly identical pages differ by tenths of a level.
-- A task with one obvious answer makes the agents write the same fix. In both `bugs` races on Oct 5
-  all three diffs were the same code (one differed only in the order of an import). The judge
-  fingerprints each diff's changed lines and says so ("wrote the same fix; ponder finished first"),
-  but nothing in the code can pick a winner then. `clash-full` asks for more than its tests check,
-  so its fixes differ; it is the race to watch.
-- Clef is deterministic, but the same diff with its files in another order moved its scores by up
-  to about 1.5 points (Oct 7, 6 forks). Each fork is scored in both file orders and averaged, and
-  forks closer than 1.5 points on Clef's ratings tie: a side-by-side comparison, then the smaller
-  diff, then the earlier finish decides. A clash costs claim points only when it was avoidable, so claim order alone no longer picks
-  the winner (it decided all 4 races on the live deploy on Oct 5; replayed under this rule, 1 was
-  decided by code, 2 were close and 1 was the same fix).
-- A conflict race ships only a resolution whose tests all pass. When none does, or a resolver
-  runs out of time, the ship stays `"conflict"` and nothing is merged. Resolvers see the conflict
-  and the task, not the other race that changed the source.
-- Agents run on Anthropic's API, so `ANTHROPIC_API_KEY` must have credits.
-
-## Reference
-
-### Create a task by hand
-
-The Day 1 check seeds the `thunderdome-sample` repo (once), forks it, clones the fork in a sandbox,
-pushes a commit, and reads the commit back through the binding:
-
-```sh
-curl -X POST $THUNDERDOME/spike/day1 -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-Pass: the JSON has `"ok": true`.
-
-Then make a task. It forks the repo (or a template, with `"template"` in place of `"repo"`) once
-per agent (3 to 5, default 3) and returns one write token per fork. Only this response shows the tokens.
-
-```sh
-curl -X POST $THUNDERDOME/tasks \
-  -H "authorization: Bearer $ADMIN_TOKEN" \
-  -H "content-type: application/json" \
-  -d '{"template":"thunderdome-bugs","prompt":"Fix every failing test","agents":3}'
-
-curl $THUNDERDOME/tasks/<id>
-```
-
-Pass: the first call returns `201` with `"status": "ready"` and 3 agents, each with a
-`fork`, `remote` and `token`. The second call returns the same task without tokens.
-
-### Run the race
-
-Start the agents of a `ready` task. Each agent runs Claude Code in its own sandbox, with its
-own style (`ponder` careful, `zippy` fast, `testy` test-first, `snip` lean, `sparkle` tidy), for at most 8 minutes. Agents commit
-and push to their fork after each working step. When an agent ends, the sandbox commits what
-is left, pushes the fork, and reports `DONE` to the TaskRoom.
-
-The runner also commits and pushes each agent's work after each test run and after edits (at
-most every 20 s), so previews change during the race.
-
-```sh
-curl -X POST https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/run \
-  -H "authorization: Bearer $ADMIN_TOKEN"
-
-# Follow the agents. Pass the last "next" value as "after" to get only new steps.
-curl "https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/steps?after=0" \
-  -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-Pass: after at most about 9 minutes, `GET /tasks/<id>` shows `"status": "finished"` and each
-agent has `"pushed": true` and a `commit`.
-
-### Watch a race live
-
-Open `https://thunderdome.<your-subdomain>.workers.dev/race/<id>` in a browser. No token is needed:
-the page and the read routes it uses (`GET /tasks/<id>`, `/steps`, `/claims`, `/judge`, the fork
-diffs and the `/live` WebSocket) are public. Creating, running and judging a task still need
-`ADMIN_TOKEN`. Fork tokens never reach task state or the step log (the sandbox proxy adds them),
-so nothing secret is public.
-
-Each agent is a robot in its own color: Ponder (careful, orange), Zippy (fast, red),
-Testy (tester, blue), and Snip (lean, green) and Sparkle (tidy, purple) in bigger races. Every move is a real event:
-
-| The robot | When the agent |
-|---|---|
-| scans (eyes glow) | reads or searches code |
-| swings a hammer | edits a file |
-| charges up | runs the tests |
-| thinks (speech bubble) | writes text; the bubble shows its newest step |
-| plants a flag | claims files |
-| lunges at another robot, with sparks | claims a file another agent holds (a clash) |
-| fires a bolt at the core | pushes to its fork; the counter shows its commits |
-| falls over | fails or runs out of time |
-| jumps with a crown / slumps | wins / loses the verdict |
-
-Below the stage: the claim grid (clashes in red), the base "before" preview next to each agent's
-newest preview, and at the end the scoreboard and the judge's why.
-
-For a raw feed, any WebSocket client works:
-
-```sh
-npx wscat -c wss://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/live
-```
-
-Open it before or after `POST /tasks/<id>/run`. The first message is a `snapshot` with the
-current task. Then every change comes as one JSON message with a `kind` and the `taskId`:
-
-| `kind` | When |
-|---|---|
-| `status` | The run starts, and again once the sandboxes started (`task` is the full task) |
-| `steps` | An agent took steps (`agent`, `steps` with `seq`, the same as `/steps`) |
-| `claim`, `release` | An agent claimed or released files (`result` / `released`) |
-| `push` | A push to an agent's fork was recorded (`push`: `commits`, `pushes`, `head`, `headMessage`, `lastPushAt`, `log`) |
-| `preview` | A preview of the agent's newest push is live (`preview`: `url`, `commit`, `at`) |
-| `base-preview` | The base preview of the source is live (`preview`: `url`, `commit`, `at`) |
-| `agent-end` | An agent ended (`outcome`, and the task `status`) |
-| `verdict` | The judge saved its verdict |
-
-A request without `Upgrade: websocket` gets `426`. The server ignores messages you send.
-
-### Race gallery
-
-Every race is listed in one race index (the `RaceIndex` Durable Object). A TaskRoom records its
-race when it is created, when it starts, when it finishes, and when the verdict is saved. The
-index keeps the newest 200 races, with each prompt cut to 280 characters so the list fits in
-one storage value.
-
-- `GET /tasks` is public. It returns `{ races }`, newest first, at most 50. Each race has its
-  `id`, `prompt` (cut to 280 characters), `status`, times, `agents`, `winner` once judged, and
-  `clash` (two agents claimed the same file). Once judged it also has `scores` (`agent` and
-  `total` per fork, in ranked order) and `decidedBy` (`"code"`, `"claims"` or `"close"`) for the
-  leaderboard. Races judged before these fields have neither, and `decidedBy` is missing when
-  there was no winner or no eligible runner-up.
-- `https://thunderdome.<your-subdomain>.workers.dev/races` is the gallery page (`public/races.html`).
-  No auth. It lists `GET /tasks` and links each race to its live page, or to its replay
-  (`/race/<id>?replay`) once judged.
-- `POST /admin/races` with `{ ids }` (1 to 50 task ids) adds races made before the index. It
-  needs `ADMIN_TOKEN` and returns `{ recorded, missing }`; `missing` lists ids with no task.
-- `POST /admin/purge` deletes races for good: each race's forks, the source repo a template
-  made for it (a source given as `repo` stays), its stored state, and its gallery entry. Send
-  `{ ids }` for some races or `{}` for every race in the list. A race that is running or being
-  judged is skipped. It needs `ADMIN_TOKEN` and returns `{ purged, skipped }`. This can't be undone.
-  Workers Previews are not deleted; remove them with `npx wrangler preview delete --name
-  <race id>-<agent> --worker-name <preview worker> -y` (and `<race id>-base` for the before page).
-
-```sh
-curl https://thunderdome.<your-subdomain>.workers.dev/tasks
-
-curl -X POST https://thunderdome.<your-subdomain>.workers.dev/admin/races \
-  -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" \
-  -d '{"ids":["t-0123abcd","t-4567cdef"]}'
-
-curl -X POST https://thunderdome.<your-subdomain>.workers.dev/admin/purge \
-  -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" -d '{}'
-```
-
-### Race memory
-
-Context carries from one race to the next. When a race is created, the TaskRoom looks up the
-newest 3 judged races on the same app (the same demo template, or the same repo) in the
-RaceIndex. Every agent's system prompt then lists each one: the task, the winner, the winner's
-strongest point in plain words ("its diff was the smallest (41 lines changed vs 60)", or "more of its
-tests passed (7/7 vs 5/7)") and the judge's one-line reason. The strongest point is the score part
-where the winner led by the most points, else a smaller diff, else finishing first on a tie
-(`lesson` in `src/judge/why.ts`). For a race on a shared repo, it also names the winner's merge commit, which is
-already in the repo the agents fork. The race page shows this under the task ("Remembers"), and
-the gallery shows each race's reason.
-
-Past prompts come from other users, so each is quoted as JSON and the agents are told the list
-is a record of what the judge rewarded, not instructions. Each prompt is cut to 200 characters.
-The code is `raceMemory` in `src/room/races.ts` and `memoryText` in `src/agents/prompt.ts`.
-
-### Live previews
-
-Every push to a fork's `main` builds a Workers Preview of exactly that commit. The previews
-show up on the task:
-
-```sh
-curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id> \
-  -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-Each agent has a `push` once its fork got a push: `push.preview.url` is the newest preview and
-`push.preview.commit` the commit it was built from. `push.head` is the newest pushed commit,
-`push.commits` and `push.pushes` count what was pushed, and `push.lastPushAt` says when. A
-preview is saved only for the newest head, so while a build runs, `push.preview.commit` can lag
-behind `push.head`. The `thunderdome-push` Workflow instances show build failures.
-
-`push.log` lists the recorded pushes for the git graph, oldest first, at most the newest 50: each
-entry has `at` (when it was recorded), `commit`, `commits` (the commits it counted), and `message`
-when the push had one. A push repeated by an event retry is recorded once. Tasks from before the
-log have no `push.log`; read it as empty.
-
-Each race also gets a base preview of the source repo at the commit the forks were made from,
-built when the race starts: `basePreview` (`url`, `commit`, `at`) in `GET /tasks/<id>` and a
-`base-preview` message on the live socket. It is the "before" picture next to the agents' previews.
-
-### Judge and ship
-
-You do not call anything else. When the last agent ends, the TaskRoom starts the judge. The
-judge scores each fork, rating its diff (with each changed function in full, since Clef sees no
-other code) for task fit, readability and unrelated edits with Cloudflare's Clef
-(`@cf/cloudflare/clef`) on Workers AI through the `AI` binding (so no extra API key is needed),
-picks a winner, and merges the winner's fork into the source repo's
-default branch.
-
-**Look.** Clef first answers a yes/no question on the task text: does it ask for a change a person
-would see on the page? If yes, the judge waits until each fork's preview is built from the fork's
-final commit (up to 3 minutes), then uses the `BROWSER` binding to screenshot the "before" page and
-each fork's page at desktop (1280 px) and phone (390 px) width. Clef sees those screenshots and
-scores two things on 5 levels: how completely the page shows what the task asks (60%) and how
-clean and readable it is (40%). A fork whose preview is missing or does not load gets 0 look
-points, and the why says so. If the screenshots or Clef fail for every fork, or the look runs past
-its 8-minute budget, the race is judged without look rather than give the forks left 0. The merge commit holds the "why". Then it makes every fork read-only and saves
-the verdict on the task.
-
-**Fusion round.** <a id="fusion-round"></a>Before the merge, the judge tries to add the losers' best
-work to the winner. For each losing fork that could have won, best first, it tries two kinds of
-addition on a clone of the winner's fork, in a sandbox:
-
-- **Files** the loser changed and the winner did not. Every robot writes its tests in a file of its
-  own (`test/<name>.test.ts`), so this is often the loser's tests.
-- **Hunks** in files both changed. The loser's diff from the fork point is split into hunks, and
-  each one is applied alone with `git apply --3way`. A hunk that does not apply cleanly is dropped
-  (a fusion never creates a conflict), and so is one that only touches whitespace or comments or
-  that the winner's change already has. At most 3 hunks per loser are tried. Each hunk is named
-  for the function, constant or test it changes ("Ponder's cartMessage in src/shop.ts").
-
-Each addition is its own try, and three gates must pass:
-
-1. Every test passes, and no fewer pass than before it.
-2. Clef answers a yes/no question. When the additions are all tests: do they check something the
-   task asks that the winner's own tests do not? Otherwise (code, or a hunk): do they make the
-   change better for the task, or do they repeat it, stray from it, or only make it bigger?
-3. That yes is at least 0.6.
-
-**The fused score.** When something was kept, the fused head is scored the same way as the forks:
-the tests (from the last kept try's run), task fit and clarity (Clef, on the diff from the fork
-point). Look and claims carry over from the winner: the fused head has no preview of its own, and
-the added work came through the gates, not through a claim. A fusion that adds code is pushed
-only when the fused score is **at least** the winner's score alone; otherwise every kept try is
-turned down with the two numbers ("the fused change scored 90.1, below 91.9 for the winner alone"),
-and the winner ships as judged. A fusion that adds only tests is kept on its gates even when it
-scores lower, and the panel says so: added tests cannot raise the tests part (it is passed/total,
-so 13/13 and 20/20 both score full), while the bigger diff costs clarity. Scoring is best effort and time-boxed (90 seconds): if Clef fails, the fusion
-is kept on its gates and the verdict says it was not scored. The result is saved as
-`verdict.fusion.score = { before: { total, tests }, after: { total, tests } }` and is
-written into the why ("ponder alone 91.9 -> fused 94.6 (tests 20/20 -> 26/26)"). Only races judged
-since this was added have a score.
-
-The sandbox that runs the losers' tests (agent-written code) holds read tokens only. The kept
-commits leave it as a git bundle; a second sandbox with the winner fork's write token runs only
-git and checks the bundle before it pushes. The bundle must build on the fork's current head with
-exactly one plain commit per kept try. Each file commit may change only its try's files, and
-each hunk commit must be byte for byte the patch the gates passed. The round is time-boxed (no new
-try after 5 minutes), so it never pushes after its step has given up. An addition that passes
-becomes its own commit on the winner's fork, authored by the robot that wrote it ("Thunderdome
-fusion: add testy's test/cart.test.ts to ponder's fix", or "add ponder's cartMessage in
-src/shop.ts"), so `git log` and `git blame` credit each robot. The merge commit on main credits
-them too: after the why it ends with one `Co-authored-by: Thunderdome testy
-<testy@thunderdome.local>` trailer for each robot whose work was fused and merged (the identity
-its own commits use), so GitHub shows them as co-authors. Merges from before this change have no
-trailers (commits never change). The ship then merges the fused fork as usual, the fused commit
-gets its own preview, and the why gains a "Fusion" section listing every try and why it was kept
-or left out. The code is `src/judge/fusion.ts`; `demo/fusion` is a demo app built for it.
-
-The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the shared model):
-
-- **Stage.** After the winner is revealed, each loser throws its file (`{ }`) or hunk (`@@`) onto
-  the winner. A kept one lands and the mascot stamps it "fused!"; a left-out one bounces off the
-  winner with the gate that said no ("Clef 0.18 < 0.60", "tests 5/6" or "scored lower"). The last stamp is the score: "team 94.6 vs 91.9 alone
-  (+2.7)". The loser then wears an "⚡ assist" tag.
-- **Fusion round panel.** The score headline ("Testy alone 91.9 → fused 94.6 · tests 20 → 26")
-  over two bars, winner alone and fused. A fusion dropped for scoring lower says so. Then one row
-  per try: the files or the hunk, gate 1 (tests 20/20), gate 2 (Clef's yes as a bar with the 0.6
-  line on it), and the outcome, with the reason for a left-out try.
-- **Who wrote main.** A stacked bar of the shipped change's lines by robot, with a legend (name,
-  percent, lines). The ship computes it in its git-only sandbox right after the merge:
-  `git blame -w --line-porcelain <first parent>..<merge>` on each file the merge added or changed
-  (up to 40), counted by each robot's commit email, without blank lines. It is saved as
-  `verdict.ship.blame` (`{ testy: 90, ponder: 12, thunderdome: 1 }`); races shipped before it was
-  added show no bar.
-- **Git graph.** An arrow from each loser's lane into the winner's lane just before the merge:
-  solid into the fusion commit when kept, dashed and stopping at ✗ when left out. The fusion
-  commit is a real commit node: its author robot and "660ef87 · by Ponder". Click it (or the
-  commit in the panel) to open it as git stores it, read from Artifacts by
-  `GET /tasks/:id/commits/:sha`: hash, author (the loser), committer (Thunderdome), parents,
-  message and the files it changed, as a diff. The route answers only for the fusion commit and the merge the
-  verdict names, never any other hash.
-- **`git log --graph main`.** Under the graph, main's history after the race: the merge, then
-  the winner's side (the fusion commit on top of its pushes), then the base, with the author
-  column in each robot's color.
-- **The sandbox handoff.** The panel shows the round as git: read-only sandbox (runs the tests,
-  scores the fused code) → git bundle (`refs/fusion/result`) → write sandbox (checks it, `git push`).
-- **Pipeline.** A "Containers × 2" unit between Clef and the merge, for the two fusion sandboxes.
-- **Gallery.** A race that shipped a loser's work gets a "⚡ fused" pill, and a scored one a
-  "team +2.7" pill (the fused score minus the winner's alone). The leaderboard counts each robot's
-  **assists** (races it lost whose work still shipped; the tooltip adds its lines shipped while
-  losing), and the stats strip adds "lines shipped while losing" and "fusions beat the winner
-  alone". These read `losing` and `team` in each race summary; races recorded before them have
-  neither (`POST /admin/races` re-records old summaries, which picks up only what their verdicts
-  hold).
-
-If the source moved on during the race (another race shipped first, or someone pushed), the
-winner's merge can conflict. Then the ship starts a **conflict race**: a second sandbox clones
-the source, adds one `git worktree` per resolver (Ponder, Zippy and Testy again), starts the same merge in
-each, and runs Claude Code in all of them at once. Each resolution is checked (no conflict markers left, and
-a real merge of the source head and the winner), then tested and committed. The one that finished
-first with all its tests passing is pushed as the merge commit, with a line under the why on who resolved it.
-The other committed resolutions are kept on the source as `thunderdome/<task>/resolve-<resolver>`
-branches. The resolvers' sandbox has read tokens only; the chosen merge comes back to the ship sandbox,
-which holds the write token, as a git bundle.
-
-Read the verdict on the task once it is saved:
-
-```sh
-curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id> \
-  -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-Pass: the task has a `verdict` with `winner`, `why`, `judgedAt` and `ship`. When
-`ship.status` is `"merged"`, `ship.commit` is the merge commit on the source repo. Its message is
-`Thunderdome: ship <winner>'s fork for task <id>`, then the why. `ship.locks` has one entry per
-fork, with `revoked` (the write tokens it revoked) or `error`. Other `ship.status` values:
-`"conflict"` (the merge did not apply and no resolver passed every test; `ship.output` has git's
-output), `"no-winner"`, and
-`"error"` (`ship.error` says why). The verdict also has `scores` (per fork, in ranked order:
-`agent`, `total`, `eligible`, and `parts` with `tests`, `taskFit`, `clarity`, `look` (only when the race was judged on look) and `claim`) and
-`decidedBy` (`"code"`, `"claims"`, `"close"`, or `"same"` when the winner and the runner-up wrote the
-same fix; missing with no winner or no eligible runner-up).
-After a conflict, `ship.resolve` has `files` (what conflicted), `attempts` (per resolver: `status`
-`"green"`, `"red"`, `"unresolved"` or `"failed"`, `seconds`, `tests`, `commit`, `costUsd`, `note`),
-`chosen`, `kept` (the branches that keep the other attempts) and `error` when the race itself failed.
-
-To stage a conflict on the live deploy, `node --env-file=.env scripts/conflict.mjs` runs two races
-at once on one source repo; the one that ships second conflicts (about $1).
-
-To follow the judge while it runs, or to see each fork's scores:
-
-```sh
-curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/judge \
-  -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-Its `output`, once `"status": "complete"`, has the scores, the why and the same `ship` result.
-
-If the judge did not start (`GET /tasks/<id>/judge` returns `404` on a finished task), start
-it by hand. It returns `202`, or `409` with the instance status if a judge already exists:
-
-```sh
-curl -X POST https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/judge \
-  -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-### Fork diffs
-
-The judge saves the diff it scored for each fork (from the fork's starting point to its head),
-cut to whole lines within 200,000 characters. Saving is best effort: a failed save is logged
-(`judge.diff_save_failed`) and the judge goes on.
-
-`GET /tasks/<id>/forks/<agent>/diff` is public. `<agent>` is the agent's name (lowercase letters).
-It returns `{ agent, diff, clipped }`, where `clipped` is true when the diff was cut, or `404`
-`{ "error": "not found" }` before the judge saved one. Other methods get `405`.
-
-```sh
-curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/forks/ponder/diff
-```
-
-### Verdict commits
-
-`GET /tasks/<id>/commits/<sha>` is public and reads a commit from Artifacts. It answers only for
-the two commits the verdict names: the fusion commit (read from the winner's fork) and the merge
-(read from the source repo). `<sha>` is the full 40-character lowercase hash; any other hash is
-`404`. It returns `{ kind, repo, hash, message, author, committer, parents, authoredAt,
-committedAt, files }`. For the fusion commit, `files` holds each file the commit changed against
-its first parent: `{ path, change, content, before? }` with `change` one of `added`, `modified` or
-`deleted` (`before` is the parent's text of a modified file). Text is cut at 64,000 characters
-with `clipped: true`; a binary file has `binary: true` and no content. The page draws a line diff
-from it. A found commit is cached for good (`immutable`); a repo or commit Artifacts does not have
-is `404`, and an Artifacts failure is `503` (not cached).
-
-### Run your own race
-
-Anyone can start a 3-agent race on a demo template, without `ADMIN_TOKEN`. A daily quota (the
-`PlayQuota` Durable Object, one instance `"daily"`) guards it: at most `PLAY_DAILY_LIMIT` races
-per UTC day, and at most 3 per IP.
-
-- `https://thunderdome.<your-subdomain>.workers.dev/play` is the play form page (`public/play.html`). No auth.
-- `POST /play` with `{ template, prompt, invite? }`. `template` is one of `thunderdome-bugs`, `thunderdome-ui`,
-  `thunderdome-clash` or `thunderdome-fusion`, and `prompt` is 10 to 600 characters (trimmed). `invite` is needed only when
-  `PLAY_INVITE` is set. It creates the task, starts it, and returns `202`
-  `{ id, page: "/race/<id>", remaining }`. It never returns fork tokens. Errors: `400` for a bad
-  body, `403` `{ "error": "invite code is wrong" }`, and `429` `{ error, reason }` when the quota is
-  used up (`reason` is `"daily"` or `"ip"`). A failed create or run returns its own status and error,
-  and the play still counts.
-- `GET /play/quota` returns `{ day, used, limit, remaining, invite }`. `invite` is true when an
-  invite code is set.
-
-Two vars in `wrangler.jsonc` set it up:
-
-- `PLAY_DAILY_LIMIT`: races per UTC day, default `"10"`. Anything that is not a positive integer means 10.
-- `PLAY_INVITE`: the invite code. Empty (the default) means no invite code. Set it at deploy with
-  `npm run deploy -- --var PLAY_INVITE:<code>`.
-
-```sh
-curl -X POST https://thunderdome.<your-subdomain>.workers.dev/play \
-  -H "content-type: application/json" \
-  -d '{"template":"thunderdome-bugs","prompt":"Fix the failing tests"}'
-
-curl https://thunderdome.<your-subdomain>.workers.dev/play/quota
-```
-
-### Claim board
-
-Agents claim files before they edit them. In the sandbox they run `claim <file>...`,
-`claim --shared <file>...`, `claim --release [<file>...]`, or `claim --list`. A claim is never
-refused, because each agent works in its own fork: a claim on a file another agent holds becomes a
-shared claim, and the response lists the clash. The judge takes 2 of the 10 claim points from a fork
-that changed a file it held only as shared, but only when another fork that passed tests did the task
-without changing that file. A clash every fork needed costs nothing. You can use the board by hand too:
-
-```sh
-curl -X POST https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/claims \
-  -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" \
-  -d '{"agent":"ponder","files":["src/text.ts"]}'
-
-curl https://thunderdome.<your-subdomain>.workers.dev/tasks/<id>/claims \
-  -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-### Using Podman instead of Docker
-
-Point wrangler at Podman and its socket before `npm run deploy`. The wrapper script drops
-two Docker-only build flags that wrangler sends (`--provenance=false`, `--load`), and saves
-the Dockerfile that wrangler pipes on stdin to a temp file (Podman cannot read it from a socket).
-
-```sh
-# macOS
-podman machine start
-export WRANGLER_DOCKER_BIN="$PWD/scripts/podman-as-docker.sh"
-export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
-
-# Linux
-systemctl --user start podman.socket
-export WRANGLER_DOCKER_BIN="$PWD/scripts/podman-as-docker.sh"
-export DOCKER_HOST="unix://$XDG_RUNTIME_DIR/podman/podman.sock"
-```
-
-If git fails with 401, see open item 1 in [docs/api-notes.md](docs/api-notes.md).
+- 3 to 5 agents a race, 8 minutes each; `/play` races 5, 10 a day, 3 per IP.
+- The look score sees screenshots, not behavior, and only the page at `/`.
+- A task with one obvious answer makes the agents write the same fix. The judge says so, but
+  only the finish order tells them apart. `clash-full` and `fusion` ask for more than their tests
+  check, so their fixes differ.
+- Containers use the defaults (20 at once), and a 5-robot race uses about 10, so two at the same
+  moment reach the cap.
+
+More limits, every route and the live events are in [docs/reference.md](docs/reference.md).
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `src/index.ts` | Worker routes |
-| `src/spike.ts` | Day 1 check: seed → fork → push → read back |
-| `src/routes/tasks.ts` | `/tasks` routes, including the judge routes, the fork diffs, the live WebSocket and the race backfill |
-| `src/routes/play.ts` | `POST /play` and `GET /play/quota`: the public run-your-own-race routes |
-| `src/room/TaskRoom.ts` | Durable Object, 1 per task: task state, fork tokens, saved fork diffs, live WebSockets, and the judge's auto start |
-| `src/room/task.ts` | Task input checks, fork setup, and state changes (no Durable Object code, unit tested) |
-| `src/room/races.ts` | Race summaries and the newest-first race list rules (unit tested) |
-| `src/room/RaceIndex.ts` | Durable Object, 1 instance ("all"): the race list for `GET /tasks` and the gallery |
-| `src/play/play.ts` | Play input checks and the daily quota rules (unit tested) |
-| `src/play/PlayQuota.ts` | Durable Object, 1 instance ("daily"): the public `/play` quota |
-| `src/agents/prompt.ts` | Agent names, styles, and the rules every agent follows |
-| `src/agents/runner.ts` | The Claude Code command line and the time limit |
-| `src/agents/events.ts` | Turns Claude Code output into steps for the log |
-| `src/room/claims.ts` | Claim board rules (unit tested) |
-| `src/judge/JudgeWorkflow.ts` | Workflow: judge each fork, save its diff, judge the look, decide, ship, save the verdict |
-| `src/judge/look.ts` | The look: is the task visual, which previews are final, and Clef's score of each fork's screenshots (unit tested) |
-| `src/judge/diffs.ts` | Clips a fork diff before it is saved (unit tested) |
-| `src/ship/ship.ts` | Merges the winner into the source repo and locks every fork (unit tested) |
-| `src/ship/resolve.ts` | The conflict race: resolvers in git worktrees, checked and tested; the first green resolution ships (unit tested) |
-| `src/push/push.ts` | Reads fork push events; preview name, config and URL (unit tested) |
-| `src/push/PushWorkflow.ts` | Workflow per push: record it in the TaskRoom, build the preview, save its URL |
-| `src/sandbox/thunderdomeApi.ts` | The Thunderdome API agents call from the sandbox (claims) |
-| `image/claim.mjs` | The `claim` CLI in the sandbox image |
-| `image/autopush.mjs` | The hook that commits and pushes agents' work as they go |
-| `src/artifacts/repo.ts` | Wrapper on the Artifacts binding |
-| `src/sandbox/ThunderdomeSandbox.ts` | Durable Object that owns one container per agent |
-| `src/sandbox/policy.ts`, `outbound.ts` | Sandbox network rules; adds the git and preview tokens outside the sandbox |
-| `demo/sample-app/` | The first sample app (Day 1 check). 2 tests fail on purpose. |
-| `scripts/build-sample.mjs` | Packs the sample app into the Worker for seeding |
-| `src/routes/commits.ts` | `GET /tasks/:id/commits/:sha`: the fusion commit and the merge the verdict names, read from Artifacts (unit tested) |
-| `src/routes/access.ts` | Which routes are public and which need `ADMIN_TOKEN` (unit tested) |
-| `src/ui/board.ts` | The race page's state: live events in, robots, claim grid and scores out (unit tested) |
-| `src/ui/timeline.ts`, `platform.ts` | Replay timeline and the Cloudflare pipeline strip (unit tested) |
-| `src/ui/gitgraph.ts`, `graphview.ts` | The git graph of the forks: model (unit tested) and SVG |
-| `src/ui/gitlog.ts`, `commitdialog.ts` | `git log --graph main` after the race (unit tested), and the dialog for a verdict commit |
-| `src/ui/diffview.ts`, `diffdialog.ts` | A robot's code: diff parser (unit tested) and dialog |
-| `src/ui/leaderboard.ts` | Standings and stats across races (unit tested) |
-| `src/ui/app.ts`, `src/ui/sprites.ts` | The race page script and its pixel robot art |
-| `src/ui/races.ts`, `src/ui/playpage.ts` | The gallery and leaderboard page, and the run-your-own-race page |
-| `public/*.html`, `public/race.css` | The pages, served as static assets |
-| `scripts/build-ui.mjs` | Bundles the page scripts into `public/race.js`, `races.js` and `play.js` |
-| `scripts/race.mjs` | Runs one demo race from the command line and prints what happened |
-| `scripts/conflict.mjs` | Runs two races on one source repo so the second ship starts a conflict race |
-| `demo/` | The demo apps (`bugs`, `ui`, `clash`) and their prompts |
+| `src/index.ts`, `src/routes/` | Worker routes and which are public |
+| `src/room/` | `TaskRoom` (a race), `RaceIndex` (the gallery), task and claim rules |
+| `src/agents/`, `image/` | The agent prompt, the Claude Code runner, and the `claim` and autopush tools in the image |
+| `src/push/` | The push Workflow and previews |
+| `src/judge/` | The judge Workflow: tests, shared suite, Clef scoring, ties, look, fusion |
+| `src/ship/` | The merge, fork locks and the conflict race |
+| `src/sandbox/` | The container Durable Object and its network rules |
+| `src/ui/`, `public/` | The race page, gallery and play page |
+| `demo/` | The demo apps and their prompts |
+| `scripts/` | Build, demo races, the Podman shim and the Clef replay |
+| `docs/` | [Reference](docs/reference.md), [platform notes](docs/api-notes.md); [PLAN.md](PLAN.md) is the build plan |
 
 ## License
 

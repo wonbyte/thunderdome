@@ -7,8 +7,9 @@ Workers AI (Clef) and Browser Rendering.
 
 - Live: https://thunderdome.git-bc1.workers.dev (`/play` starts a public race, `/races` is the gallery).
 - Entry for the Cloudflare contest. Deadline **Oct 14, 2026**: a 5–10 min video, MIT source, run steps.
-- `README.md` is the full reference (routes, costs, limits, layout table). `PLAN.md` is the original
-  day-by-day plan. `docs/api-notes.md` has platform findings and open items.
+- `README.md` is the short overview and run steps; keep it short. `docs/reference.md` has every
+  route, live event, cost and limit. `PLAN.md` is the original day-by-day plan. `docs/api-notes.md`
+  has platform findings, measurements and open items.
 
 ## Commands
 
@@ -79,11 +80,12 @@ Commit, push and deploy only when the user asks. They usually want a review befo
   fit (6 levels, judged against what the task asks of that robot), readability (4 levels) and a
   yes/no on unrelated edits (`scorer.ts`). It gets each changed function in full
   (`git diff --function-context`), because it sees no other code.
-- Clef is deterministic, but reordering a diff's files moved its scores by up to about 1.5 points
-  (measured Oct 7). So each fork is asked in both file orders and averaged, and forks equal on
-  tests and claims and within `JUDGE_TIE` (1.5) on Clef's points tie: Clef's side-by-side choice
-  (`compare.ts`), then the smaller diff, then the earlier finish. Re-measure before changing
-  questions or `JUDGE_TIE`.
+- Clef is deterministic, but a harmless rewrite of a diff (files reordered, `index` lines dropped)
+  moves one call's points by up to 3. Each fork is asked in both file orders and averaged, which
+  moved by at most 0.54 (Oct 7: 38 forks of 10 races). Forks equal on tests and claims and within
+  `JUDGE_TIE` (0.75) on Clef's points tie: Clef's side-by-side choice (`compare.ts`), then the
+  smaller diff among the forks near its favorite, then the earlier finish. Re-measure before
+  changing questions or `JUDGE_TIE` (the replay scripts are described in `docs/api-notes.md`).
 - After the winner is picked, the fusion round (`fusion.ts`) tries the losers' files and hunks on
   top of it, and the ship (`ship/`) merges, with a conflict race when the source moved on.
 

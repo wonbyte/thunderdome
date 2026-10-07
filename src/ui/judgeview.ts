@@ -4,7 +4,7 @@
 import { displayName, type WireJudgeStep } from "./board";
 
 /** Judgment points closer than this tie (mirrors JUDGE_TIE in src/judge/score.ts). */
-export const JUDGE_TIE = 1.5;
+export const JUDGE_TIE = 0.75;
 /** The repo's own test files (mirrors BASE_AUTHOR in src/judge/judge.ts). */
 export const BASE_AUTHOR = "base";
 

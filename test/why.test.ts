@@ -187,11 +187,12 @@ describe("headline", () => {
   it('W1: why: a clear code lead gives the "Decided by code" headline with the gap', () => {
     const result = scoreForks([fork({ agent: "w" }), fork({ agent: "r", testsPassed: 8 })]);
     expect(headline(result)).toBe("Decided by code: w's fix scored 10 more points on tests, task fit and clarity than r's.");
-    // A judgment gap of exactly JUDGE_TIE (23.5 vs 25 task fit points) is still decided by code.
+    // A judgment gap of exactly JUDGE_TIE (24.25 vs 25 task fit points) is not a tie, but under CODE_TIE it is close.
     expect(CODE_TIE).toBe(1);
-    expect(JUDGE_TIE).toBe(1.5);
-    const edge = scoreForks([fork({ agent: "w" }), fork({ agent: "r", taskFit: 0.94 })]);
-    expect(headline(edge)).toBe("Decided by code: w's fix scored 1.5 more points on tests, task fit and clarity than r's.");
+    expect(JUDGE_TIE).toBe(0.75);
+    const edge = scoreForks([fork({ agent: "w" }), fork({ agent: "r", taskFit: 0.97 })]);
+    expect(edge.tie).toBeUndefined();
+    expect(headline(edge)).toBe("Decided by a close margin: the fixes were within 0.75 points on code.");
   });
 
   it('W2: why: equal code with a claim lead gives "Decided by claims … had no clash r could have avoided (10 vs 8 claim points)"; a winner whose code is up to 1 point lower gets the "even though" clause', () => {
@@ -357,12 +358,12 @@ describe("lesson", () => {
 });
 
 describe("ties within the judge's noise", () => {
-  // w leads r by 1 point of task fit alone: closer than JUDGE_TIE.
-  const near = (w: Partial<ForkInput> = {}, r: Partial<ForkInput> = {}) => [fork({ agent: "w", ...w }), fork({ agent: "r", taskFit: 0.96, ...r })];
+  // w leads r by 0.5 points of task fit alone: closer than JUDGE_TIE.
+  const near = (w: Partial<ForkInput> = {}, r: Partial<ForkInput> = {}) => [fork({ agent: "w", ...w }), fork({ agent: "r", taskFit: 0.98, ...r })];
 
   it("J1: forks equal on tests and claims and within JUDGE_TIE on judgment tie; a measured difference or a wider gap does not", () => {
-    expect(scoreForks(near()).tie).toMatchObject({ agents: ["w", "r"], gap: 1 });
-    expect(scoreForks(near({}, { taskFit: 0.94 })).tie).toBeUndefined();
+    expect(scoreForks(near()).tie).toMatchObject({ agents: ["w", "r"], gap: 0.5 });
+    expect(scoreForks(near({}, { taskFit: 0.97 })).tie).toBeUndefined();
     expect(scoreForks(near({}, { testsPassed: 9 })).tie).toBeUndefined();
     expect(scoreForks(near({}, { filesChanged: ["x.ts"] })).tie).toBeUndefined();
     // An ineligible fork never ties.
@@ -374,7 +375,7 @@ describe("ties within the judge's noise", () => {
     expect(bySize.winner).toBe("r");
     expect(bySize.tie).toMatchObject({ agents: ["r", "w"], by: "diff" });
     expect(headline(bySize)).toBe(
-      "Decided by diff size: r and w tied on tests and claims and were within 1 points on the judge's ratings, closer than its scores can tell apart; r's diff was the smallest (12 vs 40 lines changed).",
+      "Decided by diff size: r and w tied on tests and claims and were within 0.5 points on the judge's ratings, closer than its scores can tell apart; r's diff was the smallest (12 vs 40 lines changed).",
     );
     const byFinish = scoreForks(near({ endedAt: "2026-10-07T10:00:05Z" }, { endedAt: "2026-10-07T10:00:00Z" }));
     expect(byFinish.winner).toBe("r");
@@ -392,6 +393,15 @@ describe("ties within the judge's noise", () => {
     const narrow = scoreForks(near({ linesChanged: 5 }), { w: 0.45, r: 0.5 });
     expect(narrow.winner).toBe("w");
     expect(narrow.tie?.by).toBe("diff");
+  });
+
+  it("J7: when the side-by-side vote is too close, diff size only chooses among the forks near its favorite", () => {
+    const three = [fork({ agent: "w", linesChanged: 40 }), fork({ agent: "r", taskFit: 0.98, linesChanged: 30 }), fork({ agent: "s", taskFit: 0.99, linesChanged: 5 })];
+    // s has the smallest diff, but the vote put it last: w and r are within PREFER_MARGIN at the top.
+    const result = scoreForks(three, { w: 0.45, r: 0.5, s: 0.05 });
+    expect(result.winner).toBe("r");
+    expect(result.tie?.by).toBe("diff");
+    expect(scoreForks(three).winner).toBe("s");
   });
 
   it("J4: the why leads with the tie and says how each tied loser lost", () => {

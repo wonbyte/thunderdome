@@ -14,11 +14,12 @@ export const SHARED_COST = 2;
 
 /**
  * Judgment points (task fit + clarity + look) closer than this count as a tie: they come from Clef,
- * and a harmless rewrite of the same diff moved its scores by about 1.5 points (Oct 7, 6 forks, 4
- * variants each). Forks this close on judgment and equal on everything else are told apart by the
- * side-by-side comparison, then diff size, then finish time.
+ * and a harmless rewrite of the same diff (index lines dropped, files_changed reversed) moved the
+ * judge's two-order average by at most 0.54 points (Oct 7: 38 forks of 10 races; 90% moved 0.34 or
+ * less; one Clef call alone moved up to 3). Forks this close on judgment and equal on everything
+ * else are told apart by the side-by-side comparison, then diff size, then finish time.
  */
-export const JUDGE_TIE = 1.5;
+export const JUDGE_TIE = 0.75;
 /** The side-by-side comparison breaks a tie only when its pick leads the next tied fork by this much probability. */
 export const PREFER_MARGIN = 0.1;
 
@@ -246,15 +247,21 @@ export function tiedAtTop(ranked: ForkScore[]): ForkScore[] {
   );
 }
 
-/** The tie's pick: the side-by-side favorite when it leads by PREFER_MARGIN, else the smallest diff, then the earliest finish. */
+/**
+ * The tie's pick: the side-by-side favorite when it leads by PREFER_MARGIN, else the smallest diff,
+ * then the earliest finish. When the comparison was asked but is too close, only the forks within
+ * PREFER_MARGIN of its favorite go on to diff size, so the comparison's last pick cannot win on size.
+ */
 function breakTie(tied: ForkScore[], prefer: Record<string, number> | undefined): { pick: ForkScore; by: JudgeTie["by"] } {
   const p = (s: ForkScore): number => prefer?.[s.agent] ?? 0;
+  let left = tied;
   if (prefer !== undefined) {
     const [best, next] = tied.toSorted((a, b) => p(b) - p(a));
     if (best !== undefined && next !== undefined && p(best) - p(next) >= PREFER_MARGIN) return { pick: best, by: "compare" };
+    if (best !== undefined) left = tied.filter((s) => p(best) - p(s) < PREFER_MARGIN);
   }
-  const order = tied.toSorted((a, b) => a.input.linesChanged - b.input.linesChanged || byEnd(a.input, b.input));
-  const [pick = tied[0]!, second] = order;
+  const order = left.toSorted((a, b) => a.input.linesChanged - b.input.linesChanged || byEnd(a.input, b.input));
+  const [pick = left[0]!, second] = order;
   if (second === undefined || pick.input.linesChanged !== second.input.linesChanged) return { pick, by: "diff" };
   return { pick, by: byEnd(pick.input, second.input) < 0 ? "finish" : "order" };
 }

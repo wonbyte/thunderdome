@@ -129,3 +129,41 @@ Push event envelope (Queues "Events & schemas" page): `source.namespace`, `sourc
 `payload.{ref, before, after, commits[], totalCommitsCount, commitsTruncated}`. No changed files.
 The trigger syntax differs between docs: `targets: [{ type, workflow_name }]` with `repo_name` (above) vs
 `target: { scriptName, workflowName }` with `repoName` (Artifacts "build and deploy on push" guide). Check on deploy.
+
+## Clef noise and a replay of old races (Oct 7)
+
+Measured with `scripts/clef-replay/` on 38 forks of the last 10 races judged before the shared suite
+(`t-ad3ea63d` to `t-a0f9482a`), using the function-context diff of each fork's last own commit:
+
+```sh
+D=<scratch>/replay
+scripts/clef-replay/build.sh $D
+node scripts/clef-replay/collect.mjs $D t-a0f9482a t-40462f22 ...   # needs a cf login: read tokens per fork
+node scripts/clef-replay/clef.mjs $D                                 # 6 Clef calls per fork, resumable
+node scripts/clef-replay/analyze.mjs $D                              # noise, then each race replayed
+```
+
+- **Noise.** Each fork was asked six harmless variants: both file orders, each with `index` lines
+  dropped, and each with `files_changed` reversed. One call's judgment points moved by up to 3.00
+  (median 0.73, p90 1.23). The judge's two-order average moved by at most 0.54 (median 0.18, p90
+  0.34). `JUDGE_TIE` went from 1.5 to 0.75: about 1.4× the largest move.
+- **Ties everywhere at 1.5.** All 10 replayed races tied at the top at 1.5; at 0.75, 8 still do.
+  Forks that pass the same tests really are within a point of each other on Clef's ratings, so the
+  side-by-side comparison decides most races.
+- **Diff size picked the comparison's last place.** In `t-32ddd54f` Snip had 2.6% of the
+  side-by-side vote but won on the smallest diff, because the vote's top two were within
+  `PREFER_MARGIN`. Now only the forks within `PREFER_MARGIN` of the vote's favorite go on to diff size.
+- **Winners, old judge vs new questions** (tests and claims as recorded; the shared suite was not
+  rerun). At `JUDGE_TIE` 1.5, 6 of 10 changed: `t-4d3802e7` sparkle→snip, `t-7060d8ea` zippy→ponder,
+  `t-827f96d6` ponder→testy, `t-a0f9482a` snip→testy, `t-a5f29435` zippy→ponder, `t-ad3ea63d`
+  testy→ponder. Most of the change comes from the side-by-side comparison, which the old judge did
+  not have.
+
+## Containers: instance limit
+
+`wrangler.jsonc` sets no `max_instances` or `instance_type` for `ThunderdomeSandbox`, so the
+defaults apply: `max_instances` 20 and `instance_type` "lite" (Wrangler configuration docs; the
+account limits are far higher: 1,500 vCPU, 6 TiB memory). One 5-robot race uses up to about 10 at
+once: 5 agent sandboxes plus a preview build per push. Judging uses 5 more, after the agents stop.
+So two 5-robot races at the same moment reach the cap, and a third would fail to start sandboxes.
+The `/play` quota (10 a day, 3 per IP) makes that unlikely but not impossible during judging.
