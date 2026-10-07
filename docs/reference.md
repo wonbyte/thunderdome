@@ -15,7 +15,7 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 | Judge (Workers AI, Clef) | small | 3 questions per fork, asked in both file orders; 1 split question when robots added tests; 2 side-by-side calls on a tie; 1 visual question per race and 1 look question per fork when the task is visual. |
 | Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. Plus 1 short browser per race for the result card, on its first request (link previews, the gallery). |
 | Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 1 agent container per robot (3 to 5) busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
-| Artifacts | — | Not billed before Oct 15, 2026, when Artifacts billing starts. |
+| Artifacts | — | Billed from Oct 15, 2026. A race makes 6 repos (source + 5 forks); retention deletes them after `RACE_RETENTION_DAYS`, so the count stays bounded. |
 
 The plan itself is Workers Paid. Each race's agents ran for 53–83 s, and the judge and merge
 took 13–29 s more. `/play` races 5 robots, so its agent spend is about 5/3 of the table:
@@ -40,9 +40,10 @@ demo costs at most about $9.20 a day in agent spend.
 | Diff saved for the page | 200,000 characters, cut at a whole line | `src/judge/diffs.ts` |
 | Push log per agent | newest 50 pushes | `src/room/task.ts` |
 | Race list | index keeps 200 races; `GET /tasks` returns 50; prompts cut to 280 characters | `src/room/races.ts` |
+| Repo retention | a judged race outside the newest 50 loses its repos `RACE_RETENTION_DAYS` (30) after its verdict; the replay stays | `src/routes/retain.ts` |
 | Workers Previews | 500 per Worker (oldest deleted first), 100 deployments per preview | Cloudflare limit |
 | Containers | No per-app cap: the Durable Object scheduling policy has no `max_instances`, only account limits; a 5-robot race uses about 10 | `wrangler.jsonc` |
-| Sandbox idle | a container stops after 30 minutes without use | `src/sandbox/ThunderdomeSandbox.ts` |
+| Sandbox idle | a container stops after 10 minutes without use (every step stops its own when done; this catches leaks after a failure) | `src/sandbox/ThunderdomeSandbox.ts` |
 
 What it does not do yet:
 
@@ -189,6 +190,15 @@ one storage value.
   judged is skipped. It needs `ADMIN_TOKEN` and returns `{ purged, skipped }`. This can't be undone.
   Workers Previews are not deleted; remove them with `npx wrangler preview delete --name
   <race id>-<agent> --worker-name <preview worker> -y` (and `<race id>-base` for the before page).
+- **Retention** (`src/routes/retain.ts`): once a day (the cron trigger in `wrangler.jsonc`, 04:23
+  UTC) every judged race older than `RACE_RETENTION_DAYS` (30) that is not among the gallery's
+  newest 50 loses its repos: the forks, and the source repo a template made for it. The race
+  itself stays: its replay, scores, saved diffs and card still work; only the commit views
+  (`GET /tasks/<id>/commits/<sha>`, the fusion and verdict commit dialogs) answer `410`, and the
+  race's summary carries `reposGone: true`. `POST /admin/retain` runs it now and returns
+  `{ days, released, skipped }`. One race at a time, so Artifacts is never flooded.
+- `GET /tasks` is cached at the edge for 10 seconds and a race's card for a year
+  (`src/routes/cache.ts`), so a burst of gallery visits is one read of the index per colo.
 
 ```sh
 curl $THUNDERDOME/tasks

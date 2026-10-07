@@ -49,6 +49,20 @@ export interface RaceSummary {
   losing?: Record<string, number>; // shipped lines by each robot that lost (git blame of the merge); only races with blame
   team?: number; // fused score minus the winner's alone, 1 decimal, when a scored fusion shipped
   clash: boolean;
+  reposGone?: boolean; // retention deleted the race's repos (commits can no longer be read)
+}
+
+/**
+ * The races whose repos retention may delete now: judged more than `days` ago, not already
+ * released, and not among the newest `keep` (the gallery's page), whatever their age.
+ */
+export function retentionPicks(races: readonly RaceSummary[], now: number, days: number, keep: number): RaceSummary[] {
+  const cutoff = now - days * 86_400_000;
+  return races.slice(keep).filter((r) => {
+    if (r.winner === undefined || r.reposGone === true) return false;
+    const at = Date.parse(r.judgedAt ?? r.createdAt);
+    return Number.isFinite(at) && at < cutoff;
+  });
 }
 
 /** The summary of one task. Optional fields appear only when the task has them. */
@@ -67,6 +81,7 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     ...(v === undefined ? {} : { winner: v.winner, judgedAt: v.judgedAt }),
     ...(v?.scores === undefined ? {} : { scores: v.scores.map(({ agent, total }) => ({ agent, total })) }),
     ...(v?.decidedBy === undefined ? {} : { decidedBy: v.decidedBy }),
+    ...(task.reposDeletedAt === undefined ? {} : { reposGone: true }),
     ...(v?.headline === undefined ? {} : { headline: v.headline }),
     ...(v?.lesson === undefined ? {} : { lesson: v.lesson }),
     ...(v?.ship.status === "merged" && v.ship.commit !== undefined ? { commit: v.ship.commit } : {}),

@@ -105,6 +105,8 @@ export function fileView(path: string, before: FileText, after: FileText): Commi
 export async function commitResponse(artifacts: Artifacts, task: Task, sha: string): Promise<Response> {
   const target = commitTarget(task, sha);
   if (target === undefined) return notFound();
+  // Retention deleted the repos: the commit is gone for good, unlike a 404 that a retry might find.
+  if (task.reposDeletedAt !== undefined) return Response.json({ error: "This race's repos were deleted after the retention period; its replay and diffs remain." }, { status: 410 });
   try {
     using repo = await artifacts.get(target.repo);
     const commit = await repo.readCommit(sha);

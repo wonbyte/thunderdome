@@ -120,7 +120,7 @@ export async function openCommit(taskId: string, hash: string): Promise<void> {
   const c = await fetchCommit(taskId, hash);
   if (!current()) return;
   if (typeof c === "number") {
-    d.replaceChildren(header(`Commit ${sha}`, close), el("p", "diff-note", c === 404 ? "Artifacts has no such commit for this race." : "Could not load the commit. Try again in a moment."));
+    d.replaceChildren(header(`Commit ${sha}`, close), el("p", "diff-note", c === 404 ? "Artifacts has no such commit for this race." : c === 410 ? "This race's repos were deleted after the retention period. The replay and the diffs still work; the commit itself is gone." : "Could not load the commit. Try again in a moment."));
     return;
   }
   const author = agentOf(c.author.name);

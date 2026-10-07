@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "npm run build:sample && npm run build:ui && wrangler deploy",
+    "deploy": "npm run build:sample && npm run build:ui && node scripts/deploy.mjs",
     "types": "wrangler types --include-runtime=false",
     "build:sample": "node scripts/build-sample.mjs",
     "build:ui": "node scripts/build-ui.mjs",

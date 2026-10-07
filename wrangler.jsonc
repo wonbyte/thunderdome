@@ -24,7 +24,9 @@
     "PLAY_DAILY_LIMIT": "10",
     // Invite code for POST /play. Empty means no invite code. Set it at deploy with:
     // npm run deploy -- --var PLAY_INVITE:<code>
-    "PLAY_INVITE": ""
+    "PLAY_INVITE": "",
+    // Judged races older than this (outside the gallery's newest 50) lose their repos; replays stay.
+    "RACE_RETENTION_DAYS": "30"
   },
   "secrets": {
     // ADMIN_TOKEN: Bearer token for the admin routes.
@@ -48,6 +50,8 @@
   // with `repo_name`; the Artifacts "build and deploy on push" guide uses `target: { scriptName, workflowName }`
   // with `repoName`. This follows docs/api-notes.md. Check on deploy.
   "triggers": {
+    // Retention, daily (src/routes/retain.ts).
+    "crons": ["23 4 * * *"],
     "events": [
       {
         "type": "cf.artifacts.repo.pushed",

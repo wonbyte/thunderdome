@@ -404,7 +404,8 @@ export class TaskRoom extends DurableObject<Env> {
     const task = this.#task();
     const refusal = purgeRefusal(task);
     if (refusal !== undefined) return { ok: false, error: refusal };
-    const repos = task === undefined ? [] : purgeRepos(task);
+    // Retention may have deleted the repos already; then only the state and the gallery entry go.
+    const repos = task === undefined || task.reposDeletedAt !== undefined ? [] : purgeRepos(task);
     const settled = await Promise.allSettled(repos.map((name) => deleteRepo(this.env.ARTIFACTS, name)));
     const failed = repos.filter((_name, i) => settled[i]?.status === "rejected");
     if (failed.length > 0) return { ok: false, error: `Deleting ${failed.join(", ")} failed` };
@@ -416,6 +417,25 @@ export class TaskRoom extends DurableObject<Env> {
       }
     }
     await this.ctx.storage.deleteAll();
+    return { ok: true, deleted: repos };
+  }
+
+  /**
+   * Retention: deletes the race's repos and keeps everything else, so the replay still plays and
+   * the saved diffs still open. Only a judged race; running twice is a no-op.
+   */
+  async releaseRepos(): Promise<{ ok: true; deleted: string[] } | { ok: false; error: string }> {
+    const task = this.#task();
+    if (task === undefined) return { ok: false, error: "No task" };
+    if (task.reposDeletedAt !== undefined) return { ok: true, deleted: [] };
+    if (task.verdict === undefined) return { ok: false, error: purgeRefusal(task) ?? "Task is not judged" };
+    const repos = purgeRepos(task);
+    const settled = await Promise.allSettled(repos.map((name) => deleteRepo(this.env.ARTIFACTS, name)));
+    const failed = repos.filter((_name, i) => settled[i]?.status === "rejected");
+    if (failed.length > 0) return { ok: false, error: `Deleting ${failed.join(", ")} failed` };
+    const next: Task = { ...task, reposDeletedAt: new Date().toISOString() };
+    this.#save(next);
+    await this.env.RACE_INDEX.getByName(RACE_INDEX_NAME).record(summaryOf(next, this.claimBoard().history));
     return { ok: true, deleted: repos };
   }
 

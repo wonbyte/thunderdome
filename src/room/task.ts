@@ -137,6 +137,7 @@ export interface Task {
   baseCommit?: string; // the source head when the forks were made; the base preview is built from it
   basePreview?: Preview; // the "before" preview of the source at baseCommit
   memory?: RaceMemory[]; // earlier races on the same app, told to every agent; missing = none
+  reposDeletedAt?: string; // ISO: retention deleted the race's repos; the replay and saved diffs remain
   judging?: JudgeStep[]; // the judge Workflow's steps as they ran, for the race page; missing on older races
 }
 

@@ -12,7 +12,8 @@ import type { Outbound, OutboundProps } from "./outbound";
 
 /** Where a sandbox clones the repo it works on. */
 export const REPO_DIR = "/workspace/repo";
-const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1_000;
+// Every step stops its container when done; this only limits a leak after a failed step.
+const INACTIVITY_TIMEOUT_MS = 10 * 60 * 1_000;
 const PROPS_KEY = "outbound-props";
 const CA_PATH = "/etc/cloudflare/certs/cloudflare-containers-ca.crt";
 

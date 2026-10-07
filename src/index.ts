@@ -7,6 +7,8 @@ import { modelCheck } from "./routes/admin";
 import { handlePlay, isPlayPath } from "./routes/play";
 import { cardTaskId } from "./routes/card";
 import { handleCard, sharePage } from "./routes/share";
+import { cached } from "./routes/cache";
+import { retainRaces } from "./routes/retain";
 import { handleJudge, handlePurge, handleRaceBackfill, handleTasks, isTasksPath, judgeTaskId } from "./routes/tasks";
 import { CommandError } from "./sandbox/ThunderdomeSandbox";
 import { isDemoApp, runDay1, seedSample } from "./spike";
@@ -43,7 +45,11 @@ const ROUTES = {
   "POST /admin/races": "Add races from before the index: { ids }.",
   "POST /admin/purge": "Delete races for good (repos, state, race list entry): { ids } or {} for every listed race. Running races are skipped.",
   "GET /admin/model-check": "Test the Worker's model key against the model API. Shows the key type and length, never the key.",
+  "POST /admin/retain": "Run retention now: judged races older than RACE_RETENTION_DAYS (outside the gallery's newest 50) lose their repos; replays stay. The cron runs this daily.",
 };
+
+/** How long the edge keeps the race list: a gallery burst becomes one read of the index. */
+const RACE_LIST_TTL_S = 10;
 
 export default {
   async fetch(request, env, ctx): Promise<Response> {
@@ -56,7 +62,6 @@ export default {
       if (asset !== undefined) return await sharePage(request, env, asset, asset === "/race.html" ? url.pathname.split("/")[2] : undefined);
     }
     const cardId = cardTaskId(url.pathname);
-    if (cardId !== undefined && request.method === "GET") return await handleCard(env, cardId);
     // A browser at the root lands on the gallery; API clients still get the route list.
     if (route === "GET /") {
       if (request.headers.get("accept")?.includes("text/html")) return Response.redirect(new URL("/races", request.url).toString(), 302);
@@ -64,11 +69,16 @@ export default {
     }
     const tasks = isTasksPath(url.pathname);
     const play = isPlayPath(url.pathname);
-    if (!tasks && !play && !(route in ROUTES)) return Response.json({ error: "not found" }, { status: 404 });
+    if (cardId === undefined && !tasks && !play && !(route in ROUTES)) return Response.json({ error: "not found" }, { status: 404 });
     if (access === "admin" && !(await authorized(request, env))) {
       return Response.json({ error: "unauthorized" }, { status: 401 });
     }
     try {
+      // The hot public reads are edge-cached: the race list briefly, a card for good.
+      const edge = typeof caches === "undefined" ? undefined : caches.default;
+      const waitUntil = (work: Promise<unknown>): void => ctx.waitUntil(work);
+      if (cardId !== undefined && request.method === "GET") return await cached(edge, request, 0, () => handleCard(env, cardId), waitUntil);
+      if (route === "GET /tasks") return await cached(edge, request, RACE_LIST_TTL_S, () => handleTasks(request, env), waitUntil);
       const judgeId = judgeTaskId(url.pathname);
       if (judgeId !== undefined) return await handleJudge(request, env, judgeId);
       if (tasks) return await handleTasks(request, env);
@@ -76,12 +86,17 @@ export default {
       if (route === "POST /admin/races") return await handleRaceBackfill(request, env);
       if (route === "POST /admin/purge") return await handlePurge(request, env);
       if (route === "GET /admin/model-check") return await modelCheck(env);
+      if (route === "POST /admin/retain") return Response.json(await retainRaces(env));
       if (route === "POST /spike/seed") return await seed(request, env);
       if (route === "POST /spike/day1") return Response.json(await runDay1(env));
       return Response.json({ error: "not found" }, { status: 404 });
     } catch (cause) {
       return errorResponse(cause);
     }
+  },
+  /** The cron trigger (wrangler.jsonc): retention, once a day. */
+  scheduled(_controller, env, ctx): void {
+    ctx.waitUntil(retainRaces(env));
   },
 } satisfies ExportedHandler<Env>;
 
