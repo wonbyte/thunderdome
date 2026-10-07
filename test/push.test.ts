@@ -87,6 +87,11 @@ describe("parsePushEvent", () => {
     expect(parsePushEvent(pushEvent({ payload: { commits: undefined, totalCommitsCount: "3" } }))).toBeUndefined();
   });
 
+  it("R9: keeps only the subject (first paragraph) of a multi-line message", () => {
+    const commits = [{ id: HEAD, message: "Sale badge and sort\nin shop.ts\n\nBody text.\n\nCo-Authored-By: Claude <noreply@anthropic.com>\n" }];
+    expect(parsePushEvent(pushEvent({ payload: { commits } }))?.message).toBe("Sale badge and sort in shop.ts");
+  });
+
   it("takes the message of the head commit, else the last entry, clipped", () => {
     const reversed = [
       { hash: HEAD, message: "head" },

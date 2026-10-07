@@ -140,11 +140,11 @@ function commitsOf(payload: Record<string, unknown>): { list: Record<string, unk
   return { list, count: validTotal ?? list.length };
 }
 
-/** The message of the commit that is `after`, else of the last entry. */
+/** The subject (first paragraph) of the commit that is `after`, else of the last entry: the body and trailers stay in the commit. */
 function newestMessage(commits: Record<string, unknown>[], after: string): string | undefined {
   const newest = commits.find((commit) => [commit.id, commit.hash, commit.sha].includes(after)) ?? commits[commits.length - 1];
   if (newest === undefined || typeof newest.message !== "string") return undefined;
-  const message = clip(newest.message, MAX_MESSAGE_LENGTH);
+  const message = clip(newest.message.trim().split(/\n\s*\n/)[0] ?? "", MAX_MESSAGE_LENGTH);
   return message === "" ? undefined : message;
 }
 

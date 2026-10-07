@@ -14,6 +14,15 @@ export interface LogLine {
   color?: string; // the author's color
 }
 
+/**
+ * A commit's subject, as `git log --oneline` shows it. Pushes recorded before Oct 7 kept the whole
+ * message on one line, so a flattened trailer (Co-Authored-By, Signed-off-by) is cut off too.
+ */
+export function subjectOf(message: string): string {
+  const cut = message.search(/\s(?:Co-Authored-By|Signed-off-by):/i);
+  return (cut === -1 ? message : message.slice(0, cut)).trim();
+}
+
 /** Winner pushes the log shows before folding the rest into one line. */
 export const LOG_PUSHES_MAX = 5;
 const THUNDERDOME = "Thunderdome";
@@ -39,7 +48,7 @@ export function gitLog(task: WireTask): LogLine[] | undefined {
   const pushes = (task.agents.find((a) => a.name === winner)?.push?.log ?? []).filter((p) => p.commit !== v.fusion?.commit).toReversed();
   for (const push of pushes.slice(0, LOG_PUSHES_MAX)) {
     const more = push.commits > 1 ? ` (+${push.commits - 1} more)` : "";
-    lines.push({ graph: "| * ", sha: push.commit.slice(0, 7), message: `${push.message ?? "push"}${more}`, who: name, color: colorFor(winner) });
+    lines.push({ graph: "| * ", sha: push.commit.slice(0, 7), message: `${(push.message === undefined ? "" : subjectOf(push.message)) || "push"}${more}`, who: name, color: colorFor(winner) });
   }
   if (pushes.length > LOG_PUSHES_MAX) lines.push({ graph: "| ⋮ ", message: `${pushes.length - LOG_PUSHES_MAX} earlier push${pushes.length - LOG_PUSHES_MAX === 1 ? "" : "es"}` });
   lines.push({ graph: "|/  " });

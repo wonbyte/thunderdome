@@ -6,7 +6,7 @@ import type { Task, Verdict } from "../src/room/task";
 import { applyEvent, emptyBoard, type WireTask, type WireVerdict } from "../src/ui/board";
 import { assistsOf, FUSE_BAR, fusionView, hunkWhat, scoreBars } from "../src/ui/fusion";
 import { fusionOf, gitGraph } from "../src/ui/gitgraph";
-import { gitLog, LOG_PUSHES_MAX } from "../src/ui/gitlog";
+import { gitLog, LOG_PUSHES_MAX, subjectOf } from "../src/ui/gitlog";
 import { raceStats, standings, teamPill, type RaceRow } from "../src/ui/leaderboard";
 import { blameView, wholePercents } from "../src/ui/blame";
 import { applyPlatform, emptyPlatform, STAGES } from "../src/ui/platform";
@@ -182,6 +182,14 @@ describe("git log --graph", () => {
     const fusionPush = { at: "2026-10-06T05:39:00.000Z", commit: verdict().fusion!.commit!, commits: 1, message: "Thunderdome fusion: add ponder's test/ponder.test.ts" };
     const withFusion = { ...t, agents: t.agents.map((a) => (a === testy ? { ...a, push: { commits: 2, log: [...(testy.push?.log ?? []), fusionPush] } } : a)) };
     expect(gitLog(withFusion)?.filter((l) => l.sha === "660ef87")).toHaveLength(1);
+  });
+
+  it("G4 a push recorded with its whole message on one line shows its subject, without the flattened trailer", () => {
+    expect(subjectOf("Sale badge, sort, and price rounding Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>")).toBe("Sale badge, sort, and price rounding");
+    expect(subjectOf("fix the parser")).toBe("fix the parser");
+    const t = pushed(1);
+    const flat = { ...t, agents: t.agents.map((a) => (a.name === "testy" ? { ...a, push: { commits: 1, log: [{ ...a.push!.log![0]!, message: " Co-Authored-By: Claude" }] } } : a)) };
+    expect(gitLog(flat)?.find((l) => l.sha === "0000000")?.message).toBe("push (+1 more)");
   });
 
   it("G2 no fusion line when nothing was added, no log until the winner merged, and long push logs fold", () => {
