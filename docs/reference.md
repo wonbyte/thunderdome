@@ -332,8 +332,9 @@ The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the sh
   commit is a real commit node: its author robot and "660ef87 · by Ponder". Click it (or the
   commit in the panel) to open it as git stores it, read from Artifacts by
   `GET /tasks/:id/commits/:sha`: hash, author (the loser), committer (Thunderdome), parents,
-  message and the files it changed, as a diff. The route answers only for the fusion commit and the merge the
-  verdict names, never any other hash.
+  message and the files it changed, as a diff: every piece the fusion added. Each fused row in the
+  panel also links to its own commit (races judged from Oct 7), which shows just that piece. The
+  route answers only for the commits the verdict names, never any other hash.
 - **`git log --graph main`.** Under the graph, main's history after the race: the merge, then
   the winner's side (the fusion commit on top of its pushes), then the base, with the author
   column in each robot's color.
@@ -416,11 +417,12 @@ curl $THUNDERDOME/tasks/<id>/forks/ponder/diff
 ## Verdict commits
 
 `GET /tasks/<id>/commits/<sha>` is public and reads a commit from Artifacts. It answers only for
-the two commits the verdict names: the fusion commit (read from the winner's fork) and the merge
-(read from the source repo). `<sha>` is the full 40-character lowercase hash; any other hash is
-`404`. It returns `{ kind, repo, hash, message, author, committer, parents, authoredAt,
-committedAt, files }`. For the fusion commit, `files` holds each file the commit changed against
-its first parent: `{ path, change, content, before? }` with `change` one of `added`, `modified` or
+the commits the verdict names: the fusion head and each kept try's own commit (read from the
+winner's fork), and the merge (read from the source repo). `<sha>` is the full 40-character
+lowercase hash; any other hash is `404`. It returns `{ kind, repo, hash, message, author,
+committer, parents, against?, authoredAt, committedAt, files }`. For the fusion head, `files`
+holds each file the fusion changed since the commit it started from (`against`), so every kept
+try shows; for one kept try's commit, each file it changed against its first parent: `{ path, change, content, before? }` with `change` one of `added`, `modified` or
 `deleted` (`before` is the parent's text of a modified file). Text is cut at 64,000 characters
 with `clipped: true`; a binary file has `binary: true` and no content. The page draws a line diff
 from it. A found commit is cached for good (`immutable`); a repo or commit Artifacts does not have

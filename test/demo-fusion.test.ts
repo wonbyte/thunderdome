@@ -65,4 +65,8 @@ it("demo/fusion: a loser's cart line and price format join the winner's badge an
   expect(shipped).toContain('toLocaleString("en-US")');
   rmSync(root, { recursive: true, force: true });
   expect(result.tried.filter((t) => t.status === "added").map((t) => t.hunk?.name)).toEqual(["cartMessage", "formatPrice"]);
+  // Each kept try records its own commit; the last one is the fused head.
+  const kept = result.tried.filter((t) => t.status === "added");
+  expect(kept.every((t) => /^[0-9a-f]{40}$/.test(t.commit ?? ""))).toBe(true);
+  expect(kept.at(-1)?.commit).toBe(result.commit);
 }, 30_000); // three real `npm test` runs

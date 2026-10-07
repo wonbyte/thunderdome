@@ -2012,6 +2012,16 @@ function fuseRow(row: FuseRow, index: number): HTMLElement {
   const files = el("div", "fuse-files");
   if (row.kind === "hunk") files.append(el("span", "hunk-tag", "hunk"), el("code", undefined, row.what));
   else for (const file of row.files) files.append(el("code", undefined, file));
+  if (row.hash !== undefined && row.commit !== undefined) {
+    // Just this try's change: its own commit on the winner's fork, read from Artifacts.
+    const hash = row.hash;
+    const open = el("button", "commit-link", row.commit);
+    open.type = "button";
+    open.title = "Open the commit that fused this in";
+    open.setAttribute("aria-label", `Open the commit that fused in ${displayName(row.agent)}'s ${row.what}`);
+    open.addEventListener("click", () => void openCommit(taskId, hash));
+    files.append(open);
+  }
   const gates = el("div", "fuse-gates");
   if (row.tests !== undefined) {
     const gate = el("span", `gate ${row.green === true ? "pass" : "fail"}`, `${row.green === true ? "✓" : "✗"} tests ${row.tests}`);

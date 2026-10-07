@@ -155,10 +155,10 @@ describe("runFusion", () => {
     });
     expect(result.tried).toEqual([
       { agent: "zippy", files: ["broken.txt"], kind: "file", status: "rejected", tests: { passed: 0, total: 2 }, note: "not every test passed (0/2)" },
-      { agent: "testy", files: ["test-cart.txt", "old.txt"], kind: "file", status: "added", tests: { passed: 3, total: 3 }, better: 0.9, question: "better" },
+      { agent: "testy", files: ["test-cart.txt", "old.txt"], kind: "file", status: "added", commit: await git(repo, "rev-parse", "HEAD"), tests: { passed: 3, total: 3 }, better: 0.9, question: "better" },
     ]);
     // One fusion commit on the winner, authored by testy: its new test is in, the file it removed is gone,
-    // the winner's own fix is kept, and the rejected file left nothing behind.
+    // the winner's own fix is kept, and the rejected file left nothing behind. The kept try records it.
     expect(result.commit).toBe(await git(repo, "rev-parse", "HEAD"));
     expect(await git(repo, "rev-parse", "HEAD^")).toBe(before);
     expect(await git(repo, "log", "-1", "--format=%an|%cn|%s")).toBe("Thunderdome testy|Thunderdome|Thunderdome fusion: add testy's test-cart.txt, old.txt to ponder's fix");

@@ -43,6 +43,7 @@ export interface WireFuseTry {
   status: string;
   kind?: string; // "file" or "hunk"; missing on older verdicts (files)
   hunk?: { file: string; header: string; name?: string };
+  commit?: string; // a kept try's own commit; missing on verdicts before Oct 7
   tests?: { passed: number; total: number };
   better?: number;
   question?: string;

@@ -373,6 +373,44 @@ describe("GET /tasks/:id/commits/:sha", () => {
     expect(repo.readFile).toHaveBeenCalledWith({ ref: "b".repeat(40), path: "test/c.test.ts" });
   });
 
+  it("C9: the fusion head shows every kept try (against where the fusion started); each kept try's commit shows just its own change", async () => {
+    // Review finding: the head was compared with its parent, so only the last kept try showed.
+    const BASE = "9".repeat(40);
+    const TRY1 = "1".repeat(40);
+    const files: Record<string, Record<string, string>> = {
+      [BASE]: {},
+      [TRY1]: { "test/a.test.ts": "it('a');\n" },
+      [FUSE]: { "test/a.test.ts": "it('a');\n", "test/c.test.ts": "it('c');\n" },
+    };
+    const parents: Record<string, string> = { [TRY1]: BASE, [FUSE]: TRY1 };
+    const repo = fakeRepo({
+      readCommit: vi.fn(async (hash: string) => ({ ...meta(hash), parents: [parents[hash] ?? BASE] })),
+      readFile: vi.fn(async ({ ref, path }: { ref: string; path: string }) => {
+        const text = files[ref]?.[path];
+        return text === undefined ? null : new Blob([text]);
+      }),
+    });
+    const task = judged();
+    task.verdict!.fusion = {
+      base: BASE,
+      commit: FUSE,
+      tried: [
+        { agent: "testy", files: ["test/a.test.ts"], status: "added", commit: TRY1 },
+        { agent: "zippy", files: ["b.ts"], status: "rejected" },
+        { agent: "zippy", files: ["test/c.test.ts"], status: "added", commit: FUSE },
+      ],
+    };
+    const { env } = fakeEnv({ state: async () => task }, [], fakeArtifacts(repo));
+    const paths = async (sha: string): Promise<string[]> => {
+      const body: { files: { path: string }[] } = await (await handleTasks(new Request(url(sha)), env)).json();
+      return body.files.map((f) => f.path);
+    };
+    expect(await paths(FUSE)).toEqual(["test/a.test.ts", "test/c.test.ts"]);
+    expect(await (await handleTasks(new Request(url(FUSE)), env)).json()).toMatchObject({ against: BASE });
+    expect(await paths(TRY1)).toEqual(["test/a.test.ts"]);
+    expect((await handleTasks(new Request(url(BASE)), env)).status).toBe(404);
+  });
+
   it("reads the merge from the source repo, and answers 404 for any hash the verdict does not name", async () => {
     const repo = fakeRepo({ readCommit: vi.fn(async (hash: string) => meta(hash)) });
     const artifacts = fakeArtifacts(repo);

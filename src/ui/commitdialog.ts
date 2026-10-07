@@ -22,6 +22,7 @@ interface WireCommit {
   author: { name: string; email: string };
   committer: { name: string; email: string };
   parents: string[];
+  against?: string; // the fusion head: its files are compared with where the fusion started
   committedAt: number;
   files: WireCommitFile[];
 }
@@ -81,6 +82,11 @@ function meta(c: WireCommit): HTMLElement {
   parents.append(...c.parents.map((p) => el("code", "commit-parent", p.slice(0, 7))));
   if (c.parents.length > 1) parents.append(document.createTextNode(" (a merge: main, then the fork)"));
   row(c.parents.length === 1 ? "Parent" : "Parents", parents);
+  if (c.against !== undefined) {
+    const since = el("span");
+    since.append(el("code", "commit-parent", c.against.slice(0, 7)), document.createTextNode(" (where the fusion started: every piece it added)"));
+    row("Compared with", since);
+  }
   row("Repo", el("code", undefined, c.repo));
   return list;
 }

@@ -112,6 +112,7 @@ export interface FuseTry {
   kind?: FuseKind; // missing on older verdicts, which tried files only
   hunk?: FuseHunk; // only for kind "hunk"
   patch?: string; // a kept hunk's exact diff for the push check; dropped (withoutPatches) before the verdict
+  commit?: string; // a kept try's own commit on the winner's fork, so the page can show just its change
   tests?: TestRun;
   better?: number; // Clef's yes for the question asked (see question), when it was asked
   question?: FuseQuestion; // which question Clef answered
@@ -374,6 +375,7 @@ export async function fusionProblem(deps: Pick<FuseDeps, "exec">, fusion: Fusion
       const outside = (await namesBetween(deps, `${commit}^`, commit)).filter((f) => !files.has(f));
       if (outside.length > 0) return `the fusion commit ${commit.slice(0, 7)} changes files its try did not pass: ${clip(outside.join(", "), 200)}`;
     }
+    if (t.commit !== undefined && t.commit !== commit) return `the fusion commit ${commit.slice(0, 7)} is not the one its try recorded`;
   }
   return undefined;
 }
@@ -442,8 +444,9 @@ async function gateAndCommit(
     ...author,
     ...COMMITTER,
   });
+  const commit = (await must(deps, ["git", "rev-parse", "HEAD"], dir)).stdout.trim();
   // The push sandbox compares the hunk commit to this patch: what Clef said yes to.
-  return { ...kind, status: "added", tests, better: yes, question, ...(hunk === undefined ? {} : { patch: additions }) };
+  return { ...kind, status: "added", commit, tests, better: yes, question, ...(hunk === undefined ? {} : { patch: additions }) };
 }
 
 /** One hunk of a loser's diff, as a patch that applies on its own. */

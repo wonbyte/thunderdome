@@ -34,6 +34,7 @@ export interface CommitView {
   author: { name: string; email: string };
   committer: { name: string; email: string };
   parents: string[];
+  against?: string; // the files are compared with this commit instead of the first parent
   authoredAt: number;
   committedAt: number;
   files: CommitFile[];
@@ -45,18 +46,24 @@ export function isCommitSha(sha: string): boolean {
 }
 
 /**
- * Where a hash the verdict names lives, and which files it may have changed (every kept try's;
- * the route keeps those that differ from the parent); undefined for any other hash.
+ * Where a hash the verdict names lives, which files it may have changed (the route keeps those
+ * that differ), and what to compare it with: the fusion head against the commit the fusion started
+ * from, so it shows every kept try; one kept try's commit against its parent, so it shows just that
+ * try. undefined for any other hash.
  */
-export function commitTarget(task: Task, sha: string): { kind: CommitKind; repo: string; files: string[] } | undefined {
+export function commitTarget(task: Task, sha: string): { kind: CommitKind; repo: string; files: string[]; against?: string } | undefined {
   const verdict = task.verdict;
   if (verdict === undefined || !isCommitSha(sha)) return undefined;
   const fusion = verdict.fusion;
-  if (fusion?.commit === sha && verdict.winner !== null) {
-    const fork = task.agents.find((a) => a.name === verdict.winner)?.fork;
-    if (fork === undefined) return undefined;
-    const files = [...new Set(fusion.tried.filter((t) => t.status === "added").flatMap((t) => t.files))];
-    return { kind: "fusion", repo: fork, files: files.slice(0, COMMIT_FILES_MAX) };
+  const fork = verdict.winner === null ? undefined : task.agents.find((a) => a.name === verdict.winner)?.fork;
+  if (fusion !== undefined && fork !== undefined) {
+    const kept = fusion.tried.filter((t) => t.status === "added");
+    if (fusion.commit === sha) {
+      const files = [...new Set(kept.flatMap((t) => t.files))];
+      return { kind: "fusion", repo: fork, files: files.slice(0, COMMIT_FILES_MAX), ...(fusion.base === undefined ? {} : { against: fusion.base }) };
+    }
+    const one = kept.find((t) => t.commit === sha);
+    if (one !== undefined) return { kind: "fusion", repo: fork, files: one.files.slice(0, COMMIT_FILES_MAX) };
   }
   // Older or partly saved verdicts may lack ship.
   const ship = verdict.ship as ShipResult | undefined;
@@ -91,8 +98,8 @@ export function fileView(path: string, before: FileText, after: FileText): Commi
 }
 
 /**
- * Reads the commit and the files it changed against its first parent. Commits never change, so a
- * found one is cached for good. A repo or commit Artifacts does not have is 404; an Artifacts
+ * Reads the commit and the files it changed against its first parent (or the target's `against`).
+ * Commits never change, so a found one is cached for good. A repo or commit Artifacts does not have is 404; an Artifacts
  * failure is 503, not cached.
  */
 export async function commitResponse(artifacts: Artifacts, task: Task, sha: string): Promise<Response> {
@@ -102,7 +109,7 @@ export async function commitResponse(artifacts: Artifacts, task: Task, sha: stri
     using repo = await artifacts.get(target.repo);
     const commit = await repo.readCommit(sha);
     if (commit === null) return notFound();
-    const parent = commit.parents[0];
+    const parent = target.against ?? commit.parents[0];
     const files = await Promise.all(
       target.files.map(async (path) => {
         const [before, after] = await Promise.all([
@@ -120,6 +127,7 @@ export async function commitResponse(artifacts: Artifacts, task: Task, sha: stri
       author: commit.author,
       committer: commit.committer,
       parents: commit.parents,
+      ...(target.against === undefined ? {} : { against: target.against }),
       authoredAt: commit.authoredAt,
       committedAt: commit.committedAt,
       files: files.filter((f) => f !== undefined),

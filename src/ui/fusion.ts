@@ -27,6 +27,9 @@ export interface FuseRow {
   asked?: string;
   /** Why it was not added. */
   note?: string;
+  /** A kept try's own commit, short, and its full hash for GET /tasks/:id/commits/:sha. */
+  commit?: string;
+  hash?: string;
 }
 
 /** The whole round, ready to draw. */
@@ -137,6 +140,10 @@ export function fusionView(verdict: WireVerdict | undefined): FusionView | undef
     const asked = t.question === undefined ? undefined : QUESTIONS[t.question];
     if (asked !== undefined) row.asked = asked;
     if (t.note !== undefined && row.outcome !== "added") row.note = t.note;
+    if (row.outcome === "added" && typeof t.commit === "string" && /^[0-9a-f]{40}$/.test(t.commit)) {
+      row.hash = t.commit;
+      row.commit = t.commit.slice(0, 7);
+    }
     return row;
   });
   const author = rows.findLast((r) => r.outcome === "added")?.agent;

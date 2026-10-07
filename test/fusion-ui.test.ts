@@ -62,6 +62,16 @@ describe("fusion view", () => {
     });
   });
 
+  it("F8: a kept try with its own commit links to it, so the page can show just that change; rejected tries and old verdicts have none", () => {
+    const v = verdict();
+    const own = "1234567" + "c".repeat(33);
+    v.fusion!.tried = v.fusion!.tried.map((t) => ({ ...t, commit: own }));
+    const rows = fusionView(v)!.rows;
+    expect(rows[0]).toMatchObject({ outcome: "added", commit: "1234567", hash: own });
+    expect(rows[1]?.hash).toBeUndefined();
+    expect(fusionView(verdict())!.rows[0]?.hash).toBeUndefined();
+  });
+
   it("F3 no round, no winner or an empty round shows nothing; a round that could not run shows its error", () => {
     expect(fusionView(undefined)).toBeUndefined();
     expect(fusionView({ winner: null, why: "", fusion: verdict().fusion })).toBeUndefined();
