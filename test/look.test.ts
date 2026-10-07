@@ -121,12 +121,21 @@ describe("judgeLook", () => {
 
   it("judges without look when time runs out, instead of giving the forks 0", async () => {
     const { deps } = fakeDeps();
-    let clock = 0;
-    const slow: LookDeps = { ...deps, now: () => clock, deadline: 50, shoot: async (url, vp) => { clock += 60; return deps.shoot(url, vp); } };
-    const result = await judgeLook(slow, input);
+    // The wait for previews used up the time: no screenshot is taken.
+    const late: LookDeps = { ...deps, now: () => 100, deadline: 50 };
+    const result = await judgeLook(late, input);
     expect(result.judged).toBe(false);
     expect(result.error).toBe("out of time before judging 3 forks");
     expect(result.forks).toEqual([]);
+  });
+
+  it("L9: each fork's two widths and the before page are shot at the same time", async () => {
+    const { deps } = fakeDeps();
+    let open = 0;
+    let most = 0;
+    const counting: LookDeps = { ...deps, shoot: async (url, vp) => { open += 1; most = Math.max(most, open); await new Promise((r) => setTimeout(r, 5)); open -= 1; return deps.shoot(url, vp); } };
+    await judgeLook(counting, input);
+    expect(most).toBe(1 + 2 * input.forks.filter((f) => f.preview !== undefined).length);
   });
 
   it("uses a visual answer it is given instead of asking again", async () => {
@@ -171,6 +180,14 @@ describe("readyPreviews", () => {
     // A failure on an older head does not count once the fork pushed again.
     const older = { ...task, agents: [{ name: "zippy", push: { head: "f3", previewFailed: "f2" } }] } as unknown as Task;
     expect(readyPreviews(older).waiting).toEqual(["zippy"]);
+  });
+
+  it("L10: the final commit is the one the agent ended on, so a preview of the head before a late-recorded push is not used", () => {
+    // Review finding (t-6a2a66bb): Testy's last push was recorded 14 s after it ended, and the look scored the previous head.
+    const late = { ...task, agents: [{ name: "testy", commit: "t3", push: { head: "t2", preview: { url: "https://testy.test", commit: "t2", at: "x" } } }] } as unknown as Task;
+    expect(readyPreviews(late)).toMatchObject({ forks: [{ agent: "testy" }], waiting: ["testy"] });
+    const built = { ...late, agents: [{ name: "testy", commit: "t3", push: { head: "t3", preview: { url: "https://testy3.test", commit: "t3", at: "x" } } }] } as unknown as Task;
+    expect(readyPreviews(built)).toMatchObject({ forks: [{ agent: "testy", preview: "https://testy3.test" }], waiting: [] });
   });
 
   it("L2: the preview wait ends a fixed time after the race finished, so a retried look does not wait again", () => {

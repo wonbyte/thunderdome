@@ -74,18 +74,21 @@ export function previewWaitUntil(finishedAt: string | undefined, now: number, wa
 
 /**
  * The previews to judge: each fork's preview only when it was built from the fork's final commit
- * (its newest pushed head), and the base preview only when built from the task's base commit.
- * `waiting` names forks that pushed but whose final preview is not saved yet, unless its build failed.
+ * (the commit its agent ended on; else its newest pushed head), and the base preview only when built
+ * from the task's base commit. The final push can be recorded after the agent ends, so a preview of
+ * the head before it is not the final one. `waiting` names forks that pushed but whose final preview
+ * is not saved yet, unless its build failed.
  */
 export function readyPreviews(task: Task): { before?: string; forks: LookFork[]; waiting: string[] } {
   const forks: LookFork[] = [];
   const waiting: string[] = [];
   for (const agent of task.agents) {
     const push = agent.push;
-    const ready = push?.preview !== undefined && push.preview.commit === push.head;
+    const final = agent.commit ?? push?.head;
+    const ready = push?.preview !== undefined && push.preview.commit === final;
     forks.push(ready && push?.preview !== undefined ? { agent: agent.name, preview: push.preview.url } : { agent: agent.name });
     // A head whose build failed for good is not waited for: it is judged without a preview.
-    if (push !== undefined && !ready && push.previewFailed !== push.head) waiting.push(agent.name);
+    if (push !== undefined && !ready && push.previewFailed !== final) waiting.push(agent.name);
   }
   const base = task.basePreview;
   const before = base !== undefined && base.commit === task.baseCommit ? base.url : undefined;
@@ -218,18 +221,18 @@ async function shoot(deps: LookDeps, url: string, viewport: Viewport): Promise<s
   return retry(() => deps.shoot(url, viewport), { attempts: 2, delayMs: 2_000, shouldRetry: () => true }, deps.sleep);
 }
 
-async function lookFork(deps: LookDeps, task: string, before: string | undefined, fork: LookFork): Promise<ForkLook> {
+async function lookFork(deps: LookDeps, task: string, before: Promise<string | undefined>, fork: LookFork): Promise<ForkLook> {
   if (fork.preview === undefined) return { agent: fork.agent, look: 0, error: "no preview of its final commit" };
   let desktop: string;
   let phone: string;
   try {
-    desktop = await shoot(deps, fork.preview, DESKTOP);
-    phone = await shoot(deps, fork.preview, PHONE);
+    // Both widths at once; the before screenshot is taken alongside.
+    [desktop, phone] = await Promise.all([shoot(deps, fork.preview, DESKTOP), shoot(deps, fork.preview, PHONE)]);
   } catch (cause) {
     return { agent: fork.agent, look: 0, error: `the preview did not load: ${errorText(cause)}` };
   }
   try {
-    const answers = await ask(deps, lookRequest(task, before, desktop, phone));
+    const answers = await ask(deps, lookRequest(task, await before, desktop, phone));
     const fit = scoreOf(answers, "look_fit");
     const quality = scoreOf(answers, "look_quality");
     return { agent: fork.agent, look: combineLook(fit, quality), fit, quality };
@@ -245,23 +248,23 @@ async function lookFork(deps: LookDeps, task: string, before: string | undefined
 export async function judgeLook(deps: LookDeps, input: LookInput): Promise<LookResult> {
   const visual = input.visual ?? (await visualTask(deps, input.task));
   if (visual < VISUAL_THRESHOLD) return { visual, judged: false, forks: [] };
-  let before: string | undefined;
-  let beforeError: string | undefined;
-  if (input.before === undefined) beforeError = "no before preview";
-  else {
-    try {
-      before = await shoot(deps, input.before, DESKTOP);
-    } catch (cause) {
-      beforeError = `the before preview did not load: ${errorText(cause)}`;
-    }
-  }
-  const beforeNote = beforeError === undefined ? {} : { before: beforeError };
   // Running out of time is the judge's fault, not the forks': 0 look points would be unfair.
   if (deps.deadline !== undefined && (deps.now ?? Date.now)() > deps.deadline) {
-    return { visual, judged: false, forks: [], ...beforeNote, error: `out of time before judging ${input.forks.length} forks` };
+    const note = input.before === undefined ? { before: "no before preview" } : {};
+    return { visual, judged: false, forks: [], ...note, error: `out of time before judging ${input.forks.length} forks` };
   }
-  // Each fork has its own pages and Clef call, so the forks are judged at once.
+  let beforeError: string | undefined = input.before === undefined ? "no before preview" : undefined;
+  const before: Promise<string | undefined> =
+    input.before === undefined
+      ? Promise.resolve(undefined)
+      : shoot(deps, input.before, DESKTOP).catch((cause: unknown) => {
+          beforeError = `the before preview did not load: ${errorText(cause)}`;
+          return undefined;
+        });
+  // Each fork has its own pages and Clef call, so the forks are judged at once, alongside the before page.
   const forks = await Promise.all(input.forks.map((fork) => lookFork(deps, input.task, before, fork)));
+  await before;
+  const beforeNote = beforeError === undefined ? {} : { before: beforeError };
   // Every fork failing means the screenshots or Clef broke, not the forks: judge without look.
   if (forks.every((f) => f.error !== undefined)) return { visual, judged: false, forks, ...beforeNote };
   return { visual, judged: true, forks, ...beforeNote };

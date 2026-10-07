@@ -73,11 +73,11 @@ const COMPARE_STEP = {
   timeout: "3 minutes",
 } as const;
 /** A fork's final preview builds after its last push; the judge waits this long for it. */
-const PREVIEW_WAIT_MS = 3 * 60 * 1_000;
+const PREVIEW_WAIT_MS = 90 * 1_000;
 /** The whole look, preview wait included, must end well inside LOOK_STEP's timeout. */
 const LOOK_BUDGET_MS = 8 * 60 * 1_000;
 const PREVIEW_POLL_MS = 5_000;
-const PAGE_TIMEOUT_MS = 30_000;
+const PAGE_TIMEOUT_MS = 15_000;
 /** Base64 written per exec call, under the kernel's limit for one argument. */
 const BUNDLE_CHUNK = 64 * 1_024;
 const TOKEN_TTL_S = 3_600;

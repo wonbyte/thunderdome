@@ -11,10 +11,13 @@ import { basePreviewName, parseBaseRequest, parsePushEvent, PREVIEW_CONFIG_PATH,
 /** The compatibility date of every Workers Preview the push Workflow builds. */
 export const PREVIEW_COMPATIBILITY_DATE = "2026-09-15";
 
+// A build takes about 10 s; one that has not finished in 90 s is not coming in time for the judge.
 const BUILD_STEP = {
   retries: { limit: 2, delay: "5 seconds", backoff: "constant" },
-  timeout: "5 minutes",
+  timeout: "90 seconds",
 } as const;
+/** One build try gives up here, inside BUILD_STEP's timeout, so its failure is still recorded. */
+const BUILD_TRY_MS = 80_000;
 const TOKEN_TTL_S = 600;
 const WORKSPACE = "/workspace";
 /** wrangler needs a token; the Outbound Worker replaces the auth header with the real one. */
@@ -66,14 +69,28 @@ export class PushWorkflow extends WorkflowEntrypoint<Env> {
     if (!build) return { status: "recorded", taskId, agent, after };
     let url: string;
     try {
-      url = await step.do("build preview", BUILD_STEP, () =>
-        buildPreview(this.env, {
-          repo: push.fork,
-          commit: after,
-          name: previewName(taskId, agent),
-          sandboxName: `preview-${push.fork}-${after.slice(0, 12)}`,
-        }),
-      );
+      url = await step.do("build preview", BUILD_STEP, async () => {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const late = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`the build took longer than ${BUILD_TRY_MS / 1_000} seconds`)), BUILD_TRY_MS);
+        });
+        try {
+          const building = buildPreview(this.env, {
+            repo: push.fork,
+            commit: after,
+            name: previewName(taskId, agent),
+            sandboxName: `preview-${push.fork}-${after.slice(0, 12)}`,
+          });
+          return await Promise.race([building, late]);
+        } catch (cause) {
+          // Tell the judge's look after the first failed try, not after every retry: it stops waiting.
+          // A later try that works still saves the preview, which the look then prefers.
+          await room(this.env, taskId).previewFailed(agent, after).catch(() => false);
+          throw cause;
+        } finally {
+          clearTimeout(timer);
+        }
+      });
     } catch (cause) {
       // A failed preview must not fail the instance; the push is already recorded. The judge's look
       // is told, so it stops waiting for this preview.

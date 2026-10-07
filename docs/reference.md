@@ -33,7 +33,8 @@ demo costs at most about $9.20 a day in agent spend.
 | Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork (files left unrun count for no fork); 20 minutes per fork step | `src/judge/judge.ts` |
-| Look | waits for final previews until 3 minutes after the race ends (a retry does not wait again), and not for a build that failed; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
+| Look | waits for the preview of each agent's final commit until 90 s after the race ends (a retry does not wait again), and not for a build that failed a try; 15 s per page load, all pages at once; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
+| Preview build | 80 s per try, 3 tries; a failed try is reported at once so the look stops waiting | `src/push/PushWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
 | Diff the scorer reads | whole files up to 100,000 characters, the same files in both orders; the side-by-side comparison gets the first 20,000 characters | `src/judge/scorer.ts`, `src/judge/judge.ts` |
 | Diff saved for the page | 200,000 characters, cut at a whole line | `src/judge/diffs.ts` |
@@ -249,7 +250,7 @@ default branch.
 
 **Look.** Clef first answers a yes/no question on the task text: does it ask for a change a person
 would see on the page? If yes, the judge waits until each fork's preview is built from the fork's
-final commit (until 3 minutes after the race ends; a preview whose build failed is not waited for), then uses the `BROWSER` binding to screenshot the "before" page and
+final commit, the one its agent ended on (until 90 s after the race ends; a preview whose build failed a try is not waited for), then uses the `BROWSER` binding to screenshot the "before" page and
 each fork's page at desktop (1280 px) and phone (390 px) width. Clef sees those screenshots and
 scores two things on 5 levels: how completely the page shows what the task asks (60%) and how
 clean and readable it is (40%). A fork whose preview is missing or does not load gets 0 look
