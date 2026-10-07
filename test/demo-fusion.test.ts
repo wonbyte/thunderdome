@@ -53,7 +53,7 @@ it("demo/fusion: a loser's cart line and price format join the winner's badge an
     exec: (argv: string[], cwd: string, env?: Record<string, string>) => exec((argv[3] === "tester" ? argv.slice(6) : argv).map(local), local(cwd), env),
     ai: { run: async () => ({ answers: { better: { type: "noul", noul: 0.8 } } }) },
   };
-  const result = await runFusion(deps, { task: "four parts", winner: "ponder", testsPassed: 6, candidates: [{ agent: "zippy", remote: loser, branch: "main", files: [], shared: ["src/shop.ts"] }] });
+  const result = await runFusion(deps, { task: "four parts", winner: "ponder", testsPassed: 6, testScript: "node --test test/*.test.ts", candidates: [{ agent: "zippy", remote: loser, branch: "main", files: [], shared: ["src/shop.ts"] }] });
   // The loser's badge and sort conflict with the winner's and are not tried; its two other parts join.
   expect(result.tried.map((t) => [t.kind, t.status, t.tests])).toEqual([
     ["hunk", "added", { passed: 6, total: 6 }],

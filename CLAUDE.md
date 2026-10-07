@@ -76,11 +76,12 @@ Commit, push and deploy only when the user asks. They usually want a review befo
   test files that fully pass on at least two forks. When Clef says the task gives robots different
   parts (`testscope.ts`), only the repo's tests count: Clef could not tell which robot a test file
   belongs to (measured Oct 7). A fork out of time reports the files it ran, and only files every
-  fork ran count; a fork whose run failed scores 0 on them. Only when no fork could run the suite
-  (the base's tests are not `node --test`) does every fork fall back to its own `npm test`.
+  fork ran count. If any fork has no results (the base's tests are not `node --test`, or the run
+  failed twice), every fork falls back to its own run of the base's test script.
 - **Robot code is untrusted at judge time too.** The diff and the judged commit are taken before any
   robot code runs; tests run as the unprivileged `tester` user (`asTester` in `judge.ts`), which
-  cannot change the clone or the tools; `npm test` runs the base's script; the ship merges the
+  cannot change the clone or the tools; every test run uses the base's `package.json` test script,
+  run directly; the ship merges the
   judged commit (or the fusion on it), never a later push.
 - **Clef** (`@cf/cloudflare/clef` on Workers AI, System One API; see the TypeSafe docs) answers task
   fit (6 levels, judged against what the task asks of that robot), readability (4 levels) and a

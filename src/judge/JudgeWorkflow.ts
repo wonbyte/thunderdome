@@ -14,7 +14,7 @@ import { compareForks } from "./compare";
 import { runCrossTests, type CrossSource } from "./crosstests";
 import { splitTask } from "./testscope";
 import { clipDiff } from "./diffs";
-import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, scoreFusion, withoutPatches, type FusionResult } from "./fusion";
+import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, FUSE_REPO_DIR, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, scoreFusion, withoutPatches, type FusionResult } from "./fusion";
 import { judgeLook, previewWaitUntil, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
@@ -32,8 +32,9 @@ import {
   type JudgeFork,
   type JudgeInput,
   type JudgeResult,
-  baseScriptsCommand,
+  packageJsonAt,
   testCommand,
+  testScriptOf,
 } from "./judge";
 import type { ForkScore } from "./score";
 import { clefScorer } from "./scorer";
@@ -77,7 +78,7 @@ const PREVIEW_WAIT_MS = 90 * 1_000;
 /** The whole look, preview wait included, must end well inside LOOK_STEP's timeout. */
 const LOOK_BUDGET_MS = 8 * 60 * 1_000;
 const PREVIEW_POLL_MS = 5_000;
-const PAGE_TIMEOUT_MS = 15_000;
+const PAGE_TIMEOUT_MS = 30_000;
 /** Base64 written per exec call, under the kernel's limit for one argument. */
 const BUNDLE_CHUNK = 64 * 1_024;
 const TOKEN_TTL_S = 3_600;
@@ -263,7 +264,7 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
       task = await room.state();
     }
     if (task === null) throw new Error(`Task ${input.taskId} not found`);
-    const { before, forks } = readyPreviews(task);
+    const { before, forks } = readyPreviews(task, true);
     return await judgeLook(deps, { task: input.task, ...(before === undefined ? {} : { before }), forks, visual });
   } catch (cause) {
     return { visual: 0, judged: false, forks: [], error: String(cause).slice(0, 300) };
@@ -386,9 +387,14 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
     // Fuse on top of the commit that was judged. If the fork moved since, the push refuses it (fusionProblem).
     if (judged.commit !== undefined) await must(box, ["git", "reset", "--quiet", "--hard", judged.commit]);
     const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e), ai: env.AI, now: () => Date.now(), deadline };
-    fused = await runFusion(deps, { task: input.task, winner: winner.agent, testsPassed: judged.tests.passed, candidates });
+    // The gates run the test script of the commit every fork started from, as the judge did.
+    const from = await started;
+    const pkg = "base" in from ? await box.exec(packageJsonAt(from.base), FUSE_REPO_DIR) : undefined;
+    const testScript = pkg?.exitCode === 0 ? testScriptOf(pkg.stdout) : undefined;
+    const noScript = "error" in from ? `the fork's starting point was not found: ${from.error}` : undefined;
+    fused = await runFusion(deps, { task: input.task, winner: winner.agent, testsPassed: judged.tests.passed, testScript, noScript, candidates });
     // Scoring must end before the push cutoff, or a kept fusion would be dropped for time.
-    if (fused.commit !== undefined) fused = await scoreInBox(env, deps, fused, input, result, await started, deadline + FUSE_PUSH_MS - Date.now());
+    if (fused.commit !== undefined) fused = await scoreInBox(env, deps, fused, input, result, from, deadline + FUSE_PUSH_MS - Date.now());
     if (fused.commit !== undefined && fused.base !== undefined) bundle = await fusionBundle(deps, fused.base, fused.commit);
   } finally {
     await box.stop().catch((cause: unknown) => console.error({ event: "fuse.stop_failed", error: String(cause) }));
@@ -591,11 +597,13 @@ function repoPath(remote: string): string {
 
 function sandboxDeps(env: Env, sandbox: Sandbox, base: string, taskId: string, others: CrossSource[], stepEnd: number): JudgeDeps {
   return {
-    // A failing suite still prints a summary; no summary means the run itself broke. The repo's
-    // own test script runs, not one the robot rewrote.
+    // A failing suite still prints a summary; no summary means the run itself broke. The base
+    // commit's test script runs, not one the robot rewrote; a base with none has no tests (0/0).
     async runTests() {
-      await must(sandbox, baseScriptsCommand(base));
-      const result = await sandbox.exec(testCommand());
+      const pkg = await sandbox.exec(packageJsonAt(base));
+      const script = pkg.exitCode === 0 ? testScriptOf(pkg.stdout) : undefined;
+      if (script === undefined) return { passed: 0, total: 0 };
+      const result = await sandbox.exec(testCommand(script));
       const summary = parseTestSummary(`${result.stdout}\n${result.stderr}`);
       if (summary === undefined) throw new Error(`npm test printed no test summary (exit ${result.exitCode})`);
       return summary;

@@ -190,6 +190,13 @@ describe("readyPreviews", () => {
     expect(readyPreviews(built)).toMatchObject({ forks: [{ agent: "testy", preview: "https://testy3.test" }], waiting: [] });
   });
 
+  it("L11: once the wait is over, a fork whose final preview never came is shown by its newest pushed head's preview", () => {
+    // Review finding: a final commit that was never pushed left the fork with no look at all.
+    const unpushed = { ...task, agents: [{ name: "testy", commit: "t3", push: { head: "t2", preview: { url: "https://testy2.test", commit: "t2", at: "x" } } }] } as unknown as Task;
+    expect(readyPreviews(unpushed).forks).toEqual([{ agent: "testy" }]);
+    expect(readyPreviews(unpushed, true)).toMatchObject({ forks: [{ agent: "testy", preview: "https://testy2.test" }], waiting: [] });
+  });
+
   it("L2: the preview wait ends a fixed time after the race finished, so a retried look does not wait again", () => {
     const finished = "2026-10-07T14:57:35.000Z";
     const end = Date.parse(finished) + 180_000;

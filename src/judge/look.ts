@@ -77,15 +77,16 @@ export function previewWaitUntil(finishedAt: string | undefined, now: number, wa
  * (the commit its agent ended on; else its newest pushed head), and the base preview only when built
  * from the task's base commit. The final push can be recorded after the agent ends, so a preview of
  * the head before it is not the final one. `waiting` names forks that pushed but whose final preview
- * is not saved yet, unless its build failed.
+ * is not saved yet, unless its build failed. Once the wait is over (`waited`), a fork whose final
+ * preview never came is shown by its newest pushed head's preview, rather than scoring no look.
  */
-export function readyPreviews(task: Task): { before?: string; forks: LookFork[]; waiting: string[] } {
+export function readyPreviews(task: Task, waited = false): { before?: string; forks: LookFork[]; waiting: string[] } {
   const forks: LookFork[] = [];
   const waiting: string[] = [];
   for (const agent of task.agents) {
     const push = agent.push;
     const final = agent.commit ?? push?.head;
-    const ready = push?.preview !== undefined && push.preview.commit === final;
+    const ready = push?.preview !== undefined && (push.preview.commit === final || (waited && push.preview.commit === push.head));
     forks.push(ready && push?.preview !== undefined ? { agent: agent.name, preview: push.preview.url } : { agent: agent.name });
     // A head whose build failed for good is not waited for: it is judged without a preview.
     if (push !== undefined && !ready && push.previewFailed !== final) waiting.push(agent.name);

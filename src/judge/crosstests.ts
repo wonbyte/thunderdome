@@ -1,6 +1,6 @@
 // The shared test suite, run on one fork: the source repo's test files and every fork's added test
 // files, each run on its own with node --test. No cloudflare:workers import; exec is injected.
-import { asTester, BASE_AUTHOR, parseTestSummary, type CrossTest } from "./judge";
+import { asTester, BASE_AUTHOR, packageJsonAt, parseTestSummary, testScriptOf, type CrossTest } from "./judge";
 
 /** One test file run is cut off after this. */
 export const CROSS_TEST_TIMEOUT_S = 30;
@@ -33,13 +33,7 @@ export function isNodeTestFile(path: string): boolean {
 
 /** True when the repo's `npm test` is node's runner, so its test files can be run one by one. */
 export function usesNodeTest(packageJson: string): boolean {
-  try {
-    const pkg: unknown = JSON.parse(packageJson);
-    const test = typeof pkg === "object" && pkg !== null ? (pkg as { scripts?: { test?: unknown } }).scripts?.test : undefined;
-    return typeof test === "string" && /^node\s+--test\b/.test(test.trim());
-  } catch {
-    return false;
-  }
+  return /^node\s+--test\b/.test(testScriptOf(packageJson)?.trim() ?? "");
 }
 
 /** Where another fork's added test file goes: next to the original, named for its author, so it never replaces a file. */
@@ -96,7 +90,7 @@ export async function runCrossTests(deps: CrossDeps, agent: string, base: string
   const now = deps.now ?? Date.now;
   const deadline = Math.min(now() + CROSS_TEST_BUDGET_MS, deps.deadline ?? Infinity);
   // The base commit's package.json: a robot that changes its test script cannot turn the suite off.
-  if (!usesNodeTest(await out(deps, ["git", "show", `${base}:package.json`]).catch(() => ""))) return undefined;
+  if (!usesNodeTest(await out(deps, packageJsonAt(base)).catch(() => ""))) return undefined;
   // argv only: file names are agent-written.
   const copy = async (rev: string, file: string, path: string): Promise<boolean> =>
     (await deps.exec(["/bin/sh", "-c", 'mkdir -p "$(dirname "$2")" && git show "$1" > "$2"', "copy", `${rev}:${file}`, path])).exitCode === 0;

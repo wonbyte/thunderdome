@@ -77,7 +77,8 @@ function fuseDeps(yes: Record<string, number> = {}): FuseDeps & { asked: unknown
     sleep: async () => {},
     async exec(argv, cwd, env) {
       const dir = local(cwd);
-      if (argv.includes("npm")) return npmTest(dir);
+      // The test script runs as the tester (asTester).
+      if (argv[3] === "tester") return npmTest(dir);
       return exec(argv.map((a) => (a.startsWith("/workspace") ? local(a) : a)), dir, env);
     },
     ai: {
@@ -148,6 +149,7 @@ describe("runFusion", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [
         { agent: "zippy", remote: forks.zippy!, branch: "main", files: ["broken.txt"] },
         { agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt", "old.txt"] },
@@ -182,6 +184,7 @@ describe("runFusion", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [{ agent: "snip", remote: forks.snip!, branch: "main", files: ["test-snip.test.txt"] }],
     });
     expect(result.tried[0]).toMatchObject({ status: "added", question: "coverage", tests: { passed: 3, total: 3 } });
@@ -200,6 +203,7 @@ describe("runFusion", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [{ agent: "snip", remote: forks.snip!, branch: "main", files: ["test-snip.test.txt"] }],
     });
     expect(result.tried[0]).toMatchObject({ status: "rejected", question: "coverage", note: "the judge found nothing new that the task asks for (yes 0.3)" });
@@ -214,6 +218,7 @@ describe("runFusion", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
     });
     expect(result.commit).toBeUndefined();
@@ -228,6 +233,7 @@ describe("runFusion", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [
         { agent: "snip", remote: join(root, "missing"), branch: "main", files: ["x.txt"] },
         { agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] },
@@ -325,6 +331,7 @@ describe("the fusion push", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
     });
     const repo = join(root, "workspace/repo");
@@ -370,6 +377,7 @@ describe("the fusion push", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [{ agent: "testy", remote: forks.testy!, branch: "main", files: ["test-cart.txt"] }],
     });
     expect(result.tried).toEqual([{ agent: "testy", files: ["test-cart.txt"], status: "rejected", note: "the fusion round ran out of time" }]);
@@ -417,6 +425,7 @@ const hunkInput = (forks: Record<string, string>, agents: string[]) => ({
   task: "Finish the shop",
   winner: "ponder",
   testsPassed: 1,
+  testScript: "npm test",
   candidates: agents.map((agent) => ({ agent, remote: forks[agent]!, branch: "main", files: [], shared: ["shop.js"] })),
 });
 
@@ -566,6 +575,7 @@ describe("the fused score", () => {
       task: "Fix the app",
       winner: "ponder",
       testsPassed: 2,
+      testScript: "npm test",
       candidates: [{ agent, remote: forks[agent]!, branch: "main", files }],
     });
     const forkBase = await git(forks.ponder!, "rev-parse", "HEAD^");

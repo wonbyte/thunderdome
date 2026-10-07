@@ -60,6 +60,8 @@ export interface FuseInput {
   task: string;
   winner: string;
   testsPassed: number; // the winner's passing tests; a fusion may never pass fewer
+  testScript?: string; // the test script of the commit the forks started from; none fails every gate
+  noScript?: string; // why there is no testScript, for the gates' note
   candidates: FuseCandidate[];
 }
 
@@ -417,7 +419,9 @@ async function gateAndCommit(
 ): Promise<Omit<FuseTry, "agent" | "files">> {
   const dir = FUSE_REPO_DIR;
   const kind: { kind: FuseKind; hunk?: FuseHunk } = hunk === undefined ? { kind: "file" } : { kind: "hunk", hunk };
-  const tests = parseTestSummary(outputOf(await deps.exec(testCommand(FUSE_TEST_TIMEOUT_S), dir)));
+  // The base's test script, not the one in the staged files, which a loser may have rewritten.
+  if (input.testScript === undefined) return { ...kind, status: "rejected", note: input.noScript ?? "the repo has no test script" };
+  const tests = parseTestSummary(outputOf(await deps.exec(testCommand(input.testScript, FUSE_TEST_TIMEOUT_S), dir)));
   if (tests === undefined) return { ...kind, status: "rejected", note: "the tests printed no summary" };
   if (tests.total === 0 || tests.passed !== tests.total) return { ...kind, status: "rejected", tests, note: `not every test passed (${tests.passed}/${tests.total})` };
   if (tests.passed < passed) return { ...kind, status: "rejected", tests, note: `fewer tests passed (${tests.passed} vs ${passed})` };

@@ -23,32 +23,46 @@ export const CROSS_TEST_STEP_MARGIN_S = 60;
 /**
  * The unprivileged user robot-written code runs as (see the Dockerfile). It can read the clone but
  * not change it, git, node or the judge's tools, which root owns: a test cannot rewrite what the
- * judge reads next.
+ * judge reads next. So a test that writes into the clone fails with EACCES; it may write to /tmp.
  */
 export const TESTER = "tester";
 const AS_TESTER = `setpriv --reuid=${TESTER} --regid=${TESTER} --clear-groups --no-new-privs`;
 // Runs "$@" as the tester under a hard timeout, then ends whatever it left running and removes what
-// it wrote, so nothing carries over to the next run in the same sandbox. Arguments stay argv.
+// it wrote, so nothing carries over to the next run in the same sandbox. Arguments stay argv. The
+// repo's own binaries are on PATH, as npm would put them, since the test script runs without npm.
 const TESTER_SCRIPT =
-  `t="$1"; k="$2"; shift 2; timeout --kill-after="$k" "$t" ${AS_TESTER} env HOME=/home/${TESTER} "$@"; s=$?; ` +
-  `${AS_TESTER} /bin/bash -c 'kill -KILL -1' 2>/dev/null; find /tmp /home/${TESTER} -mindepth 1 -user ${TESTER} -delete 2>/dev/null; exit $s`;
+  `t="$1"; k="$2"; shift 2; timeout --kill-after="$k" "$t" ${AS_TESTER} env HOME=/home/${TESTER} PATH="$PWD/node_modules/.bin:$PATH" "$@"; s=$?; ` +
+  `${AS_TESTER} /bin/bash -c 'kill -KILL -1' 2>/dev/null; find /tmp /var/tmp /dev/shm /home/${TESTER} -mindepth 1 -user ${TESTER} -delete 2>/dev/null; exit $s`;
 
 /** argv that runs `argv` as the tester, cut off after `timeoutS` (killed `killAfterS` later), then cleans up after it. */
 export function asTester(argv: string[], timeoutS: number, killAfterS = 5): string[] {
   return ["/bin/sh", "-c", TESTER_SCRIPT, "tester", String(timeoutS), String(killAfterS), ...argv];
 }
 
-/** `npm test` as the tester under a hard timeout: a hanging suite fails one attempt (no summary) instead of the whole step. */
-export function testCommand(timeoutS = TEST_TIMEOUT_S): string[] {
-  return asTester(["npm", "test"], timeoutS, 10);
+/**
+ * The repo's test script, run directly as the tester under a hard timeout: a hanging suite fails
+ * one attempt (no summary) instead of the whole step. Not through npm, which would put the fork's
+ * own node_modules/.bin first on PATH and read its .npmrc. `script` comes from a trusted commit's
+ * package.json (testScriptOf), never the fork's.
+ */
+export function testCommand(script: string, timeoutS = TEST_TIMEOUT_S): string[] {
+  return asTester(["/bin/sh", "-c", script], timeoutS, 10);
 }
 
-/**
- * Puts the base commit's package.json in the clone (as root, before the fork's tests run), so
- * `npm test` runs the repo's test script, not one the robot rewrote to print a passing summary.
- */
-export function baseScriptsCommand(base: string): string[] {
-  return ["/bin/sh", "-c", 'git show "$1:package.json" > package.json', "base", base];
+/** argv that prints a commit's package.json (run as root, before any robot code). */
+export function packageJsonAt(rev: string): string[] {
+  return ["git", "show", `${rev}:package.json`];
+}
+
+/** The `test` script of a package.json's text, or undefined when it has none or is not JSON. */
+export function testScriptOf(packageJson: string): string | undefined {
+  try {
+    const pkg: unknown = JSON.parse(packageJson);
+    const test = typeof pkg === "object" && pkg !== null ? (pkg as { scripts?: { test?: unknown } }).scripts?.test : undefined;
+    return typeof test === "string" && test.trim() !== "" ? test : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -218,7 +232,12 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
     filesChanged.length === 0
       ? undefined
       : await deps.scorer.score({ task: input.task, author: authorName(fork.agent), diff: scored, filesChanged, linesAdded, linesRemoved });
-  const cross = filesChanged.length === 0 || deps.crossTests === undefined ? undefined : await deps.crossTests(fork).catch(() => undefined);
+  // Robot code cannot make the run throw (it stops at the budget), so a throw is the judge's own
+  // trouble, such as a sandbox hiccup: it gets one more try.
+  const cross =
+    filesChanged.length === 0 || deps.crossTests === undefined
+      ? undefined
+      : await deps.crossTests(fork).catch(() => deps.crossTests?.(fork)).catch(() => undefined);
   const judged: JudgedFork = {
     agent: fork.agent,
     fork: fork.fork,
@@ -269,14 +288,14 @@ export interface CountedFile { author: string; file: string }
 
 function sharedSuiteOf(forks: JudgedFork[], split = 0): { suite: Map<string, TestRun>; counted: CountedFile[] } | undefined {
   const runs = forks.filter((f) => f.input.filesChanged.length > 0);
-  // A fork whose run failed scores 0 on the suite the others ran; it cannot switch the suite off.
-  const ran = runs.filter((f) => f.crossTests !== undefined);
-  if (ran.length === 0) return undefined;
+  // Every fork needs results, or none is scored on the suite: a fork the judge failed to run must
+  // not score 0 for it. Robot code cannot cause that; the run stops at its budget instead.
+  if (runs.length === 0 || runs.some((f) => f.crossTests === undefined)) return undefined;
   const size = new Map<string, number>();
   const passes = new Map<string, number>();
   const runCount = new Map<string, number>();
   const base = new Set<string>();
-  for (const fork of ran) {
+  for (const fork of runs) {
     for (const t of fork.crossTests ?? []) {
       size.set(key(t), Math.max(size.get(key(t)) ?? 0, t.total));
       runCount.set(key(t), (runCount.get(key(t)) ?? 0) + 1);
@@ -285,7 +304,7 @@ function sharedSuiteOf(forks: JudgedFork[], split = 0): { suite: Map<string, Tes
     }
   }
   const counted = [...size.keys()].filter(
-    (k) => (size.get(k) ?? 0) > 0 && runCount.get(k) === ran.length && (base.has(k) || (split < SPLIT_YES && (passes.get(k) ?? 0) >= 2)),
+    (k) => (size.get(k) ?? 0) > 0 && runCount.get(k) === runs.length && (base.has(k) || (split < SPLIT_YES && (passes.get(k) ?? 0) >= 2)),
   );
   if (counted.length === 0) return undefined;
   const suite = new Map<string, TestRun>();
@@ -300,7 +319,7 @@ function sharedSuiteOf(forks: JudgedFork[], split = 0): { suite: Map<string, Tes
     }
     suite.set(fork.agent, { passed, total });
   }
-  const files = new Map(ran.flatMap((f) => f.crossTests ?? []).map((t) => [key(t), { author: t.author, file: t.file }]));
+  const files = new Map(runs.flatMap((f) => f.crossTests ?? []).map((t) => [key(t), { author: t.author, file: t.file }]));
   return { suite, counted: counted.flatMap((k) => files.get(k) ?? []) };
 }
 

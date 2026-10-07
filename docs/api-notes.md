@@ -173,23 +173,28 @@ the cause is unexplained. A per-app cap would have to be enforced in code.
 ## Judge integrity (Oct 7 review)
 
 Robot-written code runs in the judge's sandboxes: the fork's own tests, every fork's test files in
-the shared suite, and `npm test` in the fusion gates and the conflict resolvers. Since Oct 7:
+the shared suite, and the test script in the fusion gates and the conflict resolvers. Since Oct 7:
 
 - The diff, the function-context diff and the judged commit (`git rev-parse HEAD`) are taken first,
   before any robot code runs. The ship merges that commit (or the fusion commit on top of it), and
   the fusion round starts from it, so a push after judging never ships.
 - Robot code runs as the unprivileged `tester` user (`asTester`): the clone, git, node and the
   judge's tools are root's, so a test cannot rewrite them for the next run. After each run every
-  `tester` process is killed and its files in `/tmp` and its home are removed.
-- The fork's own `npm test` runs the base commit's `package.json` script, and the shared suite
-  checks the base's `package.json` for `node --test`, so a robot cannot fake a summary through its
-  test script or switch the suite off. A fork whose shared run failed scores 0 on the suite.
+  `tester` process is killed and its files in `/tmp`, `/var/tmp`, `/dev/shm` and its home are
+  removed. A test that writes into the clone fails with `EACCES`. The repo's `node_modules/.bin`
+  is put on PATH, as `npm` would.
+- Every test run (the fork's own, the fusion gates, the conflict resolvers) runs the trusted
+  `package.json` test script directly, not through `npm`: the base commit's for the judge and the
+  fusion, the source head's for the resolvers. The shared suite checks the base's script for
+  `node --test`. So a robot cannot fake a summary through its test script or switch the suite off.
+- The shared run stops at its budget and reports what it ran, so robot code cannot make it fail. A
+  failed run is the judge's own trouble: it is tried once more, and if it still fails no fork is
+  scored on the suite (rather than scoring that fork 0).
+- A preview build that times out has its sandbox stopped, so it cannot deploy over a later try.
 
 Not closed (documented, not worth more this week):
 - A test can still print a fake summary from a detached process timed to write just after the
   real one (`summaryCount` takes the last match); the window ends when the run's leftovers are killed.
-- The fusion gates and the conflict resolvers run `npm test` with the fork's own `package.json`
-  (as `tester`). A faked winner script could only change whether a loser's work joins, not who wins.
 
 ## Artifacts: forks of one source at once (Oct 7)
 

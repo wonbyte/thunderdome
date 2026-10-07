@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   asTester,
   BASE_AUTHOR,
-  baseScriptsCommand,
   CONTEXT_CHARS,
   type CrossTest,
   decide,
@@ -20,7 +19,9 @@ import {
   TEST_RETRY_DELAY_MS,
   TEST_TIMEOUT_S,
   sharedSuite,
+  packageJsonAt,
   testCommand,
+  testScriptOf,
   TESTER,
   type JudgedFork,
   type JudgeFork,
@@ -182,12 +183,12 @@ describe("fork diff base", () => {
 });
 
 describe("test run timeout", () => {
-  it("runs npm test under a hard timeout, and every attempt fits inside one Workflow step", () => {
+  it("runs the test script under a hard timeout, and every attempt fits inside one Workflow step", () => {
     // Review finding: a hanging suite ran into the step timeout instead of scoring 0 tests passed.
-    const argv = testCommand();
+    const argv = testCommand("node --test");
     expect(argv[3]).toBe("tester");
     expect(argv[4]).toBe(String(TEST_TIMEOUT_S));
-    expect(argv.slice(-2)).toEqual(["npm", "test"]);
+    expect(argv.slice(-3)).toEqual(["/bin/sh", "-c", "node --test"]);
     const killAfterS = Number(argv[5]);
     const worstCaseS = TEST_ATTEMPTS * (TEST_TIMEOUT_S + killAfterS) + ((TEST_ATTEMPTS - 1) * TEST_RETRY_DELAY_MS) / 1000;
     // Leave at least a minute of the step for the clone, the diff and the scorer.
@@ -220,14 +221,16 @@ describe("the shared suite", () => {
     });
   });
 
-  it("S2: a fork whose cross tests failed scores 0 on the suite the others ran; it cannot switch the suite off", async () => {
-    // Review finding: a robot that broke its own run (or its test script) turned the suite off for every fork.
-    const forks = [await judged("ponder", [run(BASE_AUTHOR, "test/a.test.ts", 1, 1)]), await judged("snip", [run(BASE_AUTHOR, "test/a.test.ts", 0, 1)]), await judged("zippy", undefined)];
-    expect(Object.fromEntries(sharedSuite(forks)!)).toEqual({ ponder: { passed: 1, total: 1 }, snip: { passed: 0, total: 1 }, zippy: { passed: 0, total: 1 } });
-    // No fork could run it (a repo whose tests are not node --test): each fork is scored on its own npm test.
-    const none = [await judged("ponder", undefined), await judged("zippy", undefined)];
-    expect(sharedSuite(none)).toBeUndefined();
-    expect(decide(fakeInput(), none).forks.every((f) => f.input.shared === undefined)).toBe(true);
+  it("S2: a fork without cross test results turns the suite off for every fork, rather than scoring 0; a failed run gets one more try", async () => {
+    // Review finding: scoring such a fork 0 punished it for the judge's own failure; robot code
+    // cannot make the run fail, since it stops at its budget and reports what it ran.
+    const forks = [await judged("ponder", [run(BASE_AUTHOR, "test/a.test.ts", 1, 1)]), await judged("zippy", undefined)];
+    expect(sharedSuite(forks)).toBeUndefined();
+    expect(decide(fakeInput(), forks).forks.every((f) => f.input.shared === undefined)).toBe(true);
+    let calls = 0;
+    const flaky = fakeDeps({ crossTests: async () => (++calls === 1 ? Promise.reject(new Error("sandbox gone")) : [run(BASE_AUTHOR, "test/a.test.ts", 1, 1)]) });
+    expect((await judgeFork(flaky, fakeInput(), fakeFork("zippy"))).crossTests).toHaveLength(1);
+    expect(calls).toBe(2);
   });
 
   it("S8: the diff and the commit are taken before the fork's tests run, and the judged commit is kept", async () => {
@@ -242,13 +245,17 @@ describe("the shared suite", () => {
     expect(fork.commit).toBe("c0ffee");
   });
 
-  it("S9: robot code runs as the tester under a timeout, then its leftovers are ended; npm test runs the base's script", () => {
+  it("S9: robot code runs as the tester under a timeout, then its leftovers are ended; the test script comes from the base, run without npm", () => {
     const argv = asTester(["node", "--test", "test/$(rm -rf).test.ts"], 30);
     expect(argv.slice(0, 2)).toEqual(["/bin/sh", "-c"]);
     expect(argv.slice(3)).toEqual(["tester", "30", "5", "node", "--test", "test/$(rm -rf).test.ts"]);
     expect(argv[2]).toContain(`setpriv --reuid=${TESTER}`);
     expect(argv[2]).toContain("kill -KILL -1");
-    expect(baseScriptsCommand("abc123")).toEqual(["/bin/sh", "-c", 'git show "$1:package.json" > package.json', "base", "abc123"]);
+    expect(argv[2]).toContain("/dev/shm");
+    expect(packageJsonAt("abc123")).toEqual(["git", "show", "abc123:package.json"]);
+    expect(testScriptOf('{"scripts":{"test":"node --test"}}')).toBe("node --test");
+    expect(testScriptOf('{"scripts":{"test":""}}')).toBeUndefined();
+    expect(testScriptOf("not json")).toBeUndefined();
   });
 
   it("S3: decide puts the shared counts on each input, scores tests on them, and drops the context diff", async () => {

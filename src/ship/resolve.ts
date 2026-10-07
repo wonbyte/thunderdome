@@ -3,7 +3,7 @@
 // all pass ships. Pure: commands run through injected deps, so this runs in plain Node tests.
 import { clip, parseEvent, resultOf, type RunResult } from "../agents/events";
 import { PLACEHOLDER_API_KEY } from "../agents/runner";
-import { parseNumstat, parseTestSummary, testCommand, type TestRun } from "../judge/judge";
+import { packageJsonAt, parseNumstat, parseTestSummary, testCommand, testScriptOf, type TestRun } from "../judge/judge";
 
 /** The robots that race to resolve a merge conflict. */
 export const RESOLVERS = ["ponder", "zippy", "testy"] as const;
@@ -214,7 +214,10 @@ async function attempt(deps: RaceDeps, req: ConflictRequest, name: ResolverName,
     const problem = await leftover(deps, dir, req);
     if (problem !== undefined) return finish(result, "unresolved", seconds(), problem);
     // Tests run on the staged resolution; whatever they write is left out of the commit.
-    const tests = parseTestSummary(outputOf(await deps.exec(testCommand(RESOLVE_TEST_TIMEOUT_S), dir)));
+    // The source head's test script runs, not one the resolver or the winner rewrote.
+    const pkg = await deps.exec(packageJsonAt(req.base), dir);
+    const script = pkg.exitCode === 0 ? testScriptOf(pkg.stdout) : undefined;
+    const tests = script === undefined ? undefined : parseTestSummary(outputOf(await deps.exec(testCommand(script, RESOLVE_TEST_TIMEOUT_S), dir)));
     const took = seconds();
     result.tests = tests ?? { passed: 0, total: 0 };
     const message = resolvedMessage(req.message, name, took, req.files, result.tests);
@@ -226,7 +229,8 @@ async function attempt(deps: RaceDeps, req: ConflictRequest, name: ResolverName,
     result.commit = commit;
     result.lines = linesChanged((await must(deps, ["git", "diff", "--numstat", req.base, commit], dir)).stdout);
     const green = tests !== undefined && tests.total > 0 && tests.passed === tests.total;
-    return finish(result, green ? "green" : "red", took, green ? undefined : tests === undefined ? "the tests printed no summary" : "not every test passed");
+    const why = script === undefined ? "the source has no test script" : tests === undefined ? "the tests printed no summary" : "not every test passed";
+    return finish(result, green ? "green" : "red", took, green ? undefined : why);
   } catch (err) {
     return finish(result, "failed", seconds(), err instanceof Error ? err.message : String(err));
   }

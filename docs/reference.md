@@ -33,7 +33,7 @@ demo costs at most about $9.20 a day in agent spend.
 | Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork (files left unrun count for no fork); 20 minutes per fork step | `src/judge/judge.ts` |
-| Look | waits for the preview of each agent's final commit until 90 s after the race ends (a retry does not wait again), and not for a build that failed a try; 15 s per page load, all pages at once; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
+| Look | waits for the preview of each agent's final commit until 90 s after the race ends (a retry does not wait again), and not for a build that failed a try; when the wait ends, a fork whose final preview never came is shown by its newest pushed head's preview; 30 s per page load, all pages at once; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Preview build | 80 s per try, 3 tries; a failed try is reported at once so the look stops waiting | `src/push/PushWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
 | Diff the scorer reads | whole files up to 100,000 characters, the same files in both orders; the side-by-side comparison gets the first 20,000 characters | `src/judge/scorer.ts`, `src/judge/judge.ts` |

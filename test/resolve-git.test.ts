@@ -54,7 +54,9 @@ function resolveDeps(behaviors: Record<ResolverName, Behavior>): RaceDeps {
         }
         return { exitCode: 0, stdout: '{"type":"result","is_error":false,"result":"ok","total_cost_usd":0.01}\n', stderr: "" };
       }
-      if (argv.includes("npm")) {
+      // The source head's package.json, for its test script.
+      if (argv[0] === "git" && argv[1] === "show") return { exitCode: 0, stdout: '{"scripts":{"test":"npm test"}}', stderr: "" };
+      if (argv[3] === "tester") {
         const pass = readFileSync(join(dir, "app.txt"), "utf8") === RESOLVED ? 1 : 0;
         return { exitCode: pass === 1 ? 0 : 1, stdout: `# tests 1\n# pass ${pass}\n`, stderr: "" };
       }

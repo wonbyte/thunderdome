@@ -86,10 +86,11 @@ describe("judgeView and the judge agree", () => {
     expect(judgeView({ output })!.cross).toBeUndefined();
   });
 
-  it("V10: a fork whose shared run failed keeps its row, with no cells and 0 on the suite", async () => {
+  it("V10: when a fork's shared run failed, the suite is off and no file shows as counted", async () => {
     const forks = [await judged("ponder", [run("base", "test/a.test.ts", 4, 4)]), await judged("zippy", undefined)];
-    const rows = judgeView({ output: decide(fakeInput(), forks) })!.cross!.rows;
-    expect(rows.find((r) => r.agent === "zippy")).toEqual({ agent: "zippy", cells: [undefined], shared: { passed: 0, total: 4 } });
+    const cross = judgeView({ output: decide(fakeInput(), forks) })!.cross!;
+    expect(cross.rows.map((r) => r.agent)).toEqual(["ponder"]);
+    expect(cross.columns.every((c) => !c.counted)).toBe(true);
   });
 
   it("V9: the facts the page duplicates match the judge's", () => {

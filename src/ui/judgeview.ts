@@ -92,7 +92,7 @@ function crossOf(forks: unknown[], split: boolean, counted: unknown): CrossView 
   const runs = forks.filter(isObject).flatMap((f) => {
     const agent = str(f.agent);
     const shared = isObject(f.input) ? count(f.input.shared) : undefined;
-    // A fork whose run failed has no tests but a shared total of 0: it keeps its row.
+    // Older verdicts: a fork whose run failed has no tests but a shared total of 0; it keeps its row.
     if (agent === undefined || (!Array.isArray(f.crossTests) && shared === undefined)) return [];
     const tests = (Array.isArray(f.crossTests) ? f.crossTests : []).filter(isObject).flatMap((t) => {
       const author = str(t.author);

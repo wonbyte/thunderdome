@@ -77,21 +77,22 @@ export class PushWorkflow extends WorkflowEntrypoint<Env> {
     let url: string;
     try {
       url = await step.do("build preview", BUILD_STEP, async () => {
+        // Each try gets its own sandbox, so a timed-out try still winding down cannot stop the next.
+        const sandboxName = `preview-${push.fork}-${after.slice(0, 12)}-${crypto.randomUUID().slice(0, 8)}`;
         let timer: ReturnType<typeof setTimeout> | undefined;
         const late = new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error(`the build took longer than ${BUILD_TRY_MS / 1_000} seconds`)), BUILD_TRY_MS);
         });
         try {
-          const building = buildPreview(this.env, {
-            repo: push.fork,
-            commit: after,
-            name: previewName(taskId, agent),
-            sandboxName: `preview-${push.fork}-${after.slice(0, 12)}`,
+          const building = buildPreview(this.env, { repo: push.fork, commit: after, name: previewName(taskId, agent), sandboxName });
+          return await Promise.race([building, late]).catch(async (cause: unknown) => {
+            // A timed-out build would keep its container running and might still deploy over a later one.
+            await this.env.SANDBOX.getByName(sandboxName).stop().catch(() => undefined);
+            throw cause;
           });
-          return await Promise.race([building, late]);
         } catch (cause) {
           // Tell the judge's look after the first failed try, not after every retry: it stops waiting.
-          // A later try that works still saves the preview, which the look then prefers.
+          // A later try that works still saves the preview, which a look that has not run yet uses.
           await room(this.env, taskId).previewFailed(agent, after).catch(() => false);
           throw cause;
         } finally {

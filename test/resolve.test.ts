@@ -50,6 +50,8 @@ function fakeRace(plans: Partial<Record<ResolverName, Plan>>, setup: Record<stri
     async exec(argv, cwd, env) {
       calls.push({ argv, cwd, ...(env === undefined ? {} : { env }) });
       const key = argv.slice(0, 2).join(" ");
+      // The source head's package.json, for its test script.
+      if (argv[0] === "git" && argv[1] === "show") return { exitCode: 0, stdout: '{"scripts":{"test":"npm test"}}', stderr: "" };
       if (setup[key] !== undefined) return setup[key];
       const name = nameOf(cwd);
       const plan = plans[name] ?? {};
@@ -69,7 +71,7 @@ function fakeRace(plans: Partial<Record<ResolverName, Plan>>, setup: Record<stri
       }
       if (key === "git diff" && argv[2] === "--numstat") return ok(`${plan.lines ?? 10}\t0\tsrc/cart.ts\n`);
       if (key === "git grep") return leaves === "markers" ? ok("src/cart.ts\n") : leaves === "grepFails" ? { exitCode: 2, stdout: "", stderr: "bad" } : exit(1);
-      if (argv.includes("npm")) {
+      if (argv[3] === "tester") {
         const tests = plan.tests ?? [3, 3];
         return tests === "none" ? exit(1, "boom") : exit(tests[0] === tests[1] ? 0 : 1, `# tests ${tests[1]}\n# pass ${tests[0]}\n`);
       }

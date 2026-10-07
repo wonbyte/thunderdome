@@ -60,7 +60,8 @@ async function startPlay(request: Request, env: PlayEnv, day: string, limit: num
   const created = await room.create({ id, template: input.template, prompt: input.prompt, agents: PLAY_AGENTS });
   if (!created.ok) return Response.json(created.error, { status: created.status });
   if (waitUntil !== undefined) {
-    waitUntil(room.run().catch((cause: unknown) => console.error({ event: "play.run_failed", id, error: String(cause) })));
+    const failed = (error: unknown) => console.error({ event: "play.run_failed", id, error });
+    waitUntil(room.run().then((run) => (run.ok ? undefined : failed(run.error)), (cause: unknown) => failed(String(cause))));
     return Response.json({ id, page: `/race/${id}`, remaining: taken.remaining }, { status: 202 });
   }
   const run = await room.run();
