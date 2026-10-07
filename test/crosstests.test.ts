@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { crossPath, isNodeTestFile, runCrossTests, usesNodeTest, type CrossDeps } from "../src/judge/crosstests";
+import { crossPath, isNodeTestFile, runCrossTests, takeTurns, usesNodeTest, type CrossDeps } from "../src/judge/crosstests";
 
 const ok = (stdout = "") => ({ exitCode: 0, stdout, stderr: "" });
 const summary = (pass: number, tests: number) => ok(`ℹ tests ${tests}\nℹ pass ${pass}\n`);
@@ -49,7 +49,15 @@ describe("cross tests", () => {
     expect(runs).toEqual(["test/cart.from-base.test.ts", "test/mine.test.ts"]);
   });
 
-  it("T7: every fork runs the added files in one order (author, then file), so the file cap drops the same files", async () => {
+  it("T9: added files take turns by author, so one robot's many files can't push the others' past the budget", () => {
+    const f = (author: string, file: string) => ({ author, file });
+    const files = [f("zippy", "z2"), f("snip", "s1"), f("zippy", "z1"), f("zippy", "z3"), f("ponder", "p1")];
+    expect(takeTurns(files).map((x) => x.file)).toEqual(["p1", "s1", "z1", "z2", "z3"]);
+    const flood = [...Array.from({ length: 6 }, (_, i) => f("aaa", `a${i}`)), f("snip", "s1")];
+    expect(takeTurns(flood).map((x) => x.file).slice(0, 2)).toEqual(["a0", "s1"]);
+  });
+
+  it("T7: every fork runs the added files in one order (in turns by author, files sorted), so the file cap drops the same files", async () => {
     const order = async (agent: string, other: string) => {
       const deps = clone({ "git diff": (argv) => ok(argv.at(-1) === "HEAD" ? `test/${agent}.test.ts\n` : `test/${other}.test.ts\n`) });
       const results = await runCrossTests(deps, agent, "base1", [{ agent: other, remote: "r", branch: "main" }]);
@@ -81,19 +89,21 @@ describe("cross tests", () => {
 });
 
 describe("cross test budget", () => {
-  it("T5: a fork whose cross tests would run past the budget reports none", async () => {
+  it("T5: a fork whose cross tests would run past the budget stops and reports the files it ran", async () => {
+    // Review finding: reporting none turned the shared suite off for every fork, so slow added files could switch it off.
     let t = 0;
     const deps = clone();
     const timed = { exec: async (argv: string[]) => {
       if (argv[0] === "timeout") t += 200_000;
       return deps.exec(argv);
     }, now: () => t };
-    expect(await runCrossTests(timed, "ponder", "base1", [{ agent: "zippy", remote: "r", branch: "main" }])).toBeUndefined();
+    const results = await runCrossTests(timed, "ponder", "base1", [{ agent: "zippy", remote: "r", branch: "main" }]);
+    expect(results?.map((r) => r.author)).toEqual(["base", "ponder"]);
   });
 
   it("T8: the fork step's deadline cuts the cross tests short even inside the budget", async () => {
     const deps = { ...clone(), now: () => 0, deadline: 10_000 };
-    expect(await runCrossTests(deps, "ponder", "base1", [])).toBeUndefined();
+    expect(await runCrossTests(deps, "ponder", "base1", [])).toEqual([]);
     expect(await runCrossTests({ ...deps, deadline: 10 * 60_000 }, "ponder", "base1", [])).toHaveLength(2);
   });
 });

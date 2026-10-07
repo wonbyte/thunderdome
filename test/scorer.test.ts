@@ -5,6 +5,7 @@ import {
   averageResults,
   buildRequest,
   CLARITY_MIX,
+  clipForClef,
   CLEF_MODEL,
   CLEF_MODEL_ID,
   clefScorer,
@@ -106,8 +107,8 @@ describe("buildRequest", () => {
     expect(exact.state.diff).toHaveLength(MAX_DIFF_CHARS);
 
     const big = buildRequest(request({ diff: "x".repeat(MAX_DIFF_CHARS + 50) }));
-    expect(big.state.diff.startsWith("x".repeat(MAX_DIFF_CHARS))).toBe(true);
-    expect(big.state.diff.length).toBeLessThan(MAX_DIFF_CHARS + 50);
+    expect(big.state.diff.startsWith("x".repeat(MAX_DIFF_CHARS - 100))).toBe(true);
+    expect(big.state.diff.length).toBeLessThanOrEqual(MAX_DIFF_CHARS);
     expect(big.state.diff).toContain("clipped");
   });
 
@@ -171,9 +172,9 @@ describe("clefScorer", () => {
     const bigRunner = runnerOf(okBody());
     await clefScorer(bigRunner, sleeper()).score(request({ diff: "y".repeat(MAX_DIFF_CHARS + 10) }));
     const big = sent(bigRunner);
-    expect(big.state.diff.startsWith("y".repeat(MAX_DIFF_CHARS))).toBe(true);
-    expect(big.state.diff).toContain(`[diff clipped at ${MAX_DIFF_CHARS} chars]`);
-    expect(big.state.diff).not.toContain("y".repeat(MAX_DIFF_CHARS + 1));
+    expect(big.state.diff.startsWith("y".repeat(MAX_DIFF_CHARS - 100))).toBe(true);
+    expect(big.state.diff.endsWith("[diff clipped: 1 of 1 files]")).toBe(true);
+    expect(big.state.diff.length).toBeLessThanOrEqual(MAX_DIFF_CHARS);
   });
 
   it("C2: a plain { answers } and a { result: { answers } } Clef answer both parse to taskFit and clarity on 0..1", async () => {
@@ -330,6 +331,26 @@ describe("two file orders", () => {
     const single = runnerOf(okBody());
     await clefScorer(single, sleeper()).score(request());
     expect(single.run).toHaveBeenCalledTimes(1);
+  });
+
+  it("A4: an oversized diff is clipped to whole files before it is reversed, so both orders hold the same files", async () => {
+    // Review finding: each order was clipped on its own, so the two calls saw different files.
+    const file = (name: string): string => `diff --git a/${name} b/${name}\n+${"z".repeat(MAX_DIFF_CHARS / 3)}\n`;
+    const diff = ["a.ts", "b.ts", "c.ts", "d.ts"].map(file).join("");
+    expect(clipForClef(diff).endsWith("\n[diff clipped: 2 of 4 files]")).toBe(true);
+    expect(clipForClef(clipForClef(diff))).toBe(clipForClef(diff));
+
+    const runner = runnerOf(okBody(), okBody());
+    await clefScorer(runner, sleeper()).score(request({ diff, filesChanged: ["a.ts", "b.ts", "c.ts", "d.ts"] }));
+    const [first, second] = runner.run.mock.calls.map((c) => (c[1] as SystemOneRequest).state.diff);
+    const headers = (d: string | undefined): string[] => (d?.match(/^diff --git .*$/gm) ?? []).toSorted();
+    expect(headers(first)).toEqual(["diff --git a/a.ts b/a.ts", "diff --git a/b.ts b/b.ts"]);
+    expect(headers(second)).toEqual(headers(first));
+    expect(second?.startsWith("diff --git a/b.ts")).toBe(true);
+    for (const d of [first, second]) {
+      expect(d?.length).toBeLessThanOrEqual(MAX_DIFF_CHARS);
+      expect(d?.endsWith("\n[diff clipped: 2 of 4 files]")).toBe(true);
+    }
   });
 
   it("A3: averageResults averages probabilities level by level", () => {

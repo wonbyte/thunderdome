@@ -32,7 +32,7 @@ demo costs at most about $9.20 a day in agent spend.
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
 | Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
-| Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork; 20 minutes per fork step | `src/judge/judge.ts` |
+| Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork (files left unrun count for no fork); 20 minutes per fork step | `src/judge/judge.ts` |
 | Look | waits for final previews until 3 minutes after the race ends (a retry does not wait again), and not for a build that failed; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
 | Diff the scorer reads | first 100,000 characters | `src/judge/scorer.ts` |
@@ -40,7 +40,7 @@ demo costs at most about $9.20 a day in agent spend.
 | Push log per agent | newest 50 pushes | `src/room/task.ts` |
 | Race list | index keeps 200 races; `GET /tasks` returns 50; prompts cut to 280 characters | `src/room/races.ts` |
 | Workers Previews | 500 per Worker (oldest deleted first), 100 deployments per preview | Cloudflare limit |
-| Containers | `max_instances` not set: 20 at once (Wrangler default); a 5-robot race uses about 10 | `wrangler.jsonc` |
+| Containers | No per-app cap: the Durable Object scheduling policy has no `max_instances`, only account limits; a 5-robot race uses about 10 | `wrangler.jsonc` |
 | Sandbox idle | a container stops after 30 minutes without use | `src/sandbox/ThunderdomeSandbox.ts` |
 
 What it does not do yet:

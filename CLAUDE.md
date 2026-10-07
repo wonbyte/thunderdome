@@ -75,7 +75,8 @@ Commit, push and deploy only when the user asks. They usually want a review befo
   repo's test files (from the base commit, so edits to them don't count) plus each robot's added
   test files that fully pass on at least two forks. When Clef says the task gives robots different
   parts (`testscope.ts`), only the repo's tests count: Clef could not tell which robot a test file
-  belongs to (measured Oct 7). If any fork lacks results, every fork falls back to its own `npm test`.
+  belongs to (measured Oct 7). A fork out of time reports the files it ran, and only files every
+  fork ran count. If a fork has no results at all, every fork falls back to its own `npm test`.
 - **Clef** (`@cf/cloudflare/clef` on Workers AI, System One API; see the TypeSafe docs) answers task
   fit (6 levels, judged against what the task asks of that robot), readability (4 levels) and a
   yes/no on unrelated edits (`scorer.ts`). It gets each changed function in full

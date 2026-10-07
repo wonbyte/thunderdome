@@ -6,10 +6,10 @@ import { BASE_AUTHOR, parseTestSummary, type CrossTest } from "./judge";
 export const CROSS_TEST_TIMEOUT_S = 30;
 /**
  * All of a fork's cross tests must end within this, well inside the fork step's timeout. Past it the
- * fork reports none, which turns the shared suite off for every fork: partial results would not compare.
+ * fork stops and reports the files it ran; the shared suite counts only files every fork ran.
  */
 export const CROSS_TEST_BUDGET_MS = 4 * 60 * 1_000;
-/** Test files run per fork, at most: the base files first, then the added files by author, in the same order on every fork. */
+/** Test files run per fork, at most: the base files first, then the added files in turns by author, in the same order on every fork. */
 export const CROSS_TEST_MAX_FILES = 40;
 
 /** What running the suite needs: a command runner in the fork's clone. */
@@ -63,12 +63,33 @@ async function runFile(deps: CrossDeps, path: string): Promise<{ passed: number;
   return parseTestSummary(`${result.stdout}\n${result.stderr}`) ?? { passed: 0, total: 0 };
 }
 
+const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * The added files in one order on every fork, so the file cap and the time budget cut the same
+ * files everywhere: one file per author per turn, authors and files sorted. A robot that adds many
+ * slow files gets one turn at a time, so the others' files still run.
+ */
+export function takeTurns<T extends { author: string; file: string }>(files: T[]): T[] {
+  const by = new Map<string, T[]>();
+  for (const f of files.toSorted((a, b) => byText(a.file, b.file))) by.set(f.author, [...(by.get(f.author) ?? []), f]);
+  const queues = [...by.keys()].toSorted(byText).map((author) => by.get(author) ?? []);
+  const order: T[] = [];
+  for (let turn = 0; queues.some((q) => q.length > turn); turn++) {
+    for (const q of queues) {
+      const file = q[turn];
+      if (file !== undefined) order.push(file);
+    }
+  }
+  return order;
+}
+
 /**
  * Runs the shared suite on the fork checked out in the clone, after its own tests ran: the base
  * commit's test files as the source repo has them, every fork's added test files (its own as it has
  * them, the others' copied in under crossPath). Base files run from the base commit, so a fork that
- * edits or extends the repo's tests is still judged on the same suite as the others. undefined when
- * the repo does not use node --test, or when the files do not fit in the time left.
+ * edits or extends the repo's tests is still judged on the same suite as the others. Stops at the
+ * budget or the deadline with the files run so far. undefined when the repo does not use node --test.
  */
 export async function runCrossTests(deps: CrossDeps, agent: string, base: string, others: CrossSource[]): Promise<CrossTest[] | undefined> {
   const now = deps.now ?? Date.now;
@@ -96,11 +117,9 @@ export async function runCrossTests(deps: CrossDeps, agent: string, base: string
       if (await copy(theirs, file, path)) extra.push({ author: other.agent, file, path });
     }
   }
-  // One order on every fork, so the file cap drops the same files everywhere.
-  const ordered = extra.toSorted((a, b) => (a.author === b.author ? (a.file < b.file ? -1 : a.file > b.file ? 1 : 0) : a.author < b.author ? -1 : 1));
   const results: CrossTest[] = [];
-  for (const run of [...runs, ...ordered].slice(0, CROSS_TEST_MAX_FILES)) {
-    if (now() + CROSS_TEST_TIMEOUT_S * 1_000 > deadline) return undefined;
+  for (const run of [...runs, ...takeTurns(extra)].slice(0, CROSS_TEST_MAX_FILES)) {
+    if (now() + CROSS_TEST_TIMEOUT_S * 1_000 > deadline) break;
     results.push({ author: run.author, file: run.file, ...(await runFile(deps, run.path)) });
   }
   return results;

@@ -220,24 +220,29 @@ const passedAll = (t: CrossTest): boolean => t.total > 0 && t.passed === t.total
  * that passes in full on at least two forks. A file that passes only on its author's fork is left
  * out for everyone: it may test that fork's own helpers, or expect behavior the task never asked
  * for. A file's size is the most tests any fork ran from it, so a file that fails to load counts
- * as 0 passed. When the task gives robots different parts (`split`, Clef's yes), only the repo's
- * files count: each robot's added files check its own part. undefined unless every fork that
- * changed files has cross tests.
+ * as 0 passed. Only files every fork ran count: a fork out of time stops early, and the files it
+ * skipped would not compare. When the task gives robots different parts (`split`, Clef's yes), only
+ * the repo's files count: each robot's added files check its own part. undefined unless every fork
+ * that changed files has cross tests.
  */
 export function sharedSuite(forks: JudgedFork[], split = 0): Map<string, TestRun> | undefined {
   const runs = forks.filter((f) => f.input.filesChanged.length > 0);
   if (runs.length === 0 || runs.some((f) => f.crossTests === undefined)) return undefined;
   const size = new Map<string, number>();
   const passes = new Map<string, number>();
+  const ran = new Map<string, number>();
   const base = new Set<string>();
   for (const fork of runs) {
     for (const t of fork.crossTests ?? []) {
       size.set(key(t), Math.max(size.get(key(t)) ?? 0, t.total));
+      ran.set(key(t), (ran.get(key(t)) ?? 0) + 1);
       if (passedAll(t)) passes.set(key(t), (passes.get(key(t)) ?? 0) + 1);
       if (t.author === BASE_AUTHOR) base.add(key(t));
     }
   }
-  const counted = [...size.keys()].filter((k) => (size.get(k) ?? 0) > 0 && (base.has(k) || (split < SPLIT_YES && (passes.get(k) ?? 0) >= 2)));
+  const counted = [...size.keys()].filter(
+    (k) => (size.get(k) ?? 0) > 0 && ran.get(k) === runs.length && (base.has(k) || (split < SPLIT_YES && (passes.get(k) ?? 0) >= 2)),
+  );
   if (counted.length === 0) return undefined;
   const suite = new Map<string, TestRun>();
   for (const fork of runs) {

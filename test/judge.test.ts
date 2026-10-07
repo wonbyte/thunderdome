@@ -249,6 +249,15 @@ describe("the shared suite", () => {
     expect(fork.crossTests).toBeUndefined();
   });
 
+  it("S7: a file some fork did not run (it ran out of time) counts for no fork", async () => {
+    const forks = [
+      await judged("ponder", [run(BASE_AUTHOR, "test/a.test.ts", 4, 4), run("zippy", "test/z.test.ts", 2, 2), run("ponder", "test/p.test.ts", 3, 3)]),
+      await judged("zippy", [run(BASE_AUTHOR, "test/a.test.ts", 4, 4), run("zippy", "test/z.test.ts", 2, 2), run("ponder", "test/p.test.ts", 3, 3)]),
+      await judged("snip", [run(BASE_AUTHOR, "test/a.test.ts", 2, 4), run("zippy", "test/z.test.ts", 0, 2)]),
+    ];
+    expect(Object.fromEntries(sharedSuite(forks)!)).toEqual({ ponder: { passed: 6, total: 6 }, zippy: { passed: 6, total: 6 }, snip: { passed: 2, total: 6 } });
+  });
+
   it("S6: when the task splits the work, only the repo's test files count, and the split answer is kept on the result", async () => {
     const forks = [
       await judged("ponder", [run(BASE_AUTHOR, "test/a.test.ts", 4, 4), run("zippy", "test/z.test.ts", 0, 2), run("ponder", "test/p.test.ts", 3, 3)]),

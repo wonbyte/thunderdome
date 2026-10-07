@@ -161,9 +161,11 @@ node scripts/clef-replay/analyze.mjs $D                              # noise, th
 
 ## Containers: instance limit
 
-`wrangler.jsonc` sets no `max_instances` or `instance_type` for `ThunderdomeSandbox`, so the
-defaults apply: `max_instances` 20 and `instance_type` "lite" (Wrangler configuration docs; the
-account limits are far higher: 1,500 vCPU, 6 TiB memory). One 5-robot race uses up to about 10 at
-once: 5 agent sandboxes plus a preview build per push. Judging uses 5 more, after the agents stop.
-So two 5-robot races at the same moment reach the cap, and a third would fail to start sandboxes.
-The `/play` quota (10 a day, 3 per IP) makes that unlikely but not impossible during judging.
+`ThunderdomeSandbox` uses `scheduling_policy: "durable_object"`, which has no `max_instances`:
+Wrangler rejects the field, and running instances count only toward the account limits (1,500 vCPU,
+6 TiB memory). The 20 default applies to the default policy only (Cloudflare Containers docs,
+"Scheduling Policies"; checked Oct 7, and `wrangler containers info` shows `max_instances: null`).
+One 5-robot race uses up to about 10 at once: 5 agent sandboxes plus a preview build per push.
+Judging uses 5 more, after the agents stop. On `t-2003c1f7` a preview build lost its container
+("container connection is temporarily unavailable") with about 20 in use; there is no cap at 20, so
+the cause is unexplained. A per-app cap would have to be enforced in code.

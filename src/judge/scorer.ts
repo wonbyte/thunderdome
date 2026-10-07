@@ -146,10 +146,22 @@ export class ScorerError extends Error {
   }
 }
 
-/** Clips an oversized diff and marks the cut. */
-function clipDiff(diff: string): string {
+const CLIP_MARK = /\n\[diff clipped: [^\n]*\]$/;
+
+/**
+ * Clips an oversized diff to whole files that fit in MAX_DIFF_CHARS, marker included (the first file
+ * alone is cut when it is too big). Run before reverseFiles, so both file orders hold the same files.
+ */
+export function clipForClef(diff: string): string {
   if (diff.length <= MAX_DIFF_CHARS) return diff;
-  return `${diff.slice(0, MAX_DIFF_CHARS)}\n[diff clipped at ${MAX_DIFF_CHARS} chars]`;
+  const files = diff.split(/(?=^diff --git )/m);
+  const mark = (kept: number): string => `\n[diff clipped: ${kept} of ${files.length} files]`;
+  const budget = MAX_DIFF_CHARS - mark(files.length).length;
+  let kept = 0;
+  let size = 0;
+  while (kept < files.length && size + (files[kept]?.length ?? 0) <= budget) size += files[kept++]?.length ?? 0;
+  if (kept === 0) return `${diff.slice(0, budget)}${mark(1)}`;
+  return `${files.slice(0, kept).join("")}${mark(kept)}`;
 }
 
 /** A robot's display name from its agent id, as tasks write it: "zippy" -> "Zippy". */
@@ -157,10 +169,11 @@ export function authorName(agent: string): string {
   return agent.charAt(0).toUpperCase() + agent.slice(1);
 }
 
-/** The diff with its files in the opposite order: a harmless rewrite, asked to average out order effects. */
+/** The diff with its files in the opposite order: a harmless rewrite, asked to average out order effects. A clip marker stays last. */
 export function reverseFiles(diff: string): string {
-  const files = diff.split(/(?=^diff --git )/m);
-  return files.toReversed().join("");
+  const mark = CLIP_MARK.exec(diff)?.[0] ?? "";
+  const files = diff.slice(0, diff.length - mark.length).split(/(?=^diff --git )/m);
+  return `${files.toReversed().join("")}${mark}`;
 }
 
 /** The diff goes only in state; questions are the shared constant. */
@@ -169,7 +182,7 @@ export function buildRequest(input: ScoreRequest): SystemOneRequest {
     state: {
       task: input.task,
       author: input.author ?? "unknown",
-      diff: clipDiff(input.diff),
+      diff: clipForClef(input.diff),
       files_changed: [...input.filesChanged],
       lines_added: input.linesAdded,
       lines_removed: input.linesRemoved,
@@ -298,9 +311,11 @@ export function clefScorer(ai: AiRunner, sleep?: (ms: number) => Promise<void>):
     retry(() => callClef(ai, request), { attempts: SCORER_ATTEMPTS, delayMs: SCORER_RETRY_DELAY_MS, shouldRetry: isRetryable }, sleep);
   return {
     async score(request) {
-      const reversed = reverseFiles(request.diff);
-      if (reversed === request.diff) return once(request);
-      const [a, b] = await Promise.all([once(request), once({ ...request, diff: reversed, filesChanged: request.filesChanged.toReversed() })]);
+      // Clip first: each order cut on its own would keep different files.
+      const diff = clipForClef(request.diff);
+      const reversed = reverseFiles(diff);
+      if (reversed === diff) return once({ ...request, diff });
+      const [a, b] = await Promise.all([once({ ...request, diff }), once({ ...request, diff: reversed, filesChanged: request.filesChanged.toReversed() })]);
       return averageResults(a, b);
     },
   };

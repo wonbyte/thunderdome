@@ -77,7 +77,7 @@ function tieOf(scores: Record<string, unknown>): TieView | undefined {
 
 const key = (author: string, file: string): string => `${author}\0${file}`;
 
-/** Base files first, then by author, then by file: the order every fork ran them in. */
+/** Base files first, then by author, then by file. */
 function columnOrder(a: CrossColumn, b: CrossColumn): number {
   const rank = (c: CrossColumn): string => `${c.author === BASE_AUTHOR ? "0" : "1"}${c.author}\0${c.file}`;
   return rank(a) < rank(b) ? -1 : rank(a) > rank(b) ? 1 : 0;
@@ -97,18 +97,20 @@ function crossOf(forks: unknown[], split: boolean): CrossView | undefined {
     return [{ agent, tests, ...(shared === undefined ? {} : { shared }) }];
   });
   if (runs.length === 0) return undefined;
-  // Counted as the judge counts it: base files always; others when they pass in full on two forks.
+  // Counted as the judge counts it: files every fork ran; base files always, others when they pass in full on two forks.
   const passes = new Map<string, number>();
+  const ran = new Map<string, number>();
   const columns = new Map<string, CrossColumn>();
   for (const run of runs) {
     for (const t of run.tests) {
       const k = key(t.author, t.file);
       if (t.total > 0 && t.passed === t.total) passes.set(k, (passes.get(k) ?? 0) + 1);
+      ran.set(k, (ran.get(k) ?? 0) + 1);
       columns.set(k, { author: t.author, file: t.file, counted: false });
     }
   }
   const ordered = [...columns.entries()]
-    .map(([k, c]) => ({ ...c, counted: c.author === BASE_AUTHOR || (!split && (passes.get(k) ?? 0) >= 2) }))
+    .map(([k, c]) => ({ ...c, counted: ran.get(k) === runs.length && (c.author === BASE_AUTHOR || (!split && (passes.get(k) ?? 0) >= 2)) }))
     .toSorted(columnOrder);
   const rows = runs.map((run) => ({
     agent: run.agent,
