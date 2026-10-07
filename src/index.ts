@@ -5,6 +5,8 @@ import { isArtifactsError, isRepoName } from "./artifacts/repo";
 import { accessFor, pageAsset } from "./routes/access";
 import { modelCheck } from "./routes/admin";
 import { handlePlay, isPlayPath } from "./routes/play";
+import { cardTaskId } from "./routes/card";
+import { handleCard, sharePage } from "./routes/share";
 import { handleJudge, handlePurge, handleRaceBackfill, handleTasks, isTasksPath, judgeTaskId } from "./routes/tasks";
 import { CommandError } from "./sandbox/ThunderdomeSandbox";
 import { isDemoApp, runDay1, seedSample } from "./spike";
@@ -36,6 +38,7 @@ const ROUTES = {
   "GET /play/quota": "Today's play quota: { day, used, limit, remaining, invite }. No auth.",
   "GET /play": "The run-your-own-race page. No auth.",
   "GET /race/:id": "The live race page for a task. No auth; the read routes it uses are public too.",
+  "GET /race/:id/card.png": "The race's result card (1200x630), for link previews. Drawn on the first request after the verdict; 404 before it. No auth.",
   "GET /races": "The race gallery page. No auth.",
   "POST /admin/races": "Add races from before the index: { ids }.",
   "POST /admin/purge": "Delete races for good (repos, state, race list entry): { ids } or {} for every listed race. Running races are skipped.",
@@ -47,11 +50,13 @@ export default {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
     const access = accessFor(request.method, url.pathname);
-    // A page is a static file; a task id stays in the URL for the page script.
+    // A page is a static file with its link-preview tags added; a task id stays in the URL for the page script.
     if (access === "page") {
       const asset = pageAsset(url.pathname);
-      if (asset !== undefined) return env.ASSETS.fetch(new URL(asset, request.url));
+      if (asset !== undefined) return await sharePage(request, env, asset, asset === "/race.html" ? url.pathname.split("/")[2] : undefined);
     }
+    const cardId = cardTaskId(url.pathname);
+    if (cardId !== undefined && request.method === "GET") return await handleCard(env, cardId);
     // A browser at the root lands on the gallery; API clients still get the route list.
     if (route === "GET /") {
       if (request.headers.get("accept")?.includes("text/html")) return Response.redirect(new URL("/races", request.url).toString(), 302);

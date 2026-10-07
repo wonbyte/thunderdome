@@ -91,6 +91,20 @@ export class TaskRoom extends DurableObject<Env> {
     ctx.storage.sql.exec(
       "CREATE TABLE IF NOT EXISTS steps (seq INTEGER PRIMARY KEY AUTOINCREMENT, agent TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL)",
     );
+    // The result card (GET /race/:id/card.png), drawn once after the verdict. One row; a race that
+    // was never shared has none.
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS card (key TEXT PRIMARY KEY, type TEXT NOT NULL, body BLOB NOT NULL, at TEXT NOT NULL)");
+  }
+
+  /** The saved result card, or null before one was drawn. */
+  card(): { type: string; body: ArrayBuffer } | null {
+    const row = this.ctx.storage.sql.exec<{ type: string; body: ArrayBuffer }>("SELECT type, body FROM card WHERE key = 'card'").toArray()[0];
+    return row === undefined ? null : { type: row.type, body: row.body };
+  }
+
+  /** Saves the result card; a second render (two first requests at once) simply replaces the first. */
+  saveCard(type: string, body: ArrayBuffer): void {
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO card (key, type, body, at) VALUES ('card', ?, ?, ?)", type, body, new Date().toISOString());
   }
 
   /** GET /tasks/:id/live: accepts a hibernating WebSocket and sends it a snapshot. */

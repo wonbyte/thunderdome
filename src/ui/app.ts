@@ -15,6 +15,10 @@ import { gitLog, type LogLine } from "./gitlog";
 import { drawGraph } from "./graphview";
 import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type JudgeView, type TieView } from "./judgeview";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
+import { PHASE_LABELS, PHASES, phaseOf, phaseStarts, railStates, type Phase } from "./phases";
+import { verdictLine } from "./verdict";
+import { guessView } from "./guess";
+import { momentLink, parseMoment } from "./moment";
 import type { TimedEvent, Timeline } from "./timeline";
 
 const TASK_PATH = /^\/race\/(t-[0-9a-f]{8})$/;
@@ -147,6 +151,30 @@ let recorded: WireTask | undefined;
 let liveDots: PushDot[] = [];
 const endSeen = new Map<string, number>();
 let graphKey = "";
+let railKey = "";
+let railAt = "";
+/** Follow the race down the page: live after the first load, and in a replay only while it plays. */
+let follow = false;
+/** The phase whose panel is waiting to scroll into view (its panel may still be hidden). */
+let scrollWanted: Phase | undefined;
+/** When the viewer last scrolled by hand (wheel, touch or keys); auto-scroll waits for them. */
+let manualAt = -Infinity;
+const MANUAL_MS = 8_000;
+/** A replay starts this long before the run (startReplay), so a phase change inside it is not a move. */
+const OPENING_MS = 2_000;
+/** When each phase starts in the replay, for the rail's buttons. */
+let starts: Partial<Record<Phase, number>> = {};
+let guessKey = "";
+/** The page's title when no alert runs; renderHeader owns it, the tab alert borrows it. */
+let normalTitle = "Thunderdome race";
+let alertTimer: ReturnType<typeof setInterval> | undefined;
+const ALERT_MS = 1_400; // background tabs run timers once a second at most
+/** The verdict landed while the tab was hidden: the reveal waits for the viewer to come back. */
+let revealWaiting = false;
+/** The explainer is open: it is being read, so the page does not scroll on its own. */
+let explaining = false;
+/** The viewer's pick, read from localStorage once; kept here too when storage is not available. */
+let pick: string | undefined;
 
 function byId(id: string): HTMLElement {
   const node = document.getElementById(id);
@@ -221,6 +249,7 @@ function main(): void {
     return;
   }
   taskId = id;
+  pick = readGuess();
   setInterval(() => {
     renderTimer();
     if (replay === undefined && board !== undefined) renderGraph(board);
@@ -229,6 +258,9 @@ function main(): void {
     if (board !== undefined) drawBeams(board);
   });
   setupWipe();
+  setupRail();
+  setupExplainer();
+  document.addEventListener("visibilitychange", onVisibility);
   if (new URLSearchParams(location.search).has("replay")) {
     void startReplay(id);
     return;
@@ -286,6 +318,7 @@ async function load(id: string): Promise<boolean> {
     liveDots = pushDots(race.task);
     addLog(race.steps);
     hideMessage();
+    follow = false;
     setBoard(next);
     renderPipeline([]);
     return true;
@@ -359,6 +392,7 @@ function onMessage(data: unknown): void {
   if (board === undefined) return;
   const now = Date.now();
   const before = board;
+  follow = true;
   if (event.kind === "verdict") armReveal();
   if (event.kind === "push") addLiveDot(event.agent, event.push, now);
   setBoard(applyEvent(board, event, now));
@@ -398,8 +432,11 @@ function platformOf(events: TimedEvent[]): PlatformState {
 }
 
 function setBoard(next: Board): void {
+  // The verdict just landed on a live page nobody is looking at: say so in the tab's title.
+  const justEnded = board !== undefined && !board.ended && next.ended && replay === undefined;
   board = next;
   render(next);
+  if (justEnded && document.hidden) alertTab(next);
   if (next.ended && ranked === undefined && replay === undefined) void loadScores();
 }
 
@@ -416,8 +453,12 @@ async function loadScores(): Promise<void> {
       ranked = found;
       judged = judgeView(body);
       if (board !== undefined) {
-        // Watched live to the end: play the judging. Opened after the end: show the result.
-        if (revealArmed) startReveal();
+        // Watched live to the end: play the judging (once the tab is visible: animation frames
+        // pause in a hidden tab, and the reveal would jump to its end). Opened after the end: show the result.
+        if (revealArmed) {
+          if (document.hidden) revealWaiting = true;
+          else startReveal();
+        }
         setBoard(applyScores(board, found));
       }
       return;
@@ -472,10 +513,40 @@ async function startReplay(id: string): Promise<void> {
   const runAt = Date.parse(race.task.startedAt ?? "");
   const timeline = Number.isNaN(runAt) ? built : { ...built, start: Math.max(built.start, runAt - 1500) };
   replay = { timeline, steps: race.steps, t: timeline.start, playing: true, speed: 1 };
+  starts = phaseStarts(timeline);
   hideMessage();
   setupReplayBar(timeline);
-  seek(timeline.start, false);
-  play(true);
+  // A link to a moment opens paused there; a jump shows the state at once and never scrolls.
+  const moment = parseMoment(location.search);
+  if (moment === undefined) {
+    seek(timeline.start, false);
+    play(true);
+  } else {
+    seek(Math.min(timeline.end, timeline.start + moment), false);
+    play(false);
+  }
+}
+
+/** Copies a link to the replay's current time; without a clipboard, shows it to copy by hand. */
+function copyMoment(): void {
+  const r = replay;
+  if (r === undefined) return;
+  const link = momentLink(location.origin, taskId, r.t - r.timeline.start);
+  const button = byId("replay-copy");
+  const flash = (text: string): void => {
+    const label = button.querySelector("span");
+    if (label === null) return;
+    label.textContent = text;
+    setTimeout(() => {
+      label.textContent = "link";
+    }, 1_600);
+  };
+  const clipboard = typeof navigator.clipboard?.writeText === "function" ? navigator.clipboard : undefined;
+  if (clipboard === undefined) return void window.prompt("Copy this link to the moment:", link);
+  clipboard.writeText(link).then(
+    () => flash("copied"),
+    () => void window.prompt("Copy this link to the moment:", link),
+  );
 }
 
 function setupReplayBar(timeline: Timeline): void {
@@ -487,6 +558,7 @@ function setupReplayBar(timeline: Timeline): void {
   range.step = "100";
   range.addEventListener("input", () => seek(timeline.start + Number(range.value), false));
   byId("replay-play").addEventListener("click", () => play(!(replay?.playing ?? false)));
+  byId("replay-copy").addEventListener("click", copyMoment);
   const speeds = byId("replay-speeds");
   speeds.replaceChildren(
     ...SPEEDS.map((speed) => {
@@ -556,6 +628,7 @@ function seek(t: number, animate: boolean): void {
   r.t = t;
   const crossed = r.timeline.events.filter((e) => e.at > from && e.at <= t);
   const forward = animate && t >= from;
+  follow = forward;
   if (!forward) {
     platform = platformOf(r.timeline.events.filter((e) => e.at <= t));
     stopReveal();
@@ -677,6 +750,229 @@ function render(b: Board): void {
   renderBlame(b);
   renderLog(b);
   renderTimer();
+  renderRail(b);
+  renderGuess(b);
+  flushScroll();
+}
+
+// ---- the phase rail ----
+
+const SCROLL_KEYS = new Set(["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "]);
+
+/** Only input that scrolls by hand counts: a programmatic scroll fires "scroll" too. */
+function manual(): void {
+  manualAt = performance.now();
+}
+
+function setupRail(): void {
+  window.addEventListener("wheel", manual, { passive: true });
+  window.addEventListener("touchstart", manual, { passive: true });
+  window.addEventListener("keydown", (e) => {
+    if (SCROLL_KEYS.has(e.key)) manual();
+  });
+  byId("rail-steps").replaceChildren(
+    ...PHASES.map((phase, i) => {
+      const item = el("li");
+      const button = el("button", "phase");
+      button.type = "button";
+      button.dataset.phase = phase;
+      button.append(el("i", undefined, String(i + 1)), document.createTextNode(PHASE_LABELS[phase]));
+      button.addEventListener("click", () => goToPhase(phase));
+      item.append(button);
+      return item;
+    }),
+  );
+}
+
+/** The panel that shows a phase best; a hidden panel falls back to the stage. */
+function phaseTarget(phase: Phase): HTMLElement | undefined {
+  const ids: Record<Phase, string | undefined> = { fork: undefined, race: "stage", judge: "stage", fuse: "graph-panel", merge: "result-panel" };
+  const id = ids[phase];
+  return id === undefined ? undefined : byId(id);
+}
+
+function scrollToPanel(target: HTMLElement): void {
+  target.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+}
+
+/** A click on the rail: in a replay, jump to the phase's start; then show its panel. */
+function goToPhase(phase: Phase): void {
+  const at = starts[phase];
+  if (replay !== undefined && at !== undefined) {
+    play(false);
+    seek(at, false);
+  }
+  scrollWanted = undefined;
+  const target = phaseTarget(phase);
+  if (target === undefined) return window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+  scrollToPanel(target.hidden ? byId("stage") : target);
+}
+
+function renderRail(b: Board): void {
+  const at = phaseOf(b);
+  const states = railStates(at);
+  const key = JSON.stringify([states, replay === undefined ? null : Object.keys(starts)]);
+  if (key === railKey) return;
+  railKey = key;
+  byId("explainer-phase").textContent = EXPLAIN_PHASE[at.phase];
+  const now = `${at.phase}:${at.state}`;
+  // The first render never scrolls: someone opening a race mid-way stays at the top. Nor does a
+  // replay's opening: it starts a moment before the run, so the race phase is its starting state.
+  const opening = replay !== undefined && replay.t - replay.timeline.start < OPENING_MS;
+  const moved = railAt !== "" && railAt !== now && !opening;
+  railAt = now;
+  byId("rail").hidden = false;
+  for (const button of Array.from(byId("rail-steps").querySelectorAll<HTMLButtonElement>("button.phase"))) {
+    const phase = button.dataset.phase as Phase;
+    const state = states[phase];
+    button.dataset.state = state;
+    // Phases not reached yet have nowhere to go, except in a replay, where every phase is recorded.
+    button.disabled = replay === undefined ? state === "waiting" || state === "skipped" : starts[phase] === undefined;
+    if (state === "current") button.setAttribute("aria-current", "step");
+    else button.removeAttribute("aria-current");
+    const mark = button.querySelector("i");
+    if (mark !== null) mark.textContent = state === "done" ? "✓" : state === "failed" ? "✗" : String(PHASES.indexOf(phase) + 1);
+  }
+  if (moved) scrollWanted = follow ? at.phase : undefined;
+}
+
+/** Scrolls the wanted phase into view once its panel shows, unless the viewer scrolled by hand lately. */
+function flushScroll(): void {
+  const phase = scrollWanted;
+  if (phase === undefined || !follow || explaining) return;
+  if (performance.now() - manualAt < MANUAL_MS) {
+    scrollWanted = undefined;
+    return;
+  }
+  const target = phaseTarget(phase);
+  // The result waits for the reveal on the stage to finish.
+  if (target === undefined || target.hidden || target.classList.contains("revealing")) return;
+  scrollWanted = undefined;
+  scrollToPanel(target);
+}
+
+// ---- the tab alert ----
+
+/** Alternates the title with the winner until the tab is seen. */
+function alertTab(b: Board): void {
+  if (alertTimer !== undefined) return;
+  const won = b.winner ? `🏆 ${displayName(b.winner)} won` : "🏁 No winner";
+  let shown = false;
+  alertTimer = setInterval(() => {
+    shown = !shown;
+    document.title = shown ? won : normalTitle;
+  }, ALERT_MS);
+  document.title = won;
+}
+
+function onVisibility(): void {
+  if (document.hidden) return;
+  if (alertTimer !== undefined) {
+    clearInterval(alertTimer);
+    alertTimer = undefined;
+    document.title = normalTitle;
+  }
+  if (revealWaiting) {
+    revealWaiting = false;
+    startReveal();
+  }
+}
+
+// ---- the explainer ----
+
+const EXPLAINED_KEY = "thunderdome:explained";
+/** What is happening now, for the strip's first line. */
+const EXPLAIN_PHASE: Record<Phase, string> = {
+  fork: "Right now: each robot is getting its own fork of the repo and its own sandbox.",
+  race: "Right now: the robots are reading, editing, testing and pushing, each on its own fork.",
+  judge: "Right now: the judge is running every test on every fork and asking Clef about the code.",
+  fuse: "Right now: the losers' best files and hunks are being tried on top of the winner's fix.",
+  merge: "The race is over: the winner's fork (with anything fused in) is merged into main.",
+};
+
+function setupExplainer(): void {
+  let dismissed = false;
+  try {
+    dismissed = localStorage.getItem(EXPLAINED_KEY) === "1";
+  } catch {
+    // No storage: the strip shows on every visit.
+  }
+  const help = byId("help");
+  help.addEventListener("click", () => showExplainer(!explaining));
+  byId("explainer-close").addEventListener("click", () => {
+    try {
+      localStorage.setItem(EXPLAINED_KEY, "1");
+    } catch {
+      // No storage: it comes back next visit.
+    }
+    showExplainer(false);
+  });
+  showExplainer(!dismissed);
+}
+
+/** Shows or hides the strip and the three captions; the ? pill reopens it any time. */
+function showExplainer(on: boolean): void {
+  explaining = on;
+  byId("explainer").hidden = !on;
+  document.body.classList.toggle("explaining", on);
+  byId("help").setAttribute("aria-expanded", String(on));
+  byId("help").classList.toggle("on", on);
+}
+
+// ---- guess the winner ----
+
+const guessStoreKey = (): string => `thunderdome:guess:${taskId}`;
+
+function readGuess(): string | undefined {
+  try {
+    return localStorage.getItem(guessStoreKey()) ?? undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveGuess(agent: string): void {
+  try {
+    localStorage.setItem(guessStoreKey(), agent);
+  } catch {
+    // No storage (private mode): the pick lasts until the page reloads.
+  }
+  pick = agent;
+  if (board !== undefined) renderGuess(board);
+}
+
+function renderGuess(b: Board): void {
+  const view = guessView(b, pick, revealStart === undefined && !revealArmed);
+  const agents = b.fighters.map((f) => f.agent);
+  const key = JSON.stringify([view, agents]);
+  if (key === guessKey) return;
+  guessKey = key;
+  const box = byId("guess");
+  box.hidden = view.kind === "hidden" || agents.length < 2;
+  if (view.kind === "hidden") return;
+  box.dataset.kind = view.kind;
+  const chosen = view.pick;
+  byId("guess-chips").replaceChildren(
+    ...agents.map((agent) => {
+      const chip = el("button", `guess-chip${agent === chosen ? " on" : ""}`, displayName(agent));
+      chip.type = "button";
+      chip.style.setProperty("--color", colorFor(agent));
+      chip.setAttribute("aria-pressed", String(agent === chosen));
+      chip.disabled = view.kind !== "open";
+      chip.addEventListener("click", () => saveGuess(agent));
+      return chip;
+    }),
+  );
+  const note = byId("guess-note");
+  note.classList.toggle("hit", view.kind === "reveal" && view.hit);
+  note.textContent =
+    view.kind === "open"
+      ? chosen === undefined
+        ? "Tap a robot. Your pick locks when the judging starts."
+        : `Your pick: ${displayName(chosen)}. You can change it until the judging starts.`
+      : view.kind === "locked"
+        ? `Your pick: ${displayName(view.pick)}, locked in while the judge works.`
+        : view.text;
 }
 
 /** A live push: one more dot, with the commits it added. */
@@ -734,7 +1030,10 @@ function renderGraph(b: Board): void {
   // The log of main shows once the graph draws the merge (in a replay, once it reaches it). Built
   // only when the graph changed: the merge, the fusion and every push are in the graph's key.
   renderGitLog(graph.merge === undefined ? undefined : gitLog(replay !== undefined && recorded !== undefined ? recorded : task));
-  drawGraph(byId("graph"), graph, replay === undefined && !b.ended, (agent) => void openDiff(taskId, agent), (hash) => void openCommit(taskId, hash));
+  const box = byId("graph");
+  drawGraph(box, graph, replay === undefined && !b.ended, (agent) => void openDiff(taskId, agent), (hash) => void openCommit(taskId, hash));
+  // On a phone the graph is wider than its panel and scrolls: once the merge is drawn, show it.
+  if (graph.merge !== undefined && box.scrollWidth > box.clientWidth) box.scrollLeft = box.scrollWidth;
   const pushes = graph.lanes.reduce((n, l) => n + l.dots.length, 0);
   const fused = graph.fusion?.tries.filter((t) => t.added).length ?? 0;
   byId("graph-stat").textContent = `${graph.lanes.length} forks · ${pushes} push${pushes === 1 ? "" : "es"}${fused > 0 ? ` · ${fused} fused` : ""}${graph.merge ? " · 1 merge" : ""}`;
@@ -835,7 +1134,8 @@ function renderHeader(b: Board): void {
   const state = b.ended ? "ended" : task?.status === "finished" ? "judging" : (task?.status ?? "unknown");
   pill.dataset.state = state;
   byId("stage").dataset.state = state;
-  document.title = task ? `Thunderdome · ${status}` : "Thunderdome race";
+  normalTitle = task ? `Thunderdome · ${status}` : "Thunderdome race";
+  if (alertTimer === undefined) document.title = normalTitle;
   const replayLink = byId("replay-link") as HTMLAnchorElement;
   replayLink.hidden = replay !== undefined || !b.ended;
   replayLink.href = `/race/${b.taskId}?replay`;
@@ -1549,10 +1849,21 @@ function renderWipe(b: Board): void {
 
 function renderResult(b: Board): void {
   const scored = b.fighters.filter((f): f is Scored => f.score !== undefined).toSorted((x, y) => x.score.place - y.score.place);
-  const key = JSON.stringify([b.ended, b.winner, b.why, scored.map((f) => [f.agent, f.score]), judged?.tie, judged?.fit]);
+  const key = JSON.stringify([b.ended, b.winner, b.why, scored.map((f) => [f.agent, f.score]), judged?.tie, judged?.fit, b.task?.verdict?.fusion, b.task?.verdict?.ship?.status]);
   if (key === resultKey) return;
   resultKey = key;
   byId("result-panel").hidden = !b.ended && scored.length === 0;
+  const line = b.ended
+    ? verdictLine({
+        winner: b.winner,
+        scored: scored.map((f) => ({ agent: f.agent, total: f.score.total, parts: f.score.parts })),
+        tie: judged?.tie,
+        fusion: fusionView(b.task?.verdict),
+      })
+    : undefined;
+  const verdict = byId("verdict");
+  verdict.hidden = line === undefined;
+  verdict.textContent = line ?? "";
   byId("winner").textContent = b.winner ? displayName(b.winner) : "no winner";
   const decided = decidedLine(b.why);
   const decidedBox = byId("decided");
@@ -1565,6 +1876,22 @@ function renderResult(b: Board): void {
   byId("scoreboard").replaceChildren(...scored.map(scoreRow));
   byId("legend-look").hidden = !scored.some((f) => f.score.parts.look !== undefined);
   renderPhotoFinish(b.ended ? judged?.tie : undefined);
+  renderRunAgain(b);
+}
+
+/** The demo apps /play accepts (mirrors TEMPLATES in playpage.ts and src/play/play.ts). */
+const PLAY_TEMPLATES: ReadonlySet<string> = new Set(["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
+
+/** "Run it again": the same demo app and task on /play, once the race is over. Only for the demo apps /play knows. */
+function renderRunAgain(b: Board): void {
+  const task = b.task;
+  const again = byId("run-again") as HTMLAnchorElement;
+  const show = b.ended && task !== undefined && task.template !== undefined && PLAY_TEMPLATES.has(task.template);
+  again.hidden = !show;
+  byId("run-again-note").hidden = !show;
+  if (!show || task === undefined) return;
+  const params = new URLSearchParams({ template: task.template ?? "", prompt: task.prompt.slice(0, 600) });
+  again.href = `/play?${params.toString()}`;
 }
 
 const TIE_BY: Record<string, string> = {

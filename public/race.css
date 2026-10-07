@@ -1303,3 +1303,117 @@ h2 {
 .jstep.failed { color: #ff9a9c; border-color: #ff5b5f66; }
 .jstep.failed i { color: #0b0d14; background: var(--red); border-color: var(--red); }
 @media (prefers-reduced-motion: reduce) { .fit-spark .lvl, .pf-runner, .pf-fill, .cross-grid .cell, .jstep.running i { animation: none; } }
+
+/* ---------- phase rail ---------- */
+/* Sticks under the top of the window: Fork → Race → Judge → Fuse → Merge, the current one lit. */
+.rail {
+  position: sticky; top: 0; z-index: 30; margin: -6px -8px 14px; padding: 8px;
+  background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+.rail ol { display: flex; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.rail li { flex: 1 1 0; min-width: 0; display: flex; align-items: center; }
+.rail li + li::before { content: ""; flex: 0 0 14px; height: 2px; margin-right: 6px; border-radius: 2px; background: var(--line); }
+.phase {
+  flex: 1; min-width: 0; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  padding: 6px 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel);
+  color: var(--faint); font: 700 12px/1 var(--sans); letter-spacing: .06em; text-transform: uppercase;
+  cursor: pointer; transition: color .3s, border-color .3s, box-shadow .3s;
+}
+.phase:disabled { cursor: default; }
+.phase i {
+  display: inline-grid; place-items: center; flex: 0 0 auto; width: 18px; height: 18px; border-radius: 50%;
+  font: 700 10px/1 var(--mono); font-style: normal; border: 1.5px solid currentColor;
+}
+.phase[data-state="done"] { color: #c9cede; border-color: #3ddc9755; }
+.phase[data-state="done"] i { color: #0b0d14; background: var(--green); border-color: var(--green); }
+.phase[data-state="current"] {
+  color: var(--accent); border-color: #ffd23f88;
+  box-shadow: 0 0 0 1px #ffd23f33, 0 0 18px #ffd23f33;
+  animation: phase-glow 1.8s ease-in-out infinite;
+}
+.phase[data-state="current"] i { color: #0b0d14; background: var(--accent); border-color: var(--accent); }
+.phase[data-state="failed"] { color: #ff9a9c; border-color: #ff5b5f66; }
+.phase[data-state="failed"] i { color: #0b0d14; background: var(--red); border-color: var(--red); }
+.phase[data-state="skipped"] { opacity: .45; text-decoration: line-through; }
+.phase:not(:disabled):hover { border-color: var(--cyan); }
+@keyframes phase-glow { 50% { box-shadow: 0 0 0 1px #ffd23f55, 0 0 26px #ffd23f55; } }
+/* Panels a phase scrolls to clear the sticky rail. */
+.stage, .card { scroll-margin-top: 64px; }
+@media (max-width: 640px) {
+  .rail { margin: -4px -6px 12px; padding: 6px; }
+  .rail ol { gap: 3px; }
+  .rail li + li::before { flex-basis: 4px; margin-right: 3px; }
+  .phase { gap: 4px; padding: 5px 4px; font-size: 10px; letter-spacing: .02em; }
+  .phase i { width: 14px; height: 14px; font-size: 8px; }
+}
+@media (prefers-reduced-motion: reduce) { .phase[data-state="current"] { animation: none; } }
+
+/* ---------- the verdict line ---------- */
+.verdict {
+  margin: -4px 0 18px; font-size: 17px; line-height: 1.45; font-weight: 600; color: var(--text);
+  text-wrap: balance;
+}
+
+/* ---------- guess the winner ---------- */
+.guess { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.guess h2 { margin: 0; }
+.guess-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.guess-chip {
+  --color: var(--cyan);
+  padding: 6px 14px; border-radius: 999px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--color) 45%, transparent);
+  background: color-mix(in srgb, var(--color) 10%, var(--panel));
+  color: color-mix(in srgb, var(--color) 55%, white); font: 700 13px/1 var(--sans);
+  transition: background .2s, box-shadow .2s, transform .2s var(--ease);
+}
+.guess-chip:not(:disabled):hover { transform: translateY(-1px); }
+.guess-chip.on {
+  background: color-mix(in srgb, var(--color) 32%, var(--panel)); color: white;
+  box-shadow: 0 0 0 2px var(--color), 0 0 16px color-mix(in srgb, var(--color) 45%, transparent);
+}
+.guess-chip:disabled { cursor: default; }
+.guess-chip:disabled:not(.on) { opacity: .4; }
+.guess-note { flex-basis: 100%; margin: 0; color: var(--dim); font-size: 13px; }
+.guess[data-kind="reveal"] .guess-note { font-size: 15px; font-weight: 600; color: var(--text); }
+.guess-note.hit { color: var(--green); }
+@media (prefers-reduced-motion: reduce) { .guess-chip { transition: none; } }
+
+/* ---------- share: the moment link, run it again, gallery cards ---------- */
+.copy-link {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--line); background: transparent; color: var(--dim); font: 600 11px var(--sans);
+}
+.copy-link:hover { color: var(--cyan); border-color: var(--cyan); }
+.result-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 18px 0 0; }
+.result-actions .hint { margin: 0; }
+.run-again { margin: 0; font-size: 13px; padding: 8px 16px; }
+.race-img { display: block; width: 100%; height: auto; aspect-ratio: 1200 / 630; border-radius: 10px; border: 1px solid var(--line); background: #090b14; object-fit: cover; }
+
+/* ---------- the explainer ---------- */
+.help { cursor: pointer; font-weight: 800; padding: 3px 11px; }
+.help.on, .help:hover { color: var(--cyan); border-color: var(--cyan); }
+.explainer {
+  display: flex; align-items: flex-start; gap: 14px; margin-bottom: 14px; padding: 14px 16px; border-radius: 14px;
+  background: radial-gradient(120% 140% at 0% 0%, #7fe3ff1c, transparent 55%), var(--panel);
+  border: 1px solid #7fe3ff55; animation: explainer-in .5s var(--ease);
+}
+.explainer-body { flex: 1; min-width: 0; }
+.explainer-body b { display: block; margin-bottom: 4px; font-size: 14px; color: var(--cyan); }
+.explainer-body p { margin: 0; font-size: 13.5px; line-height: 1.5; color: #d5d9e6; }
+.explainer-phase { margin-top: 6px !important; color: var(--accent) !important; font-weight: 600; }
+.explainer-phase:empty { display: none; }
+.explainer-close {
+  flex: 0 0 auto; padding: 6px 12px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--text); font: 700 12px var(--sans);
+}
+.explainer-close:hover { border-color: var(--cyan); color: var(--cyan); }
+@keyframes explainer-in { from { opacity: 0; transform: translateY(-6px); } }
+.caption { display: none; margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; font-size: 13px; line-height: 1.45; color: #d5d9e6;
+  background: #7fe3ff12; border: 1px dashed #7fe3ff66; }
+.caption::before { content: "? "; font-weight: 800; color: var(--cyan); }
+body.explaining .caption { display: block; }
+.thunderdome > .caption { margin-bottom: -4px; }
+@media (max-width: 640px) { .explainer { flex-direction: column; } }
+@media (prefers-reduced-motion: reduce) { .explainer { animation: none; } }
+

@@ -64,6 +64,7 @@ export interface WireFusion {
 export interface WireTask {
   id: string;
   prompt: string;
+  template?: string; // the demo app the source was forked from, when it was one
   status: WireTaskStatus;
   startedAt?: string;
   finishedAt?: string;

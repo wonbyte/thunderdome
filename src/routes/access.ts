@@ -39,6 +39,7 @@ export function accessFor(method: string, pathname: string): Access {
   const [empty, root, id = "", action, ...rest] = pathname.split("/");
   if (empty !== "" || rest.length > 0 || !isTaskId(id)) return "admin";
   if (root === "race" && action === undefined) return "page";
+  if (root === "race" && action === "card.png") return "public";
   if (root === "tasks" && (action === undefined || PUBLIC_ACTIONS.has(action))) return "public";
   return "admin";
 }

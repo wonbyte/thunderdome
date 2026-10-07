@@ -13,7 +13,7 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 | Agents (Anthropic API) | $0.43–0.55 | Reported by Claude Code per agent (`costUsd` on each agent). The `bugs` and `ui` demos cost $0.29–0.46 (PLAN.md, Day 9). |
 | Conflict race | about $0.10–0.30 | Only when the winner conflicts with a newer source: 3 short resolver runs. |
 | Judge (Workers AI, Clef) | small | 3 questions per fork, asked in both file orders; 1 split question when robots added tests; 2 side-by-side calls on a tie; 1 visual question per race and 1 look question per fork when the task is visual. |
-| Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. |
+| Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. Plus 1 short browser per race for the result card, on its first request (link previews, the gallery). |
 | Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 1 agent container per robot (3 to 5) busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
 | Artifacts | — | Not billed before Oct 15, 2026, when Artifacts billing starts. |
 
@@ -200,6 +200,28 @@ curl -X POST $THUNDERDOME/admin/races \
 curl -X POST $THUNDERDOME/admin/purge \
   -H "authorization: Bearer $ADMIN_TOKEN" -H "content-type: application/json" -d '{}'
 ```
+
+## Link previews
+
+Every page carries Open Graph and Twitter card tags, added as the page is served (`src/routes/share.ts`,
+`src/routes/card.ts`). `/races` and `/play` name the site and the static `public/og.png`. `/race/<id>`
+reads the task: the prompt is the title, the description is the winner with the judge's headline
+("live race" or "the judge is scoring every fork" before that), and the image is the race's own card
+once there is a winner.
+
+- `GET /race/<id>/card.png` is public: the result card at 1200×630 (the winner in its color, the
+  podium from the verdict's scores, the fused count and the prompt). It is drawn with Browser
+  Rendering on its first request after the verdict, kept in the task's room (under 1 MB; JPEG when a
+  PNG would be larger) and served with a year-long immutable cache. `404` before the verdict or with
+  no winner; `503` (not cached) when the browser could not draw it, so the next request tries again.
+  Prompts and the judge's text are HTML-escaped on the card.
+- The gallery shows the card on the newest 12 finished races (lazy-loaded; a card that fails to load
+  leaves no gap), so a fresh gallery asks for few at once.
+- `public/og.png` is the site's card. `node scripts/build-og.mjs > og.html` prints its page; shoot it
+  at 1200×630 to update the image.
+- Replay links can point at a moment: `/race/<id>?replay&t=1:42` (or `t=102`, seconds) opens the
+  replay paused there; the link button next to the replay time copies one.
+- "Run it again" on a finished demo race opens `/play?template=<app>&prompt=<task>` with both filled in.
 
 ## Race memory
 

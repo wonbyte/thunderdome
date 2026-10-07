@@ -253,8 +253,12 @@ function main(): void {
     bot.innerHTML = robotSvg(AGENT_COLORS[agent] ?? "#8b8d98"); // sprites.ts output only
     bots.append(bot);
   }
+  // "Run it again" on a race page links here with its demo app and task.
+  const query = new URLSearchParams(location.search);
+  chosen = TEMPLATES.find((t) => t.id === query.get("template")) ?? chosen;
   const prompt = byId("prompt", HTMLTextAreaElement);
-  prompt.value = chosen.prompt;
+  const given = query.get("prompt")?.trim() ?? "";
+  prompt.value = given === "" ? chosen.prompt : given.slice(0, MAX);
   prompt.addEventListener("input", renderCount);
   byId("reset").addEventListener("click", () => {
     prompt.value = chosen.prompt;

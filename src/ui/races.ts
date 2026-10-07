@@ -25,6 +25,9 @@ interface RaceSummary {
 }
 
 const ID = /^t-[0-9a-f]{8}$/;
+/** Finished races that show their result card; the rest skip it, so a fresh gallery draws few at once. */
+const CARD_IMAGES = 12;
+let cards = 0;
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -81,6 +84,19 @@ function card(r: RaceSummary): HTMLElement {
   if (r.template !== undefined) top.append(el("span", "pill tpl", `demo: ${r.template.replace(/^thunderdome-/, "")}`));
   top.append(el("span", "when", ago(r.createdAt)));
   const prompt = el("p", "race-prompt", r.prompt);
+  // The result card, drawn on its first request: only the newest finished races ask for one, and a
+  // card that cannot be drawn (no verdict scores, the browser busy) leaves no gap.
+  const image = ended && r.winner && cards < CARD_IMAGES ? el("img", "race-img") : undefined;
+  if (image !== undefined) {
+    cards += 1;
+    image.src = `/race/${r.id}/card.png`;
+    image.alt = "";
+    image.loading = "lazy";
+    image.decoding = "async";
+    image.width = 1200;
+    image.height = 630;
+    image.addEventListener("error", () => image.remove());
+  }
   const why = r.headline === undefined ? undefined : el("p", "race-why", whyWithNames(r.headline, [...r.agents, ...AGENT_IDS]));
   const lineup = el("div", "lineup");
   for (const agent of r.agents) {
@@ -102,7 +118,7 @@ function card(r: RaceSummary): HTMLElement {
   const time = duration(r);
   foot.append(el("span", undefined, ended ? (r.winner ? `${displayName(r.winner)} won${time ? ` in ${time}` : ""}` : "no winner") : "in progress"));
   foot.append(el("span", "cta", ended ? "▶ replay" : "● watch live"));
-  link.append(top, prompt, ...(why === undefined ? [] : [why]), lineup, foot);
+  link.append(top, ...(image === undefined ? [] : [image]), prompt, ...(why === undefined ? [] : [why]), lineup, foot);
   return link;
 }
 
@@ -181,6 +197,7 @@ async function main(): Promise<void> {
   const count = document.getElementById("count");
   renderBoard(races);
   if (count !== null) count.textContent = races.length === 1 ? "1 race" : `${races.length} races`;
+  cards = 0;
   list.replaceChildren(...(races.length === 0 ? [el("p", "empty", "No races yet.")] : races.map(card)));
 }
 

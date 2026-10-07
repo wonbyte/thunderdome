@@ -18,9 +18,21 @@
       <span id="status" class="pill status">loading</span>
       <span id="live" class="pill live" data-live="off">offline</span>
       <a id="replay-link" class="pill replay-link" href="#" hidden>▶ replay</a>
+      <button id="help" class="pill help" type="button" aria-expanded="false" aria-controls="explainer" title="What am I looking at?" aria-label="What am I looking at?">?</button>
     </div>
     <time id="timer" class="timer" aria-label="Race time">--:--</time>
   </header>
+
+  <nav id="rail" class="rail" aria-label="Race phases" hidden><ol id="rail-steps"></ol></nav>
+
+  <aside id="explainer" class="explainer" aria-label="What am I looking at?" hidden>
+    <div class="explainer-body">
+      <b>What am I looking at?</b>
+      <p>Five robots (Claude Code agents) got the same task and their own fork of one repo. They race on the stage; every push lands in the git graph. When they finish, a judge tests every fork, scores the code and ships the winner into main.</p>
+      <p id="explainer-phase" class="explainer-phase"></p>
+    </div>
+    <button id="explainer-close" class="explainer-close" type="button" aria-label="Dismiss">✕ Got it</button>
+  </aside>
 
   <p id="message" class="message" role="alert" hidden></p>
 
@@ -31,6 +43,7 @@
       <div id="replay-marks" class="marks" aria-hidden="true"></div>
     </div>
     <span id="replay-time" class="replay-time">00:00 / 00:00</span>
+    <button id="replay-copy" class="copy-link" type="button" title="Copy a link to this moment" aria-label="Copy a link to this moment"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1.5 1.5M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1.5-1.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg><span>link</span></button>
     <div id="replay-speeds" class="speeds" role="group" aria-label="Speed"></div>
   </div>
 
@@ -50,6 +63,7 @@
       </div>
     </section>
 
+    <p class="caption">The stage: each robot in its own sandbox on its own fork. It scans, swings a hammer to edit, charges up to run the tests and fires a bolt to push.</p>
     <section id="stage" class="stage" aria-label="Race stage">
       <div class="sky" aria-hidden="true"><div class="motes"></div></div>
       <div class="floor" aria-hidden="true"></div>
@@ -64,12 +78,19 @@
       <ol id="ticker" class="ticker" aria-live="polite"></ol>
     </section>
 
+    <section id="guess" class="card guess" aria-labelledby="guess-title" hidden>
+      <h2 id="guess-title">Who wins?</h2>
+      <div id="guess-chips" class="guess-chips" role="group" aria-labelledby="guess-title"></div>
+      <p id="guess-note" class="guess-note" aria-live="polite"></p>
+    </section>
+
     <section class="card pipe" aria-labelledby="pipe-title">
       <h2 id="pipe-title">Under the hood · Cloudflare</h2>
       <ol id="pipeline" class="pipeline"></ol>
     </section>
 
     <section id="graph-panel" class="card graph-panel" aria-labelledby="graph-title" hidden>
+      <p class="caption">The git graph: every dot is a push to a fork. The winner merges into main; arrows into its lane are the losers' pieces that fused in.</p>
       <div class="graph-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></div>
       <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Arrows into the winner's lane are the fusion round: a loser's files or hunks, kept (solid) or left out (✗). Click a lane or a robot to see its code, or the fusion commit to see it as git stores it.</p>
       <div id="graph" class="graph"></div>
@@ -123,7 +144,9 @@
     </section>
 
     <section id="result-panel" class="card result" aria-labelledby="result-title" hidden>
+      <p class="caption">The result: every fork ran the shared tests, Clef rated how well the code fits the task and how clear it is, and the highest score shipped.</p>
       <h2 id="result-title">Result</h2>
+      <p id="verdict" class="verdict" hidden></p>
       <p id="decided" class="decided" hidden></p>
       <div id="photo-finish" class="photo-finish" hidden></div>
       <div id="podium" class="podium"></div>
@@ -139,6 +162,7 @@
         <summary>Why the judge picked <span id="winner"></span></summary>
         <pre id="why" class="why"></pre>
       </details>
+      <p class="result-actions"><a id="run-again" class="cta-btn run-again" hidden>↻ Run it again</a><span id="run-again-note" class="hint" hidden>Same demo app and task, five fresh robots.</span></p>
     </section>
 
     <section id="cross-panel" class="card cross-panel" aria-labelledby="cross-title" hidden>

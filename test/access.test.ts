@@ -12,6 +12,14 @@ describe("accessFor", () => {
     expect(accessFor("GET", `/race/${id}`)).toBe("page");
   });
 
+  it("U1b: GET /race/:id/card.png is public and not a page; other files under a race need admin", () => {
+    expect(accessFor("GET", `/race/${id}/card.png`)).toBe("public");
+    expect(pageAsset(`/race/${id}/card.png`)).toBeUndefined();
+    expect(accessFor("GET", `/race/${id}/card.jpg`)).toBe("admin");
+    expect(accessFor("GET", `/race/bad-id/card.png`)).toBe("admin");
+    expect(accessFor("POST", `/race/${id}/card.png`)).toBe("admin");
+  });
+
   it("U2: POSTs, bad ids, extra segments, spike, admin and unknown paths need admin; GET / stays public", () => {
     const cases: [string, string][] = [
       ["POST", "/tasks"],
