@@ -19,7 +19,9 @@ function clone(overrides: Record<string, (argv: string[]) => { exitCode: number;
   };
   return {
     exec: vi.fn(async (argv: string[]) => {
-      const key = Object.keys(answers).find((k) => argv.join(" ").startsWith(k));
+      // A test file run as the tester (asTester) answers as "timeout"; base1's package.json as "cat".
+      const line = argv[3] === "tester" ? ["timeout", ...argv.slice(6)].join(" ") : argv.join(" ") === "git show base1:package.json" ? "cat" : argv.join(" ");
+      const key = Object.keys(answers).find((k) => line.startsWith(k));
       return key === undefined ? { exitCode: 1, stdout: "", stderr: "unknown" } : answers[key]!(argv);
     }),
   };
@@ -35,7 +37,7 @@ describe("cross tests", () => {
       { author: "zippy", file: "test/theirs.test.ts", passed: 1, total: 3 },
     ]);
     // Each copy goes next to the original under its own name, by argv only.
-    const copies = deps.exec.mock.calls.map((c) => c[0] as string[]).filter((a) => a[0] === "/bin/sh");
+    const copies = deps.exec.mock.calls.map((c) => c[0] as string[]).filter((a) => a[0] === "/bin/sh" && a[3] === "copy");
     expect(copies.map((c) => c.slice(-2))).toEqual([
       ["base1:test/cart.test.ts", "test/cart.from-base.test.ts"],
       ["abc123:test/theirs.test.ts", "test/theirs.from-zippy.test.ts"],
@@ -45,7 +47,7 @@ describe("cross tests", () => {
   it("T6: base test files run from the base commit, not as the fork edited them", async () => {
     const deps = clone();
     await runCrossTests(deps, "ponder", "base1", []);
-    const runs = deps.exec.mock.calls.map((c) => c[0] as string[]).filter((a) => a[0] === "timeout").map((a) => a.at(-1));
+    const runs = deps.exec.mock.calls.map((c) => c[0] as string[]).filter((a) => a[3] === "tester").map((a) => a.at(-1));
     expect(runs).toEqual(["test/cart.from-base.test.ts", "test/mine.test.ts"]);
   });
 
@@ -94,7 +96,7 @@ describe("cross test budget", () => {
     let t = 0;
     const deps = clone();
     const timed = { exec: async (argv: string[]) => {
-      if (argv[0] === "timeout") t += 200_000;
+      if (argv[3] === "tester") t += 200_000;
       return deps.exec(argv);
     }, now: () => t };
     const results = await runCrossTests(timed, "ponder", "base1", [{ agent: "zippy", remote: "r", branch: "main" }]);

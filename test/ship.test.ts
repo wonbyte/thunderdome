@@ -87,6 +87,14 @@ describe("shipTask", () => {
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   });
 
+  it("R10: a pinned commit (the judged head, or the fusion on it) is merged, not whatever the fork's branch holds by now", async () => {
+    // Review finding: the ship merged FETCH_HEAD, so a push after judging would have shipped unjudged code.
+    const pinned: ShipInput = { ...input, forks: input.forks.map((f) => (f.agent === "beta" ? { ...f, commit: "judged1" } : f)) };
+    const { deps, calls } = fakeDeps();
+    expect((await shipTask(deps, pinned)).status).toBe("merged");
+    expect(calls.find((c) => c[0] === "merge")?.at(-1)).toBe("judged1");
+  });
+
   it("R3: a merge conflict aborts the merge, pushes nothing, and reports \"conflict\"", async () => {
     const { deps, calls } = fakeDeps({ merge: { exitCode: 1, stdout: "CONFLICT (content): a.ts", stderr: "Automatic merge failed" } });
     const result = await shipTask(deps, input);

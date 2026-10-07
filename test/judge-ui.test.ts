@@ -79,11 +79,17 @@ describe("judgeView and the judge agree", () => {
     expect(counted).toEqual(["base:test/a.test.ts", "zippy:test/z.test.ts"]);
   });
 
-  it("V8: when a fork has no shared results the judge used each fork's own npm test, and the grid counts no file", async () => {
-    const forks = [await judged("ponder", [run("base", "test/a.test.ts", 4, 4)]), await judged("zippy", undefined)];
+  it("V8: when no fork has shared results the judge used each fork's own npm test, and the grid counts no file", async () => {
+    const forks = [await judged("ponder", undefined), await judged("zippy", undefined)];
     const output = decide(fakeInput(), forks);
     expect(output.counted).toBeUndefined();
-    expect(judgeView({ output })!.cross!.columns.every((c) => !c.counted)).toBe(true);
+    expect(judgeView({ output })!.cross).toBeUndefined();
+  });
+
+  it("V10: a fork whose shared run failed keeps its row, with no cells and 0 on the suite", async () => {
+    const forks = [await judged("ponder", [run("base", "test/a.test.ts", 4, 4)]), await judged("zippy", undefined)];
+    const rows = judgeView({ output: decide(fakeInput(), forks) })!.cross!.rows;
+    expect(rows.find((r) => r.agent === "zippy")).toEqual({ agent: "zippy", cells: [undefined], shared: { passed: 0, total: 4 } });
   });
 
   it("V9: the facts the page duplicates match the judge's", () => {

@@ -7,7 +7,10 @@ import { RESOLVE_REF_PREFIX, type ConflictRequest, type RaceOutcome, type Resolv
 /** A repo to ship into or from: its name, git remote and default branch. */
 export interface ShipRepo { name: string; remote: string; defaultBranch: string }
 /** An agent's fork. */
-export interface ShipFork extends ShipRepo { agent: string }
+export interface ShipFork extends ShipRepo {
+  agent: string;
+  commit?: string; // the commit to merge (the judged head, or the fusion on top of it); else the fork's branch head
+}
 /** What shipping needs: the source repo, every fork, the winner and the why for the merge commit. */
 export interface ShipInput {
   taskId: string;
@@ -114,12 +117,18 @@ async function merge(deps: ShipDeps, input: ShipInput): Promise<MergeOutcome> {
   }
 }
 
+/** What to merge from the winner's fork: its pinned commit, else the head just fetched. */
+function theirsOf(fork: ShipFork): string {
+  return fork.commit ?? "FETCH_HEAD";
+}
+
 async function mergeFork(deps: ShipDeps, input: ShipInput, fork: ShipFork): Promise<MergeOutcome> {
   const branch = input.source.defaultBranch;
   await runOk(deps, ["checkout", branch]);
   await runOk(deps, ["fetch", fork.remote, fork.defaultBranch]);
   const message = mergeMessage(input.taskId, input.prompt, fork.agent, input.why, input.coAuthors);
-  const merged = await deps.git(["merge", "--no-ff", "--cleanup=verbatim", "-m", message, "FETCH_HEAD"]);
+  // The commit that was judged, not whatever the branch holds by now: a push after judging never ships.
+  const merged = await deps.git(["merge", "--no-ff", "--cleanup=verbatim", "-m", message, theirsOf(fork)]);
   if (merged.exitCode !== 0) {
     const output = gitOutput(merged);
     // Exit 1 (or CONFLICT lines) is a content conflict; anything else (e.g. 128) is a git failure.
@@ -143,7 +152,7 @@ interface Conflict { files: string[]; output: string; message: string }
 async function resolveConflict(deps: ShipDeps, resolver: ShipResolver, input: ShipInput, fork: ShipFork, conflict: Conflict): Promise<MergeOutcome> {
   const { files, output, message } = conflict;
   const base = (await runOk(deps, ["rev-parse", "HEAD"])).stdout.trim();
-  const theirs = (await runOk(deps, ["rev-parse", "FETCH_HEAD"])).stdout.trim();
+  const theirs = (await runOk(deps, ["rev-parse", theirsOf(fork)])).stdout.trim();
   let race: RaceOutcome;
   try {
     race = await resolver.race({

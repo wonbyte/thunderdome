@@ -21,5 +21,8 @@ RUN chmod 755 /usr/local/bin/autopush
 RUN git config --system user.name "Thunderdome" \
   && git config --system user.email "thunderdome@users.noreply.local" \
   && git config --system init.defaultBranch main
+# The judge runs robot-written tests as this user: it can read a clone, which root owns, but not
+# change it or the tools (src/judge/judge.ts asTester).
+RUN useradd --system --create-home --home-dir /home/tester --shell /usr/sbin/nologin tester
 WORKDIR /workspace
 CMD ["sleep", "infinity"]

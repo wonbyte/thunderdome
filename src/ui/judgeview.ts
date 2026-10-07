@@ -91,14 +91,15 @@ function columnOrder(a: CrossColumn, b: CrossColumn): number {
 function crossOf(forks: unknown[], split: boolean, counted: unknown): CrossView | undefined {
   const runs = forks.filter(isObject).flatMap((f) => {
     const agent = str(f.agent);
-    if (agent === undefined || !Array.isArray(f.crossTests)) return [];
-    const tests = f.crossTests.filter(isObject).flatMap((t) => {
+    const shared = isObject(f.input) ? count(f.input.shared) : undefined;
+    // A fork whose run failed has no tests but a shared total of 0: it keeps its row.
+    if (agent === undefined || (!Array.isArray(f.crossTests) && shared === undefined)) return [];
+    const tests = (Array.isArray(f.crossTests) ? f.crossTests : []).filter(isObject).flatMap((t) => {
       const author = str(t.author);
       const file = str(t.file);
       const c = count(t);
       return author === undefined || file === undefined || c === undefined ? [] : [{ author, file, ...c }];
     });
-    const shared = isObject(f.input) ? count(f.input.shared) : undefined;
     return [{ agent, tests, ...(shared === undefined ? {} : { shared }) }];
   });
   if (runs.length === 0) return undefined;

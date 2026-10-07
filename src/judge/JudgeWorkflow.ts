@@ -32,6 +32,7 @@ import {
   type JudgeFork,
   type JudgeInput,
   type JudgeResult,
+  baseScriptsCommand,
   testCommand,
 } from "./judge";
 import type { ForkScore } from "./score";
@@ -382,6 +383,8 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
   try {
     const props: OutboundProps = { gitHost: new URL(winner.remote).hostname, gitToken: winnerRead, repoTokens };
     await retry(() => box.clone(props, winner.remote), { attempts: 10, delayMs: 2_000, shouldRetry: () => true });
+    // Fuse on top of the commit that was judged. If the fork moved since, the push refuses it (fusionProblem).
+    if (judged.commit !== undefined) await must(box, ["git", "reset", "--quiet", "--hard", judged.commit]);
     const deps = { exec: (argv: string[], cwd: string, e?: Record<string, string>) => box.exec(argv, cwd, e), ai: env.AI, now: () => Date.now(), deadline };
     fused = await runFusion(deps, { task: input.task, winner: winner.agent, testsPassed: judged.tests.passed, candidates });
     // Scoring must end before the push cutoff, or a kept fusion would be dropped for time.
@@ -503,11 +506,19 @@ type Fused = JudgeResult & { fusion: FusionResult };
 
 function shipInput(input: JudgeInput, result: Fused, source: ShipRepo): ShipInput {
   const coAuthors = fusedAgents(result.fusion);
+  // The winner ships the commit that was judged, or the fusion pushed on top of it.
+  const pinned = result.fusion.commit ?? result.forks.find((f) => f.agent === result.winner)?.commit;
   return {
     taskId: input.taskId,
     prompt: input.task,
     source,
-    forks: input.forks.map((f) => ({ agent: f.agent, name: f.fork, remote: f.remote, defaultBranch: f.defaultBranch })),
+    forks: input.forks.map((f) => ({
+      agent: f.agent,
+      name: f.fork,
+      remote: f.remote,
+      defaultBranch: f.defaultBranch,
+      ...(f.agent === result.winner && pinned !== undefined ? { commit: pinned } : {}),
+    })),
     winner: result.winner,
     why: result.why,
     ...(coAuthors.length === 0 ? {} : { coAuthors }),
@@ -580,23 +591,28 @@ function repoPath(remote: string): string {
 
 function sandboxDeps(env: Env, sandbox: Sandbox, base: string, taskId: string, others: CrossSource[], stepEnd: number): JudgeDeps {
   return {
-    // A failing suite still prints a summary; no summary means the run itself broke.
+    // A failing suite still prints a summary; no summary means the run itself broke. The repo's
+    // own test script runs, not one the robot rewrote.
     async runTests() {
+      await must(sandbox, baseScriptsCommand(base));
       const result = await sandbox.exec(testCommand());
       const summary = parseTestSummary(`${result.stdout}\n${result.stderr}`);
       if (summary === undefined) throw new Error(`npm test printed no test summary (exit ${result.exitCode})`);
       return summary;
     },
-    // Saves the clipped diff for the diff route, then returns the whole diff as before.
+    // Saves the clipped diff for the diff route, then returns the whole diff as before. Runs before
+    // any robot code, so the diff and the commit are the fork as pushed.
     async getDiff(fork) {
+      const commit = (await must(sandbox, ["git", "rev-parse", "HEAD"])).trim();
       const numstat = await must(sandbox, ["git", "diff", "--no-renames", "--numstat", base, "HEAD"]);
       const diff = await must(sandbox, ["git", "diff", "--no-renames", base, "HEAD"]);
       // Clef reads each changed function in full: it never sees the rest of the repo.
       const context = await must(sandbox, ["git", "diff", "--no-renames", "--function-context", base, "HEAD"]);
       await saveForkDiff(env, taskId, fork.agent, diff);
-      return { diff, context, ...parseNumstat(numstat) };
+      return { diff, context, commit, ...parseNumstat(numstat) };
     },
     // After the fork's own tests and diff, so the copied files never reach its own `npm test`.
+    // Every file runs as the tester, which cannot change the clone (see asTester).
     // Stops before the step's timeout: a fork whose tests hung must still be scored, not fail the judge.
     crossTests: (fork) => runCrossTests({ exec: (argv) => sandbox.exec(argv), deadline: stepEnd }, fork.agent, base, others),
     scorer: clefScorer(env.AI),

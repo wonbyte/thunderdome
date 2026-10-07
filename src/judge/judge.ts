@@ -20,9 +20,35 @@ export const FORK_STEP_TIMEOUT_S = 20 * 60;
 /** Time left in the fork step after the last cross test may start: its own timeout plus the step's return. */
 export const CROSS_TEST_STEP_MARGIN_S = 60;
 
-/** `npm test` under a hard timeout: a hanging suite fails one attempt (no summary) instead of the whole step. */
+/**
+ * The unprivileged user robot-written code runs as (see the Dockerfile). It can read the clone but
+ * not change it, git, node or the judge's tools, which root owns: a test cannot rewrite what the
+ * judge reads next.
+ */
+export const TESTER = "tester";
+const AS_TESTER = `setpriv --reuid=${TESTER} --regid=${TESTER} --clear-groups --no-new-privs`;
+// Runs "$@" as the tester under a hard timeout, then ends whatever it left running and removes what
+// it wrote, so nothing carries over to the next run in the same sandbox. Arguments stay argv.
+const TESTER_SCRIPT =
+  `t="$1"; k="$2"; shift 2; timeout --kill-after="$k" "$t" ${AS_TESTER} env HOME=/home/${TESTER} "$@"; s=$?; ` +
+  `${AS_TESTER} /bin/bash -c 'kill -KILL -1' 2>/dev/null; find /tmp /home/${TESTER} -mindepth 1 -user ${TESTER} -delete 2>/dev/null; exit $s`;
+
+/** argv that runs `argv` as the tester, cut off after `timeoutS` (killed `killAfterS` later), then cleans up after it. */
+export function asTester(argv: string[], timeoutS: number, killAfterS = 5): string[] {
+  return ["/bin/sh", "-c", TESTER_SCRIPT, "tester", String(timeoutS), String(killAfterS), ...argv];
+}
+
+/** `npm test` as the tester under a hard timeout: a hanging suite fails one attempt (no summary) instead of the whole step. */
 export function testCommand(timeoutS = TEST_TIMEOUT_S): string[] {
-  return ["timeout", "--kill-after=10", String(timeoutS), "npm", "test"];
+  return asTester(["npm", "test"], timeoutS, 10);
+}
+
+/**
+ * Puts the base commit's package.json in the clone (as root, before the fork's tests run), so
+ * `npm test` runs the repo's test script, not one the robot rewrote to print a passing summary.
+ */
+export function baseScriptsCommand(base: string): string[] {
+  return ["/bin/sh", "-c", 'git show "$1:package.json" > package.json', "base", base];
 }
 
 /**
@@ -62,6 +88,7 @@ export interface TestRun {
 /** A fork's change since its fork point: the unified diff and its size. */
 export interface ForkDiff {
   diff: string;
+  commit?: string; // the fork's head the diff was taken at: what the judge scored, and what ships
   context?: string; // the same diff with each changed function in full, for Clef (git diff --function-context)
   filesChanged: string[];
   linesAdded: number;
@@ -106,6 +133,7 @@ export const CONTEXT_CHARS = 20_000;
 export interface JudgedFork {
   agent: string;
   fork: string;
+  commit?: string; // the fork's head that was judged; the ship and the fusion use this commit
   tests: TestRun & { error?: string }; // error set when all attempts failed (then 0/0)
   crossTests?: CrossTest[]; // every fork's test files run on this fork; missing when they could not be run
   context?: string; // the diff Clef scored, clipped to CONTEXT_CHARS, for the side-by-side comparison
@@ -178,10 +206,13 @@ async function testFork(deps: JudgeDeps, fork: JudgeFork): Promise<JudgedFork["t
   }
 }
 
-/** Tests, diff and scorer for one fork. getDiff and scorer errors propagate. */
+/**
+ * Diff, tests and scorer for one fork. The diff comes first: no robot code has run yet, so it is
+ * the fork as pushed. getDiff and scorer errors propagate.
+ */
 export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeFork): Promise<JudgedFork> {
+  const { diff, context, commit, filesChanged, linesAdded, linesRemoved } = await deps.getDiff(fork);
   const tests = await testFork(deps, fork);
-  const { diff, context, filesChanged, linesAdded, linesRemoved } = await deps.getDiff(fork);
   const scored = context ?? diff;
   const scorer =
     filesChanged.length === 0
@@ -191,6 +222,7 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
   const judged: JudgedFork = {
     agent: fork.agent,
     fork: fork.fork,
+    ...(commit === undefined ? {} : { commit }),
     tests,
     diff: { filesChanged: [...filesChanged], linesAdded, linesRemoved },
     input: {
@@ -221,10 +253,12 @@ const passedAll = (t: CrossTest): boolean => t.total > 0 && t.passed === t.total
  * that passes in full on at least two forks. A file that passes only on its author's fork is left
  * out for everyone: it may test that fork's own helpers, or expect behavior the task never asked
  * for. A file's size is the most tests any fork ran from it, so a file that fails to load counts
- * as 0 passed. Only files every fork ran count: a fork out of time stops early, and the files it
- * skipped would not compare. When the task gives robots different parts (`split`, Clef's yes), only
- * the repo's files count: each robot's added files check its own part. undefined unless every fork
- * that changed files has cross tests.
+ * as 0 passed. Only files every fork that ran the suite ran count: a fork out of time stops early,
+ * and the files it skipped would not compare. A fork whose run failed scores 0 on those files, so no
+ * robot can switch the suite off. When the task gives robots different parts (`split`, Clef's yes),
+ * only the repo's files count: each robot's added files check its own part. undefined (each fork
+ * scored on its own npm test) when no fork could run the suite, which is the case for a repo whose
+ * tests are not node --test.
  */
 export function sharedSuite(forks: JudgedFork[], split = 0): Map<string, TestRun> | undefined {
   return sharedSuiteOf(forks, split)?.suite;
@@ -235,21 +269,23 @@ export interface CountedFile { author: string; file: string }
 
 function sharedSuiteOf(forks: JudgedFork[], split = 0): { suite: Map<string, TestRun>; counted: CountedFile[] } | undefined {
   const runs = forks.filter((f) => f.input.filesChanged.length > 0);
-  if (runs.length === 0 || runs.some((f) => f.crossTests === undefined)) return undefined;
+  // A fork whose run failed scores 0 on the suite the others ran; it cannot switch the suite off.
+  const ran = runs.filter((f) => f.crossTests !== undefined);
+  if (ran.length === 0) return undefined;
   const size = new Map<string, number>();
   const passes = new Map<string, number>();
-  const ran = new Map<string, number>();
+  const runCount = new Map<string, number>();
   const base = new Set<string>();
-  for (const fork of runs) {
+  for (const fork of ran) {
     for (const t of fork.crossTests ?? []) {
       size.set(key(t), Math.max(size.get(key(t)) ?? 0, t.total));
-      ran.set(key(t), (ran.get(key(t)) ?? 0) + 1);
+      runCount.set(key(t), (runCount.get(key(t)) ?? 0) + 1);
       if (passedAll(t)) passes.set(key(t), (passes.get(key(t)) ?? 0) + 1);
       if (t.author === BASE_AUTHOR) base.add(key(t));
     }
   }
   const counted = [...size.keys()].filter(
-    (k) => (size.get(k) ?? 0) > 0 && ran.get(k) === runs.length && (base.has(k) || (split < SPLIT_YES && (passes.get(k) ?? 0) >= 2)),
+    (k) => (size.get(k) ?? 0) > 0 && runCount.get(k) === ran.length && (base.has(k) || (split < SPLIT_YES && (passes.get(k) ?? 0) >= 2)),
   );
   if (counted.length === 0) return undefined;
   const suite = new Map<string, TestRun>();
@@ -264,7 +300,7 @@ function sharedSuiteOf(forks: JudgedFork[], split = 0): { suite: Map<string, Tes
     }
     suite.set(fork.agent, { passed, total });
   }
-  const files = new Map(runs.flatMap((f) => f.crossTests ?? []).map((t) => [key(t), { author: t.author, file: t.file }]));
+  const files = new Map(ran.flatMap((f) => f.crossTests ?? []).map((t) => [key(t), { author: t.author, file: t.file }]));
   return { suite, counted: counted.flatMap((k) => files.get(k) ?? []) };
 }
 

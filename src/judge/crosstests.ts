@@ -1,6 +1,6 @@
 // The shared test suite, run on one fork: the source repo's test files and every fork's added test
 // files, each run on its own with node --test. No cloudflare:workers import; exec is injected.
-import { BASE_AUTHOR, parseTestSummary, type CrossTest } from "./judge";
+import { asTester, BASE_AUTHOR, parseTestSummary, type CrossTest } from "./judge";
 
 /** One test file run is cut off after this. */
 export const CROSS_TEST_TIMEOUT_S = 30;
@@ -59,7 +59,7 @@ async function out(deps: CrossDeps, argv: string[]): Promise<string> {
 
 /** Runs one test file; no summary (it would not load, or hung) counts as 0 of 0. */
 async function runFile(deps: CrossDeps, path: string): Promise<{ passed: number; total: number }> {
-  const result = await deps.exec(["timeout", "--kill-after=5", String(CROSS_TEST_TIMEOUT_S), "node", "--test", path]);
+  const result = await deps.exec(asTester(["node", "--test", path], CROSS_TEST_TIMEOUT_S));
   return parseTestSummary(`${result.stdout}\n${result.stderr}`) ?? { passed: 0, total: 0 };
 }
 
@@ -89,12 +89,14 @@ export function takeTurns<T extends { author: string; file: string }>(files: T[]
  * commit's test files as the source repo has them, every fork's added test files (its own as it has
  * them, the others' copied in under crossPath). Base files run from the base commit, so a fork that
  * edits or extends the repo's tests is still judged on the same suite as the others. Stops at the
- * budget or the deadline with the files run so far. undefined when the repo does not use node --test.
+ * budget or the deadline with the files run so far. Each file runs as the tester (asTester), so it
+ * cannot change the clone or the tools the next file uses. undefined when the repo does not use node --test.
  */
 export async function runCrossTests(deps: CrossDeps, agent: string, base: string, others: CrossSource[]): Promise<CrossTest[] | undefined> {
   const now = deps.now ?? Date.now;
   const deadline = Math.min(now() + CROSS_TEST_BUDGET_MS, deps.deadline ?? Infinity);
-  if (!usesNodeTest(await out(deps, ["cat", "package.json"]).catch(() => ""))) return undefined;
+  // The base commit's package.json: a robot that changes its test script cannot turn the suite off.
+  if (!usesNodeTest(await out(deps, ["git", "show", `${base}:package.json`]).catch(() => ""))) return undefined;
   // argv only: file names are agent-written.
   const copy = async (rev: string, file: string, path: string): Promise<boolean> =>
     (await deps.exec(["/bin/sh", "-c", 'mkdir -p "$(dirname "$2")" && git show "$1" > "$2"', "copy", `${rev}:${file}`, path])).exitCode === 0;

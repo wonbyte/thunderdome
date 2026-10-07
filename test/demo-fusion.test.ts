@@ -49,7 +49,8 @@ it("demo/fusion: a loser's cart line and price format join the winner's badge an
   await exec(["git", "clone", "-q", winner, join(root, "workspace/repo")], root);
   const local = (p: string) => (p.startsWith("/workspace") ? join(root, p) : p);
   const deps = {
-    exec: (argv: string[], cwd: string, env?: Record<string, string>) => exec(argv.map(local), local(cwd), env),
+    // No tester user here: run what asTester wraps (after "/bin/sh -c script tester timeout kill-after") as is.
+    exec: (argv: string[], cwd: string, env?: Record<string, string>) => exec((argv[3] === "tester" ? argv.slice(6) : argv).map(local), local(cwd), env),
     ai: { run: async () => ({ answers: { better: { type: "noul", noul: 0.8 } } }) },
   };
   const result = await runFusion(deps, { task: "four parts", winner: "ponder", testsPassed: 6, candidates: [{ agent: "zippy", remote: loser, branch: "main", files: [], shared: ["src/shop.ts"] }] });

@@ -169,3 +169,24 @@ One 5-robot race uses up to about 10 at once: 5 agent sandboxes plus a preview b
 Judging uses 5 more, after the agents stop. On `t-2003c1f7` a preview build lost its container
 ("container connection is temporarily unavailable") with about 20 in use; there is no cap at 20, so
 the cause is unexplained. A per-app cap would have to be enforced in code.
+
+## Judge integrity (Oct 7 review)
+
+Robot-written code runs in the judge's sandboxes: the fork's own tests, every fork's test files in
+the shared suite, and `npm test` in the fusion gates and the conflict resolvers. Since Oct 7:
+
+- The diff, the function-context diff and the judged commit (`git rev-parse HEAD`) are taken first,
+  before any robot code runs. The ship merges that commit (or the fusion commit on top of it), and
+  the fusion round starts from it, so a push after judging never ships.
+- Robot code runs as the unprivileged `tester` user (`asTester`): the clone, git, node and the
+  judge's tools are root's, so a test cannot rewrite them for the next run. After each run every
+  `tester` process is killed and its files in `/tmp` and its home are removed.
+- The fork's own `npm test` runs the base commit's `package.json` script, and the shared suite
+  checks the base's `package.json` for `node --test`, so a robot cannot fake a summary through its
+  test script or switch the suite off. A fork whose shared run failed scores 0 on the suite.
+
+Not closed (documented, not worth more this week):
+- A test can still print a fake summary from a detached process timed to write just after the
+  real one (`summaryCount` takes the last match); the window ends when the run's leftovers are killed.
+- The fusion gates and the conflict resolvers run `npm test` with the fork's own `package.json`
+  (as `tester`). A faked winner script could only change whether a loser's work joins, not who wins.
