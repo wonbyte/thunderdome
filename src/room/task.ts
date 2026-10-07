@@ -248,6 +248,9 @@ export interface MadeForks {
   base: string | undefined; // source head hash after the agent forks are made; undefined if unreadable or empty
 }
 
+/** Tries per agent fork while the source repo is busy: twice what one fork alone needed. */
+export const FORK_ATTEMPTS = 20;
+
 /**
  * The source repo of a task: the given repo, or a fresh fork of the template.
  * If an agent fork fails, deletes the forks made so far (and a fresh source) and throws the first error.
@@ -282,24 +285,28 @@ async function headOf(artifacts: Artifacts, source: string): Promise<string | un
   }
 }
 
-/** Makes one fork per agent, one at a time, because a source repo can be busy while it forks. */
+/**
+ * Makes one fork per agent, all at once: one at a time, the source and 5 forks took about 19 s
+ * before a race could start. A source repo that is still busy (`*_IN_PROGRESS`) is retried, with enough tries for the
+ * forks to go through one by one if Artifacts serializes them. When any fork fails, the others are deleted.
+ */
 async function forkAgents(artifacts: Artifacts, taskId: string, source: string, agents: number, sleep?: (ms: number) => Promise<void>): Promise<ForkWithToken[]> {
-  const forks: ForkWithToken[] = [];
-  try {
-    for (const name of AGENT_NAMES.slice(0, agents)) {
+  const settled = await Promise.allSettled(
+    AGENT_NAMES.slice(0, agents).map(async (name): Promise<ForkWithToken> => {
       const fork = forkName(taskId, name);
       const access = await retry(
         () => forkFor(artifacts, source, fork, `Thunderdome task ${taskId}, agent ${name}`),
-        { attempts: 10, delayMs: 1_000, shouldRetry: notReady },
+        { attempts: FORK_ATTEMPTS, delayMs: 1_000, shouldRetry: notReady },
         sleep,
       );
-      forks.push({ name, fork: access.name, remote: access.remote, defaultBranch: access.defaultBranch, token: access.token });
-    }
-    return forks;
-  } catch (cause) {
-    await Promise.allSettled(forks.map((fork) => deleteRepo(artifacts, fork.fork)));
-    throw cause;
-  }
+      return { name, fork: access.name, remote: access.remote, defaultBranch: access.defaultBranch, token: access.token };
+    }),
+  );
+  const forks = settled.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+  const failed = settled.find((r) => r.status === "rejected");
+  if (failed === undefined) return forks;
+  await Promise.allSettled(forks.map((fork) => deleteRepo(artifacts, fork.fork)));
+  throw failed.reason;
 }
 
 /** Maps a failure to an HTTP status and a message for the client. */

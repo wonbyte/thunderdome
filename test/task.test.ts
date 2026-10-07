@@ -12,6 +12,7 @@ import {
   describeFailure,
   isTaskId,
   justFinished,
+  FORK_ATTEMPTS,
   makeForks,
   MAX_SEEN_PUSHES,
   needsPreview,
@@ -121,6 +122,30 @@ describe("makeForks", () => {
     expect(repo.fork).toHaveBeenCalledTimes(4);
   });
 
+  it("F1: forks every agent at once, in agent order, and waits out a busy source with up to FORK_ATTEMPTS tries", async () => {
+    let started = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const repo = fakeRepo({
+      fork: vi.fn(async (name: string) => {
+        if (++started === 3) release();
+        await gate;
+        return created(name);
+      }),
+    });
+    const { forks } = await makeForks(fakeArtifacts(repo), task, noSleep);
+    expect(forks.map((f) => f.name)).toEqual(["ponder", "zippy", "testy"]);
+
+    let busy = 0;
+    const slow = fakeRepo({
+      fork: vi.fn(async (name: string) => {
+        if (name.endsWith("-testy") && ++busy < FORK_ATTEMPTS) throw artifactsError("FORK_IN_PROGRESS");
+        return created(name);
+      }),
+    });
+    expect(await makeForks(fakeArtifacts(slow), task, noSleep)).toMatchObject({ forks: [{ name: "ponder" }, { name: "zippy" }, { name: "testy" }] });
+  });
+
   it("deletes the forks it made when one fails", async () => {
     const repo = fakeRepo({
       fork: vi.fn(async (name: string) => {
@@ -135,14 +160,14 @@ describe("makeForks", () => {
     expect(artifacts.delete).toHaveBeenCalledWith("t-0123abcd-zippy");
   });
 
-  it("does not retry a missing source repo", async () => {
+  it("does not retry a missing source repo: each agent's fork looks it up once", async () => {
     const artifacts = fakeArtifacts(fakeRepo(), {
       get: vi.fn(async () => {
         throw artifactsError("NOT_FOUND");
       }),
     });
     await expect(makeForks(artifacts, task, noSleep)).rejects.toMatchObject({ code: "NOT_FOUND" });
-    expect(artifacts.get).toHaveBeenCalledTimes(1);
+    expect(artifacts.get).toHaveBeenCalledTimes(3);
     expect(artifacts.delete).not.toHaveBeenCalled();
   });
 
@@ -210,7 +235,7 @@ describe("makeForks", () => {
       expect(forks).toHaveLength(3);
     });
 
-    it("deletes the fresh source and the agent forks when an agent fork fails", async () => {
+    it("deletes the fresh source and every agent fork made when an agent fork fails (they run at once)", async () => {
       const repo = fakeRepo({
         fork: vi.fn(async (name: string) => {
           if (name.endsWith("-zippy")) throw artifactsError("INTERNAL_ERROR");
@@ -219,7 +244,7 @@ describe("makeForks", () => {
       });
       const artifacts = fakeArtifacts(repo);
       await expect(makeForks(artifacts, fromTemplate, noSleep)).rejects.toMatchObject({ code: "INTERNAL_ERROR" });
-      expect(vi.mocked(artifacts.delete).mock.calls.map(([name]) => name).toSorted()).toEqual(["t-0123abcd-ponder", "thunderdome-template-t-0123abcd"]);
+      expect(vi.mocked(artifacts.delete).mock.calls.map(([name]) => name).toSorted()).toEqual(["t-0123abcd-ponder", "t-0123abcd-testy", "thunderdome-template-t-0123abcd"]);
     });
 
     it("makes nothing when the template is missing", async () => {
