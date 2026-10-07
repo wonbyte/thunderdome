@@ -9,7 +9,7 @@ import type { AgentName } from "../agents/prompt";
 import { parseNumstat, parseTestSummary, testCommand, type JudgedFork, type TestRun } from "./judge";
 import { ask } from "./look";
 import { scoreFork, type ForkScore, type ScoreParts, type Weights } from "./score";
-import { CLEF_MODEL, ScorerError, type AiRunner, type Scorer } from "./scorer";
+import { authorName, CLEF_MODEL, ScorerError, type AiRunner, type Scorer } from "./scorer";
 
 /** Clef's yes for "the additions make the change better" must reach this. */
 export const FUSE_THRESHOLD = 0.6;
@@ -609,16 +609,19 @@ export interface FusionScoreInput {
  * has no preview of its own and the added work came through the gates, not through a claim.
  */
 export function fusedScore(winner: ForkScore, weights: Weights, after: { tests: TestRun; taskFit: number; clarity: number; linesChanged: number }): FusionScore {
-  const measured = scoreFork(
-    { ...winner.input, testsPassed: after.tests.passed, testsTotal: after.tests.total, taskFit: after.taskFit, clarity: after.clarity, linesChanged: after.linesChanged },
-    new Set(winner.input.filesChanged),
-    weights,
-  );
-  const parts: ScoreParts = { ...measured.parts, claim: winner.parts.claim, ...(winner.parts.look === undefined ? {} : { look: winner.parts.look }) };
-  const total = round2(parts.tests + parts.taskFit + parts.clarity + (parts.look ?? 0) + parts.claim);
+  // Both sides on the winner's own test run: the fused head is not run on the shared suite.
+  const { shared: _shared, ...own } = winner.input;
+  const measure = (input: typeof own): { total: number; parts: ScoreParts } => {
+    const measured = scoreFork(input, new Set(winner.input.filesChanged), weights);
+    const parts: ScoreParts = { ...measured.parts, claim: winner.parts.claim, ...(winner.parts.look === undefined ? {} : { look: winner.parts.look }) };
+    return { total: round2(parts.tests + parts.taskFit + parts.clarity + (parts.look ?? 0) + parts.claim), parts };
+  };
+  // Without a shared suite the winner's score already used its own run.
+  const before = winner.input.shared === undefined ? { total: winner.total, parts: winner.parts } : measure(own);
+  const fused = measure({ ...own, testsPassed: after.tests.passed, testsTotal: after.tests.total, taskFit: after.taskFit, clarity: after.clarity, linesChanged: after.linesChanged });
   return {
-    before: { total: winner.total, tests: { passed: winner.input.testsPassed, total: winner.input.testsTotal }, parts: winner.parts },
-    after: { total, tests: after.tests, parts },
+    before: { ...before, tests: { passed: own.testsPassed, total: own.testsTotal } },
+    after: { ...fused, tests: after.tests },
   };
 }
 
@@ -644,9 +647,10 @@ export async function scoreFusion(deps: Pick<FuseDeps, "exec"> & { scorer: Score
   try {
     const dir = FUSE_REPO_DIR;
     const numstat = (await must(deps, ["git", "diff", "--no-renames", "--numstat", input.forkBase, fusion.commit], dir)).stdout;
-    const diff = (await must(deps, ["git", "diff", "--no-renames", input.forkBase, fusion.commit], dir)).stdout;
+    // Whole functions as context, like the forks were scored.
+    const diff = (await must(deps, ["git", "diff", "--no-renames", "--function-context", input.forkBase, fusion.commit], dir)).stdout;
     const { filesChanged, linesAdded, linesRemoved } = parseNumstat(numstat);
-    const rated = await deps.scorer.score({ task: input.task, diff, filesChanged, linesAdded, linesRemoved });
+    const rated = await deps.scorer.score({ task: input.task, author: authorName(input.winner.agent), diff, filesChanged, linesAdded, linesRemoved });
     // The last kept try's tests ran on exactly the fused head.
     score = fusedScore(input.winner, input.weights, { tests, taskFit: rated.taskFit, clarity: rated.clarity, linesChanged: linesAdded + linesRemoved });
   } catch (err) {

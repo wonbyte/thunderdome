@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { type ForkInput, scoreFork, scoreForks } from "../src/judge/score";
+import { type ForkInput, JUDGE_TIE, PREFER_MARGIN, scoreFork, scoreForks } from "../src/judge/score";
 import { buildWhy, CODE_TIE, decidedBy, duration, headline, lesson, loserLine, REASON_COUNT, scoresTable, winnerReasons } from "../src/judge/why";
 
 function fork(overrides: Partial<ForkInput> = {}): ForkInput {
@@ -187,10 +187,11 @@ describe("headline", () => {
   it('W1: why: a clear code lead gives the "Decided by code" headline with the gap', () => {
     const result = scoreForks([fork({ agent: "w" }), fork({ agent: "r", testsPassed: 8 })]);
     expect(headline(result)).toBe("Decided by code: w's fix scored 10 more points on tests, task fit and clarity than r's.");
-    // A gap of exactly CODE_TIE (24 vs 25 task fit points) is still decided by code.
+    // A judgment gap of exactly JUDGE_TIE (23.5 vs 25 task fit points) is still decided by code.
     expect(CODE_TIE).toBe(1);
-    const edge = scoreForks([fork({ agent: "w" }), fork({ agent: "r", taskFit: 0.96 })]);
-    expect(headline(edge)).toBe("Decided by code: w's fix scored 1 more points on tests, task fit and clarity than r's.");
+    expect(JUDGE_TIE).toBe(1.5);
+    const edge = scoreForks([fork({ agent: "w" }), fork({ agent: "r", taskFit: 0.94 })]);
+    expect(headline(edge)).toBe("Decided by code: w's fix scored 1.5 more points on tests, task fit and clarity than r's.");
   });
 
   it('W2: why: equal code with a claim lead gives "Decided by claims … had no clash r could have avoided (10 vs 8 claim points)"; a winner whose code is up to 1 point lower gets the "even though" clause', () => {
@@ -213,7 +214,9 @@ describe("headline", () => {
     expect(headline(behind)).toBe(
       "Decided by claims: w's code scored 1.5 points lower than r's, but its claim points made up for it (10 vs 8).",
     );
-    const close = scoreForks([fork({ agent: "w" }), fork({ agent: "r", taskFit: 0.98 })]);
+    // Half a point on tests: a measured difference, so not a tie within the judge's noise.
+    const close = scoreForks([fork({ agent: "w", testsTotal: 100, testsPassed: 100 }), fork({ agent: "r", testsTotal: 100, testsPassed: 99 })]);
+    expect(close.tie).toBeUndefined();
     expect(headline(close)).toBe("Decided by a close margin: the fixes were within 0.5 points on code.");
   });
 
@@ -296,14 +299,16 @@ describe("decidedBy", () => {
     const shared = fork({ agent: "r", filesShared: ["src/a.ts"] });
     const cases = [
       { result: scoreForks([avoids(), fork({ agent: "r", testsPassed: 8 })]), by: "code", prefix: "Decided by code:" },
-      // Exactly CODE_TIE is still code.
-      { result: scoreForks([avoids(), fork({ agent: "r", taskFit: 0.96 })]), by: "code", prefix: "Decided by code:" },
+      // Exactly JUDGE_TIE on judgment is still code.
+      { result: scoreForks([avoids(), fork({ agent: "r", taskFit: 0.94 })]), by: "code", prefix: "Decided by code:" },
       // Claims within the tie, level and slightly lower on code.
       { result: scoreForks([avoids(), shared]), by: "claims", prefix: "Decided by claims: the fixes were within" },
       { result: scoreForks([avoids({ taskFit: 0.98 }), shared]), by: "claims", prefix: "Decided by claims: the fixes were within" },
       // Claims made up for code more than CODE_TIE lower.
       { result: scoreForks([avoids({ taskFit: 0.94 }), shared]), by: "claims", prefix: "Decided by claims: w's code scored" },
-      { result: scoreForks([avoids(), fork({ agent: "r", taskFit: 0.98 })]), by: "close", prefix: "Decided by a close margin:" },
+      { result: scoreForks([fork({ agent: "w", testsTotal: 100, testsPassed: 100 }), fork({ agent: "r", testsTotal: 100, testsPassed: 99 })]), by: "close", prefix: "Decided by a close margin:" },
+      // A tie within the judge's noise counts as close.
+      { result: scoreForks([avoids(), fork({ agent: "r", taskFit: 0.98, filesChanged: ["src/b.ts"], filesClaimed: ["src/b.ts"] })]), by: "close", prefix: "Decided by agent order:" },
     ] as const;
     for (const { result, by, prefix } of cases) {
       expect(decidedBy(result), prefix).toBe(by);
@@ -350,3 +355,64 @@ describe("lesson", () => {
     expect(lesson(scoreForks([fork({ agent: "l", testsPassed: 0 })]))).toBeUndefined();
   });
 });
+
+describe("ties within the judge's noise", () => {
+  // w leads r by 1 point of task fit alone: closer than JUDGE_TIE.
+  const near = (w: Partial<ForkInput> = {}, r: Partial<ForkInput> = {}) => [fork({ agent: "w", ...w }), fork({ agent: "r", taskFit: 0.96, ...r })];
+
+  it("J1: forks equal on tests and claims and within JUDGE_TIE on judgment tie; a measured difference or a wider gap does not", () => {
+    expect(scoreForks(near()).tie).toMatchObject({ agents: ["w", "r"], gap: 1 });
+    expect(scoreForks(near({}, { taskFit: 0.94 })).tie).toBeUndefined();
+    expect(scoreForks(near({}, { testsPassed: 9 })).tie).toBeUndefined();
+    expect(scoreForks(near({}, { filesChanged: ["x.ts"] })).tie).toBeUndefined();
+    // An ineligible fork never ties.
+    expect(scoreForks([fork({ agent: "w" }), fork({ agent: "r", testsPassed: 0 })]).tie).toBeUndefined();
+  });
+
+  it("J2: a tie goes to the smaller diff, then the earlier finish, even against a higher total", () => {
+    const bySize = scoreForks(near({ linesChanged: 40 }, { linesChanged: 12 }));
+    expect(bySize.winner).toBe("r");
+    expect(bySize.tie).toMatchObject({ agents: ["r", "w"], by: "diff" });
+    expect(headline(bySize)).toBe(
+      "Decided by diff size: r and w tied on tests and claims and were within 1 points on the judge's ratings, closer than its scores can tell apart; r's diff was the smallest (12 vs 40 lines changed).",
+    );
+    const byFinish = scoreForks(near({ endedAt: "2026-10-07T10:00:05Z" }, { endedAt: "2026-10-07T10:00:00Z" }));
+    expect(byFinish.winner).toBe("r");
+    expect(byFinish.tie?.by).toBe("finish");
+  });
+
+  it("J3: the side-by-side comparison breaks a tie when its pick leads by PREFER_MARGIN, else diff size decides", () => {
+    const prefer = { w: 0.3, r: 0.3 + PREFER_MARGIN };
+    const compared = scoreForks(near({ linesChanged: 5 }), prefer);
+    expect(compared.winner).toBe("r");
+    expect(compared.tie).toMatchObject({ by: "compare", prefer });
+    expect(headline(compared)).toContain("Decided by a side-by-side comparison:");
+    expect(headline(compared)).toContain("the judge preferred r's change (40% vs 30% for w)");
+    expect(decidedBy(compared)).toBe("close");
+    const narrow = scoreForks(near({ linesChanged: 5 }), { w: 0.45, r: 0.5 });
+    expect(narrow.winner).toBe("w");
+    expect(narrow.tie?.by).toBe("diff");
+  });
+
+  it("J4: the why leads with the tie and says how each tied loser lost", () => {
+    const why = buildWhy(scoreForks(near({ linesChanged: 40 }, { linesChanged: 12 })));
+    expect(section(why, "Why r won:")[0]).toBe("- Tie within the judge's noise; r's diff was the smallest (12 vs 40 lines changed).");
+    expect(section(why, "Others:")).toEqual([expect.stringMatching(/^- w \(\d+(\.\d+)?\/100\): tied with r within the judge's noise, lost on diff size\.$/)]);
+  });
+
+  it("J5: the tests part uses the shared suite when a fork has one, and the table shows its counts", () => {
+    const result = scoreForks([fork({ agent: "w", shared: { passed: 18, total: 20 } }), fork({ agent: "r", shared: { passed: 20, total: 20 } })]);
+    expect(result.winner).toBe("r");
+    expect(result.ranked.find((s) => s.agent === "w")?.parts.tests).toBe(45);
+    expect(scoresTable(result.ranked)).toContain("18/20 (45)");
+  });
+
+  it("J6: with a shared suite, the winner's tests reason and who can win use the shared counts, not the fork's own run", () => {
+    const result = scoreForks([fork({ agent: "w", testsPassed: 3, testsTotal: 3, shared: { passed: 8, total: 10 } }), fork({ agent: "r", testsPassed: 5, testsTotal: 5, shared: { passed: 0, total: 10 } })]);
+    const w = result.ranked.find((s) => s.agent === "w")!;
+    expect(winnerReasons(w, result.ranked.filter((s) => s !== w)).join("\n")).toContain("Tests: 8/10 shared passed, 40 points");
+    expect(result.ranked.find((s) => s.agent === "r")?.eligible).toBe(false);
+    expect(scoreForks([fork({ agent: "w", testsPassed: 0, testsTotal: 0, shared: { passed: 8, total: 10 } })]).winner).toBe("w");
+  });
+});
+

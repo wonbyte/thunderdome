@@ -2,7 +2,7 @@
 import { retry } from "../retry";
 import type { ForkLook, LookResult } from "./look";
 import { fixFingerprint, scoreForks, type ForkInput, type ScoreResult } from "./score";
-import type { Scorer, ScorerResult } from "./scorer";
+import { authorName, type Scorer, type ScorerResult } from "./scorer";
 import { buildWhy } from "./why";
 
 /** Test runs per fork: one run plus two retries, for a flaky container start. */
@@ -11,8 +11,13 @@ export const TEST_ATTEMPTS = 3;
 export const TEST_RETRY_DELAY_MS = 5_000;
 /** One test run is cut off after this. Every attempt plus the retry delays must fit in one Workflow step. */
 export const TEST_TIMEOUT_S = 240;
-/** Timeout of one fork's Workflow step: clone, tests with retries, diff and scoring. */
-export const FORK_STEP_TIMEOUT_S = 15 * 60;
+/**
+ * Timeout of one fork's Workflow step: clone, tests with retries, diff, scoring and the shared
+ * suite. Cross tests also stop at CROSS_TEST_STEP_MARGIN_S before it (judgeInSandbox).
+ */
+export const FORK_STEP_TIMEOUT_S = 20 * 60;
+/** Time left in the fork step after the last cross test may start: its own timeout plus the step's return. */
+export const CROSS_TEST_STEP_MARGIN_S = 60;
 
 /** `npm test` under a hard timeout: a hanging suite fails one attempt (no summary) instead of the whole step. */
 export function testCommand(timeoutS = TEST_TIMEOUT_S): string[] {
@@ -56,6 +61,7 @@ export interface TestRun {
 /** A fork's change since its fork point: the unified diff and its size. */
 export interface ForkDiff {
   diff: string;
+  context?: string; // the same diff with each changed function in full, for Clef (git diff --function-context)
   filesChanged: string[];
   linesAdded: number;
   linesRemoved: number;
@@ -68,18 +74,40 @@ export interface ForkDiff {
 export interface JudgeDeps {
   runTests(fork: JudgeFork): Promise<TestRun>;
   getDiff(fork: JudgeFork): Promise<ForkDiff>;
+  /** Every fork's test files run one by one on this fork (see CrossTest); undefined when the repo's tests cannot be run per file. */
+  crossTests?(fork: JudgeFork): Promise<CrossTest[] | undefined>;
   scorer: Scorer;
   sleep?: (ms: number) => Promise<void>;
 }
 
 /**
+ * One test file run on its own on a fork. `author` is "base" for a file the source repo already
+ * had, or the agent whose fork added it. Every fork runs every fork's added test files, so the
+ * tests part compares forks on one suite instead of each on its own tests.
+ */
+export interface CrossTest {
+  author: string;
+  file: string;
+  passed: number;
+  total: number;
+}
+
+/** The author of a test file the source repo already had. */
+export const BASE_AUTHOR = "base";
+
+/** Diff characters per fork kept for the side-by-side comparison of near-tied forks. */
+export const CONTEXT_CHARS = 20_000;
+
+/**
  * Everything the judge learned about one fork. Holds no diff text, so it fits in a Workflow step
- * output.
+ * output; `context` (a clipped diff) is taken off before the verdict is saved.
  */
 export interface JudgedFork {
   agent: string;
   fork: string;
   tests: TestRun & { error?: string }; // error set when all attempts failed (then 0/0)
+  crossTests?: CrossTest[]; // every fork's test files run on this fork; missing when they could not be run
+  context?: string; // the diff Clef scored, clipped to CONTEXT_CHARS, for the side-by-side comparison
   diff: { filesChanged: string[]; linesAdded: number; linesRemoved: number }; // no diff text
   scorer?: ScorerResult; // undefined when the fork changed no files (taskFit = clarity = 0)
   look?: ForkLook; // only when the race is judged on look
@@ -150,11 +178,13 @@ async function testFork(deps: JudgeDeps, fork: JudgeFork): Promise<JudgedFork["t
 /** Tests, diff and scorer for one fork. getDiff and scorer errors propagate. */
 export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeFork): Promise<JudgedFork> {
   const tests = await testFork(deps, fork);
-  const { diff, filesChanged, linesAdded, linesRemoved } = await deps.getDiff(fork);
+  const { diff, context, filesChanged, linesAdded, linesRemoved } = await deps.getDiff(fork);
+  const scored = context ?? diff;
   const scorer =
     filesChanged.length === 0
       ? undefined
-      : await deps.scorer.score({ task: input.task, diff, filesChanged, linesAdded, linesRemoved });
+      : await deps.scorer.score({ task: input.task, author: authorName(fork.agent), diff: scored, filesChanged, linesAdded, linesRemoved });
+  const cross = filesChanged.length === 0 || deps.crossTests === undefined ? undefined : await deps.crossTests(fork).catch(() => undefined);
   const judged: JudgedFork = {
     agent: fork.agent,
     fork: fork.fork,
@@ -175,7 +205,49 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
     },
   };
   if (scorer) judged.scorer = scorer;
+  if (cross !== undefined) judged.crossTests = cross;
+  if (filesChanged.length > 0) judged.context = scored.length <= CONTEXT_CHARS ? scored : `${scored.slice(0, CONTEXT_CHARS)}\n[diff clipped at ${CONTEXT_CHARS} chars]`;
   return judged;
+}
+
+const key = (t: CrossTest): string => `${t.author}\0${t.file}`;
+const passedAll = (t: CrossTest): boolean => t.total > 0 && t.passed === t.total;
+
+/**
+ * Each fork's result on the shared suite: the source repo's test files, plus each added test file
+ * that passes in full on at least two forks. A file that passes only on its author's fork is left
+ * out for everyone: it may test that fork's own helpers, or expect behavior the task never asked
+ * for. A file's size is the most tests any fork ran from it, so a file that fails to load counts
+ * as 0 passed. undefined unless every fork that changed files has cross tests.
+ */
+export function sharedSuite(forks: JudgedFork[]): Map<string, TestRun> | undefined {
+  const runs = forks.filter((f) => f.input.filesChanged.length > 0);
+  if (runs.length === 0 || runs.some((f) => f.crossTests === undefined)) return undefined;
+  const size = new Map<string, number>();
+  const passes = new Map<string, number>();
+  const base = new Set<string>();
+  for (const fork of runs) {
+    for (const t of fork.crossTests ?? []) {
+      size.set(key(t), Math.max(size.get(key(t)) ?? 0, t.total));
+      if (passedAll(t)) passes.set(key(t), (passes.get(key(t)) ?? 0) + 1);
+      if (t.author === BASE_AUTHOR) base.add(key(t));
+    }
+  }
+  const counted = [...size.keys()].filter((k) => (size.get(k) ?? 0) > 0 && (base.has(k) || (passes.get(k) ?? 0) >= 2));
+  if (counted.length === 0) return undefined;
+  const suite = new Map<string, TestRun>();
+  for (const fork of runs) {
+    const mine = new Map((fork.crossTests ?? []).map((t) => [key(t), t]));
+    let passed = 0;
+    let total = 0;
+    for (const k of counted) {
+      const n = size.get(k) ?? 0;
+      total += n;
+      passed += Math.min(n, mine.get(k)?.passed ?? 0);
+    }
+    suite.set(fork.agent, { passed, total });
+  }
+  return suite;
 }
 
 /** Gives every fork its look when the race is judged on look; a fork missing from the result gets 0. */
@@ -188,10 +260,22 @@ export function applyLook(forks: JudgedFork[], look: LookResult): JudgedFork[] {
   });
 }
 
-/** Pure: scores, winner and why from the judged forks. */
-export function decide(input: JudgeInput, forks: JudgedFork[]): JudgeResult {
-  const scores = scoreForks(forks.map((f) => f.input));
-  return { taskId: input.taskId, forks, scores, winner: scores.winner, why: buildWhy(scores) };
+/**
+ * Pure: scores, winner and why from the judged forks. The tests part uses the shared suite when
+ * every fork has one. `prefer` holds the side-by-side comparison's probability per agent, used only
+ * to break a tie within the judge's noise.
+ */
+export function decide(input: JudgeInput, forks: JudgedFork[], prefer?: Record<string, number>): JudgeResult {
+  const suite = sharedSuite(forks);
+  const judged = forks.map(({ context: _context, ...fork }) => {
+    const shared = suite?.get(fork.agent);
+    return shared === undefined ? fork : { ...fork, input: { ...fork.input, shared } };
+  });
+  const scores = scoreForks(
+    judged.map((f) => f.input),
+    prefer,
+  );
+  return { taskId: input.taskId, forks: judged, scores, winner: scores.winner, why: buildWhy(scores) };
 }
 
 /** Judges every fork in order, then decides. */

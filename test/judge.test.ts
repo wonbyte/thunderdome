@@ -1,7 +1,11 @@
+import { CROSS_TEST_BUDGET_MS } from "../src/judge/crosstests";
 import { fixFingerprint } from "../src/judge/score";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  BASE_AUTHOR,
+  CONTEXT_CHARS,
+  type CrossTest,
   decide,
   FORK_STEP_TIMEOUT_S,
   forkPoint,
@@ -13,7 +17,9 @@ import {
   TEST_ATTEMPTS,
   TEST_RETRY_DELAY_MS,
   TEST_TIMEOUT_S,
+  sharedSuite,
   testCommand,
+  type JudgedFork,
   type JudgeFork,
 } from "../src/judge/judge";
 import { fakeScorer } from "../src/judge/scorer";
@@ -57,6 +63,7 @@ describe("judgeTask", () => {
     expect(score).toHaveBeenCalledTimes(3);
     expect(score.mock.calls[0]![0]).toEqual({
       task: input.task,
+      author: "Ponder",
       diff: "+// change by ponder\n",
       filesChanged: ["src/ponder.ts"],
       linesAdded: 2,
@@ -181,5 +188,65 @@ describe("test run timeout", () => {
     const worstCaseS = TEST_ATTEMPTS * (TEST_TIMEOUT_S + killAfterS) + ((TEST_ATTEMPTS - 1) * TEST_RETRY_DELAY_MS) / 1000;
     // Leave at least a minute of the step for the clone, the diff and the scorer.
     expect(worstCaseS + 60).toBeLessThanOrEqual(FORK_STEP_TIMEOUT_S);
+    // Review finding: cross tests after a hung suite pushed the step past its timeout. With the
+    // full cross test budget there are still two minutes left (they also stop at the step's deadline).
+    expect(worstCaseS + CROSS_TEST_BUDGET_MS / 1000 + 120).toBeLessThanOrEqual(FORK_STEP_TIMEOUT_S);
   });
 });
+
+describe("the shared suite", () => {
+  const run = (author: string, file: string, passed: number, total: number): CrossTest => ({ author, file, passed, total });
+  const judged = async (agent: string, crossTests?: CrossTest[]): Promise<JudgedFork> => {
+    const fork = await judgeFork(fakeDeps({ crossTests: async () => crossTests }), fakeInput(), fakeFork(agent));
+    return fork;
+  };
+
+  it("S1: base files always count; an added file counts only when it passes in full on at least two forks", async () => {
+    const forks = [
+      await judged("ponder", [run(BASE_AUTHOR, "test/cart.test.ts", 4, 4), run("ponder", "test/p.test.ts", 3, 3), run("zippy", "test/z.test.ts", 2, 2), run("snip", "test/s.test.ts", 0, 5)]),
+      await judged("zippy", [run(BASE_AUTHOR, "test/cart.test.ts", 3, 4), run("ponder", "test/p.test.ts", 1, 3), run("zippy", "test/z.test.ts", 2, 2), run("snip", "test/s.test.ts", 0, 1)]),
+      await judged("snip", [run(BASE_AUTHOR, "test/cart.test.ts", 4, 4), run("ponder", "test/p.test.ts", 0, 0), run("zippy", "test/z.test.ts", 1, 2), run("snip", "test/s.test.ts", 5, 5)]),
+    ];
+    // Counted: base (4), ponder's p (passes on ponder only: no), zippy's z (ponder + zippy: yes, size 2), snip's s (snip only: no).
+    const suite = sharedSuite(forks)!;
+    expect(Object.fromEntries(suite)).toEqual({
+      ponder: { passed: 6, total: 6 },
+      zippy: { passed: 5, total: 6 },
+      snip: { passed: 5, total: 6 },
+    });
+  });
+
+  it("S2: a fork without cross tests turns the shared suite off for everyone", async () => {
+    const forks = [await judged("ponder", [run(BASE_AUTHOR, "test/a.test.ts", 1, 1)]), await judged("zippy", undefined)];
+    expect(sharedSuite(forks)).toBeUndefined();
+    expect(decide(fakeInput(), forks).forks.every((f) => f.input.shared === undefined)).toBe(true);
+  });
+
+  it("S3: decide puts the shared counts on each input, scores tests on them, and drops the context diff", async () => {
+    const forks = [
+      await judged("ponder", [run(BASE_AUTHOR, "test/a.test.ts", 2, 4)]),
+      await judged("zippy", [run(BASE_AUTHOR, "test/a.test.ts", 4, 4)]),
+    ];
+    expect(forks[0]!.context).toBe("+// change by ponder\n");
+    const result = decide(fakeInput(["ponder", "zippy"]), forks);
+    expect(result.forks.map((f) => f.input.shared)).toEqual([{ passed: 2, total: 4 }, { passed: 4, total: 4 }]);
+    expect(result.scores.ranked.find((s) => s.agent === "ponder")?.parts.tests).toBe(25);
+    expect(result.forks.some((f) => f.context !== undefined)).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("change by");
+  });
+
+  it("S4: Clef scores the function-context diff when there is one, and the kept context is clipped", async () => {
+    const long = `+${"x".repeat(CONTEXT_CHARS + 10)}`;
+    const score = vi.fn(fakeScorer().score);
+    const deps = fakeDeps({ getDiff: async () => ({ diff: "+short\n", context: long, filesChanged: ["src/a.ts"], linesAdded: 1, linesRemoved: 0 }), scorer: { score } });
+    const fork = await judgeFork(deps, fakeInput(), fakeFork("zippy"));
+    expect(score.mock.calls[0]![0]).toMatchObject({ author: "Zippy", diff: long });
+    expect(fork.context?.endsWith(`[diff clipped at ${CONTEXT_CHARS} chars]`)).toBe(true);
+  });
+
+  it("S5: a failing cross-test run leaves the fork without cross tests instead of failing the judge", async () => {
+    const fork = await judgeFork(fakeDeps({ crossTests: () => Promise.reject(new Error("boom")) }), fakeInput(), fakeFork("ponder"));
+    expect(fork.crossTests).toBeUndefined();
+  });
+});
+

@@ -10,12 +10,15 @@ import type { OutboundProps } from "../sandbox/outbound";
 import { gitRepoPath } from "../sandbox/policy";
 import { BUNDLE_PATH, raceConflict, type ConflictRequest, type RaceOutcome } from "../ship/resolve";
 import { shipBlame, shipTask, type ShipDeps, type ShipFork, type ShipInput, type ShipRepo, type ShipResolver, type ShipResult } from "../ship/ship";
+import { compareForks } from "./compare";
+import { runCrossTests, type CrossSource } from "./crosstests";
 import { clipDiff } from "./diffs";
 import { FUSE_BUNDLE_MAX, FUSE_BUNDLE_PATH, FUSE_REF, fusionBundle, fusedAgents, fusionCandidates, fusionProblem, fusionWhy, runFusion, scoreFusion, withoutPatches, type FusionResult } from "./fusion";
 import { judgeLook, readyPreviews, VISUAL_THRESHOLD, visualTask, type LookResult, type Viewport } from "./look";
 import {
   applyLook,
   decide,
+  CROSS_TEST_STEP_MARGIN_S,
   FORK_STEP_TIMEOUT_S,
   forkPoint,
   judgeFork,
@@ -59,6 +62,11 @@ const FUSE_SCORE_MS = 90 * 1_000;
 const LOOK_STEP = {
   retries: { limit: 1, delay: "10 seconds", backoff: "constant" },
   timeout: "10 minutes",
+} as const;
+/** The side-by-side comparison of tied forks: two Clef calls with retries. */
+const COMPARE_STEP = {
+  retries: { limit: 1, delay: "10 seconds", backoff: "constant" },
+  timeout: "3 minutes",
 } as const;
 /** A fork's final preview builds after its last push; the judge waits this long for it. */
 const PREVIEW_WAIT_MS = 3 * 60 * 1_000;
@@ -105,9 +113,30 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
       return JSON.stringify(failed);
     });
     const [looked, ...judged] = await Promise.all([looking, ...judging]);
-    const forks = judged.map((text) => JSON.parse(text) as JudgedFork);
     const look = JSON.parse(looked) as LookResult;
-    const decided = { ...decide(input, applyLook(forks, look)), look };
+    const forks = applyLook(
+      judged.map((text) => JSON.parse(text) as JudgedFork),
+      look,
+    );
+    let decided: JudgeResult & { look: LookResult } = { ...decide(input, forks), look };
+    // A tie within the judge's noise: Clef compares the tied changes side by side. A failed
+    // comparison only leaves the tie to diff size and finish time.
+    const tied = decided.scores.tie?.agents ?? [];
+    const changes = tied.flatMap((agent) => {
+      const diff = forks.find((f) => f.agent === agent)?.context;
+      return diff === undefined ? [] : [{ agent, diff }];
+    });
+    // Only with every tied fork's diff: a fork left out would count as the comparison's last pick.
+    if (tied.length > 1 && changes.length === tied.length) {
+      const prefer = await step
+        .do("compare", COMPARE_STEP, async () => JSON.stringify(await compareForks(this.env.AI, input.task, changes)))
+        .then((text) => JSON.parse(text) as Record<string, number>)
+        .catch((cause: unknown) => {
+          console.error({ event: "judge.compare_failed", taskId: input.taskId, error: String(cause).slice(0, 300) });
+          return undefined;
+        });
+      if (prefer !== undefined) decided = { ...decide(input, forks, prefer), look };
+    }
     // The fusion round tries the losers' other files on top of the winner and pushes what it keeps
     // to the winner's fork, so the ship merges it. Not retried: a retry after the push would find
     // nothing new. A failed round is only noted; the winner ships as judged.
@@ -231,13 +260,19 @@ async function readToken(artifacts: Artifacts, name: string): Promise<string> {
 
 /** Clones the fork into its own judge sandbox, judges it, and stops the sandbox. */
 async function judgeInSandbox(env: Env, input: JudgeInput, fork: JudgeFork): Promise<JudgedFork> {
+  const stepEnd = Date.now() + (FORK_STEP_TIMEOUT_S - CROSS_TEST_STEP_MARGIN_S) * 1_000;
   const base = await forkBase(env.ARTIFACTS, input.repo, fork.fork);
   const sandbox = env.SANDBOX.getByName(`judge-${fork.fork}`);
   try {
-    const props: OutboundProps = { gitHost: new URL(fork.remote).hostname, gitToken: await readToken(env.ARTIFACTS, fork.fork) };
+    // Read tokens for the other forks too: the shared suite fetches their added test files.
+    const others = input.forks.filter((f) => f.agent !== fork.agent);
+    const repoTokens: Record<string, string> = {};
+    for (const other of others) repoTokens[repoPath(other.remote)] = await readToken(env.ARTIFACTS, other.fork);
+    const props: OutboundProps = { gitHost: new URL(fork.remote).hostname, gitToken: await readToken(env.ARTIFACTS, fork.fork), repoTokens };
     // A fresh fork can refuse a clone for a short time.
     await retry(() => sandbox.clone(props, fork.remote), { attempts: 10, delayMs: 2_000, shouldRetry: () => true });
-    return await judgeFork(sandboxDeps(env, sandbox, base, input.taskId), input, fork);
+    const sources: CrossSource[] = others.map((o) => ({ agent: o.agent, remote: o.remote, branch: o.defaultBranch }));
+    return await judgeFork(sandboxDeps(env, sandbox, base, input.taskId, sources, stepEnd), input, fork);
   } finally {
     await sandbox.stop();
   }
@@ -502,7 +537,7 @@ function repoPath(remote: string): string {
   return path;
 }
 
-function sandboxDeps(env: Env, sandbox: Sandbox, base: string, taskId: string): JudgeDeps {
+function sandboxDeps(env: Env, sandbox: Sandbox, base: string, taskId: string, others: CrossSource[], stepEnd: number): JudgeDeps {
   return {
     // A failing suite still prints a summary; no summary means the run itself broke.
     async runTests() {
@@ -515,9 +550,14 @@ function sandboxDeps(env: Env, sandbox: Sandbox, base: string, taskId: string): 
     async getDiff(fork) {
       const numstat = await must(sandbox, ["git", "diff", "--no-renames", "--numstat", base, "HEAD"]);
       const diff = await must(sandbox, ["git", "diff", "--no-renames", base, "HEAD"]);
+      // Clef reads each changed function in full: it never sees the rest of the repo.
+      const context = await must(sandbox, ["git", "diff", "--no-renames", "--function-context", base, "HEAD"]);
       await saveForkDiff(env, taskId, fork.agent, diff);
-      return { diff, ...parseNumstat(numstat) };
+      return { diff, context, ...parseNumstat(numstat) };
     },
+    // After the fork's own tests and diff, so the copied files never reach its own `npm test`.
+    // Stops before the step's timeout: a fork whose tests hung must still be scored, not fail the judge.
+    crossTests: (fork) => runCrossTests({ exec: (argv) => sandbox.exec(argv), deadline: stepEnd }, fork.agent, base, others),
     scorer: clefScorer(env.AI),
   };
 }

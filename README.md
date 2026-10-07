@@ -70,12 +70,15 @@ flowchart LR
 3. **Push events.** Each push fires an Artifacts `repo.pushed` event into the `thunderdome-push`
    Workflow. It records the push on the TaskRoom (the git graph) and builds a Workers Preview
    of that commit.
-4. **Judge.** When the last agent ends, the `thunderdome-judge` Workflow clones each fork, runs its
-   tests, and scores its diff for task fit and clarity with Clef on Workers AI. The score is
+4. **Judge.** When the last agent ends, the `thunderdome-judge` Workflow clones each fork, runs a
+   shared test suite on it (the repo's tests as the source has them, plus every robot's added test
+   files that pass on at least two forks), and scores its diff for task fit and clarity with Clef on Workers AI. The score is
    tests 50, task fit 25, clarity 15 and claims 10. When the task asks for a visible change, the
    judge also screenshots each fork's preview with Browser Rendering and Clef scores how the page
    looks; then the score is tests 45, task fit 20, clarity 10, look 15 and claims 10. It writes a
-   "why" that names what decided the race.
+   "why" that names what decided the race. Forks within 1.5 points on Clef's ratings and equal on
+   tests and claims are a tie: Clef then compares their diffs side by side, and if that is close
+   too, the smaller diff wins.
 5. **Fusion.** The losers' work is tried on top of the winning fix: files the winner never touched
    (often a new test), and up to 3 hunks per loser in files the winner did change, when they apply
    cleanly. An addition is kept only when every test still passes and Clef says it makes the
@@ -193,7 +196,7 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 |---|---|---|
 | Agents (Anthropic API) | $0.43–0.55 | Reported by Claude Code per agent (`costUsd` on each agent). The `bugs` and `ui` demos cost $0.29–0.46 (PLAN.md, Day 9). |
 | Conflict race | about $0.10–0.30 | Only when the winner conflicts with a newer source: 3 short resolver runs. |
-| Judge (Workers AI, Clef) | small | 2 short questions per fork, plus 1 question per race and 1 question with 3 screenshots per fork when the task is visual; billed as Workers AI usage. |
+| Judge (Workers AI, Clef) | small | 3 short questions per fork, asked twice (files in both orders), 2 side-by-side questions on a tie, plus 1 question per race and 1 question with 3 screenshots per fork when the task is visual; billed as Workers AI usage. |
 | Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. |
 | Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 1 agent container per robot (3 to 5) busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
 | Artifacts | — | Not billed before Oct 15, 2026, when Artifacts billing starts. |
@@ -213,7 +216,7 @@ demo costs at most about $9.20 a day in agent spend.
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
 | Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
-| Judge test run | 240 s per try, 3 tries; 15 minutes per fork step | `src/judge/judge.ts` |
+| Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork; 20 minutes per fork step | `src/judge/judge.ts` |
 | Look | waits up to 3 minutes for final previews; 30 s per page load; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
 | Diff the scorer reads | first 100,000 characters | `src/judge/scorer.ts` |
@@ -233,9 +236,10 @@ What it does not do yet:
   fingerprints each diff's changed lines and says so ("wrote the same fix; ponder finished first"),
   but nothing in the code can pick a winner then. `clash-full` asks for more than its tests check,
   so its fixes differ; it is the race to watch.
-- Clef's task fit and clarity scores for different but similar fixes are often within a point, so
-  many races are decided by a close margin: then the smaller diff wins, then the agent that finished
-  first. A clash costs claim points only when it was avoidable, so claim order alone no longer picks
+- Clef is deterministic, but the same diff with its files in another order moved its scores by up
+  to about 1.5 points (Oct 7, 6 forks). Each fork is scored in both file orders and averaged, and
+  forks closer than 1.5 points on Clef's ratings tie: a side-by-side comparison, then the smaller
+  diff, then the earlier finish decides. A clash costs claim points only when it was avoidable, so claim order alone no longer picks
   the winner (it decided all 4 races on the live deploy on Oct 5; replayed under this rule, 1 was
   decided by code, 2 were close and 1 was the same fix).
 - A conflict race ships only a resolution whose tests all pass. When none does, or a resolver
@@ -421,7 +425,8 @@ built when the race starts: `basePreview` (`url`, `commit`, `at`) in `GET /tasks
 ### Judge and ship
 
 You do not call anything else. When the last agent ends, the TaskRoom starts the judge. The
-judge scores each fork, rating its diff for task fit and clarity with Cloudflare's Clef
+judge scores each fork, rating its diff (with each changed function in full, since Clef sees no
+other code) for task fit, readability and unrelated edits with Cloudflare's Clef
 (`@cf/cloudflare/clef`) on Workers AI through the `AI` binding (so no extra API key is needed),
 picks a winner, and merges the winner's fork into the source repo's
 default branch.

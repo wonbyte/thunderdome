@@ -1,5 +1,5 @@
 // Pure: builds the plain-text "why" for the merge commit body from score results.
-import { endedMs, type ForkScore, type ScoreParts, type ScoreResult } from "./score";
+import { endedMs, type ForkScore, type JudgeTie, type ScoreParts, type ScoreResult } from "./score";
 
 /** How many reasons the winner's part of the why lists. */
 export const REASON_COUNT = 3;
@@ -39,8 +39,14 @@ const DIFF_MARGIN = 0.001;
 /** A tie-break that decided the winner ranks after diff size but ahead of level parts. */
 const TIE_MARGIN = DIFF_MARGIN / 2;
 
+/** The test counts the tests part used: the shared suite when there was one, else the fork's own run. */
+function testRun(score: ForkScore): { passed: number; total: number } {
+  return score.input.shared ?? { passed: score.input.testsPassed, total: score.input.testsTotal };
+}
+
 function testsCell(score: ForkScore): string {
-  return `${score.input.testsPassed}/${score.input.testsTotal} (${score.parts.tests})`;
+  const run = testRun(score);
+  return `${run.passed}/${run.total} (${score.parts.tests})`;
 }
 
 function tableRow(score: ForkScore, keys: PartKey[]): string[] {
@@ -71,7 +77,10 @@ function bestOther(others: ForkScore[], key: PartKey): number | undefined {
 
 function partDetail(winner: ForkScore, key: PartKey): string {
   const points = pts(winner, key);
-  if (key === "tests") return `${winner.input.testsPassed}/${winner.input.testsTotal} passed, ${points} points`;
+  if (key === "tests") {
+    const run = testRun(winner);
+    return `${run.passed}/${run.total} ${winner.input.shared === undefined ? "" : "shared "}passed, ${points} points`;
+  }
   if (key === "claim") {
     if (!winner.claimKept) return `changed unclaimed files (${winner.unclaimed.join(", ")}), ${points} points`;
     if (winner.shared.length > 0) return `changed files it held only as shared (${winner.shared.join(", ")}), ${points} points`;
@@ -166,7 +175,7 @@ function worstPart(loser: ForkScore, winner: ForkScore): PartKey | undefined {
 export function loserLine(loser: ForkScore, winner: ForkScore | undefined): string {
   const head = `${loser.agent} (${loser.total}/100)`;
   if (!loser.eligible) {
-    return loser.input.testsPassed > 0 ? `${head}: changed no files, cannot win.` : `${head}: 0 tests passed, cannot win.`;
+    return testRun(loser).passed > 0 ? `${head}: changed no files, cannot win.` : `${head}: 0 tests passed, cannot win.`;
   }
   if (!winner) return `${head}.`;
   const key = worstPart(loser, winner);
@@ -214,7 +223,7 @@ function claimVerb(winner: ForkScore, runner: ForkScore): string {
 
 /** Which case decided the race. Shared by headline and decidedBy so they cannot drift. */
 type Decision = {
-  kind: "code" | "claims-within" | "claims-lower" | "close" | "same";
+  kind: "code" | "claims-within" | "claims-lower" | "close" | "same" | "tie";
   winner: ForkScore;
   runner: ForkScore;
   gap: number;
@@ -233,6 +242,7 @@ function decision(result: ScoreResult): Decision | undefined {
   const same = winner.input.fix === undefined ? [] : result.ranked.filter((s) => s !== winner && s.eligible && s.input.fix === winner.input.fix);
   const base = { winner, runner, gap, abs, same };
   if (same.includes(runner)) return { kind: "same", ...base };
+  if (result.tie?.agents[0] === winner.agent) return { kind: "tie", ...base };
   if (gap >= CODE_TIE) return { kind: "code", ...base };
   if (abs < CODE_TIE && winner.parts.claim - runner.parts.claim > 0) return { kind: "claims-within", ...base };
   if (gap <= -CODE_TIE) return { kind: "claims-lower", ...base };
@@ -243,7 +253,8 @@ function decision(result: ScoreResult): Decision | undefined {
 function partLesson(winner: ForkScore, rivals: ForkScore[], key: PartKey): string {
   if (key === "tests") {
     const best = rivals.reduce((a, b) => (pts(b, "tests") > pts(a, "tests") ? b : a));
-    return `more of its tests passed (${winner.input.testsPassed}/${winner.input.testsTotal} vs ${best.input.testsPassed}/${best.input.testsTotal})`;
+    const [w, r] = [testRun(winner), testRun(best)];
+    return `more ${winner.input.shared === undefined ? "of its" : "shared"} tests passed (${w.passed}/${w.total} vs ${r.passed}/${r.total})`;
   }
   if (key === "taskFit") return "the judge rated its change the closest fit to everything the task asked";
   if (key === "clarity") return "the judge rated its diff the most focused and easiest to review";
@@ -294,7 +305,43 @@ export function headline(result: ScoreResult): string | undefined {
       return `Decided by a close margin: the fixes were within ${num(abs)} points on code.`;
     case "same":
       return sameHeadline(winner, d.same);
+    case "tie":
+      return result.tie === undefined ? undefined : tieHeadline(result.ranked, result.tie);
   }
+}
+
+const pct = (p: number | undefined): string => `${Math.round((p ?? 0) * 100)}%`;
+
+/** What broke a tie within the judge's noise, as a clause after "; ". */
+function tieBreak(ranked: ForkScore[], tie: JudgeTie): string {
+  const tied = tie.agents.map((a) => ranked.find((s) => s.agent === a)).filter((s): s is ForkScore => s !== undefined);
+  const [winner, next] = tied;
+  if (winner === undefined || next === undefined) return "";
+  const w = winner.agent;
+  switch (tie.by) {
+    case "compare": {
+      const best = tied.slice(1).reduce((a, b) => ((tie.prefer?.[b.agent] ?? 0) > (tie.prefer?.[a.agent] ?? 0) ? b : a));
+      return `compared side by side, the judge preferred ${w}'s change (${pct(tie.prefer?.[w])} vs ${pct(tie.prefer?.[best.agent])} for ${best.agent})`;
+    }
+    case "diff": {
+      const smallest = Math.min(...tied.slice(1).map((s) => s.input.linesChanged));
+      return `${w}'s diff was the smallest (${winner.input.linesChanged} vs ${smallest} lines changed)`;
+    }
+    case "finish":
+      return `the diffs were the same size, and ${w} finished first`;
+    case "order":
+      return "the diffs were the same size and finished together, so agent order decided";
+  }
+}
+
+function tieWho(agents: string[]): string {
+  return agents.length === 2 ? agents.join(" and ") : `${agents.slice(0, -1).join(", ")} and ${agents.at(-1)}`;
+}
+
+/** The headline of a race whose top forks tied within the judge's noise. */
+function tieHeadline(ranked: ForkScore[], tie: JudgeTie): string {
+  const by = { compare: "a side-by-side comparison", diff: "diff size", finish: "finish time", order: "agent order" }[tie.by];
+  return `Decided by ${by}: ${tieWho(tie.agents)} tied on tests and claims and were within ${num(tie.gap)} points on the judge's ratings, closer than its scores can tell apart; ${tieBreak(ranked, tie)}.`;
 }
 
 /** The same fix from several forks: no score of the code can separate them, so say what did. */
@@ -323,11 +370,12 @@ export function decidedBy(result: ScoreResult): DecidedBy | undefined {
   const kind = decision(result)?.kind;
   if (kind === undefined) return undefined;
   if (kind === "code" || kind === "close" || kind === "same") return kind;
+  if (kind === "tie") return "close";
   return "claims";
 }
 
 function noWinnerLine(ranked: ForkScore[]): string {
-  return ranked.some((s) => s.input.testsPassed > 0)
+  return ranked.some((s) => testRun(s).passed > 0)
     ? "No winner: no fork both changed files and passed a test."
     : "No winner: no fork passed any tests.";
 }
@@ -341,11 +389,16 @@ export function buildWhy(result: ScoreResult): string {
   lines.push(winner ? `Winner: ${winner.agent} (${winner.total}/100)` : noWinnerLine(result.ranked));
   lines.push("", scoresTable(result.ranked));
   if (head) lines.push("", head);
+  const tie = winner !== undefined && result.tie?.agents[0] === winner.agent ? result.tie : undefined;
   if (winner) {
-    lines.push("", `Why ${winner.agent} won:`, ...winnerReasons(winner, losers).map((r) => `- ${r}`));
+    // A tie's reason leads: the score parts alone would not say why a lower total won.
+    const reasons = tie === undefined ? winnerReasons(winner, losers) : [`Tie within the judge's noise; ${tieBreak(result.ranked, tie)}.`, ...winnerReasons(winner, losers)].slice(0, REASON_COUNT);
+    lines.push("", `Why ${winner.agent} won:`, ...reasons.map((r) => `- ${r}`));
   }
   if (losers.length > 0) {
-    lines.push("", "Others:", ...losers.map((l) => `- ${loserLine(l, winner)}`));
+    const line = (l: ForkScore): string =>
+      tie?.agents.includes(l.agent) ? `${l.agent} (${l.total}/100): tied with ${winner?.agent} within the judge's noise, lost on ${{ compare: "the side-by-side comparison", diff: "diff size", finish: "finish time", order: "agent order" }[tie.by]}.` : loserLine(l, winner);
+    lines.push("", "Others:", ...losers.map((l) => `- ${line(l)}`));
   }
   return lines.join("\n");
 }

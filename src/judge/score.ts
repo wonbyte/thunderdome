@@ -12,11 +12,22 @@ export interface Weights { tests: number; taskFit: number; clarity: number; look
  */
 export const SHARED_COST = 2;
 
+/**
+ * Judgment points (task fit + clarity + look) closer than this count as a tie: they come from Clef,
+ * and a harmless rewrite of the same diff moved its scores by about 1.5 points (Oct 7, 6 forks, 4
+ * variants each). Forks this close on judgment and equal on everything else are told apart by the
+ * side-by-side comparison, then diff size, then finish time.
+ */
+export const JUDGE_TIE = 1.5;
+/** The side-by-side comparison breaks a tie only when its pick leads the next tied fork by this much probability. */
+export const PREFER_MARGIN = 0.1;
+
 /** Everything scoring needs to know about one fork. */
 export interface ForkInput {
   agent: string;
-  testsPassed: number;
+  testsPassed: number; // the fork's own `npm test`
   testsTotal: number;
+  shared?: { passed: number; total: number }; // the shared suite (sharedSuite in judge.ts); the tests part uses it when set
   taskFit: number; // 0..1
   clarity: number; // 0..1
   linesChanged: number; // added + removed
@@ -86,11 +97,23 @@ export interface ForkScore {
   input: ForkInput;
 }
 
+/**
+ * Forks at the top that tied within JUDGE_TIE on judgment and on every other part, and what picked
+ * the winner among them. `gap` is the widest judgment gap between the winner and a tied fork.
+ */
+export interface JudgeTie {
+  agents: string[]; // the tied forks, winner first
+  by: "compare" | "diff" | "finish" | "order";
+  gap: number;
+  prefer?: Record<string, number>; // the side-by-side comparison's probabilities, when it was asked
+}
+
 /** Every fork ranked, the weights used, and the winner. */
 export interface ScoreResult {
   weights: Weights; // LOOK_WEIGHTS when any fork has a look, else WEIGHTS
-  ranked: ForkScore[]; // eligible first, then total desc, then linesChanged asc, then endedAt asc, then input order
+  ranked: ForkScore[]; // eligible first, then total desc, then linesChanged asc, then endedAt asc, then input order; a tie's pick first
   winner: string | null; // ranked[0].agent when it is eligible, else null
+  tie?: JudgeTie; // set when the top forks were within the judge's noise
 }
 
 const round2 = (x: number): number => Math.round(x * 100) / 100;
@@ -141,7 +164,7 @@ export function scoreFork(input: ForkInput, needed: ReadonlySet<string> = new Se
   const shared = clashed.filter((file) => !needed.has(file));
   const unavoidable = clashed.filter((file) => needed.has(file));
   const parts: ScoreParts = {
-    tests: round2(testPoints(input.testsPassed, input.testsTotal, weights.tests)),
+    tests: round2(input.shared === undefined ? testPoints(input.testsPassed, input.testsTotal, weights.tests) : testPoints(input.shared.passed, input.shared.total, weights.tests)),
     taskFit: round2(weights.taskFit * clamp(input.taskFit, 0, 1)),
     clarity: round2(weights.clarity * clamp(input.clarity, 0, 1)),
     ...(weights.look === undefined ? {} : { look: round2(weights.look * clamp(input.look ?? 0, 0, 1)) }),
@@ -162,8 +185,9 @@ export function scoreFork(input: ForkInput, needed: ReadonlySet<string> = new Se
   };
 }
 
+/** Needs a passing test on the suite the tests part used, and a changed file. */
 function isEligible(input: ForkInput): boolean {
-  return input.testsPassed > 0 && input.filesChanged.length > 0;
+  return (input.shared?.passed ?? input.testsPassed) > 0 && input.filesChanged.length > 0;
 }
 
 /**
@@ -200,10 +224,57 @@ export function rankForks(scores: ForkScore[]): ForkScore[] {
   );
 }
 
-/** The race is judged on look when the judge gave any fork a look score. */
-export function scoreForks(inputs: ForkInput[]): ScoreResult {
+/** Points from Clef: task fit, clarity and look. */
+export function judgmentPoints(s: ForkScore): number {
+  return s.parts.taskFit + s.parts.clarity + (s.parts.look ?? 0);
+}
+
+/** Points from everything measured in code: tests and claims. */
+function measuredPoints(s: ForkScore): number {
+  return s.parts.tests + s.parts.claim;
+}
+
+/**
+ * The eligible forks tied with the leader: equal on tests and claims, and within JUDGE_TIE on
+ * judgment. Just the leader when nothing is that close.
+ */
+export function tiedAtTop(ranked: ForkScore[]): ForkScore[] {
+  const leader = ranked[0];
+  if (leader === undefined || !leader.eligible) return [];
+  return ranked.filter(
+    (s) => s.eligible && Math.abs(measuredPoints(s) - measuredPoints(leader)) < 0.005 && Math.abs(judgmentPoints(s) - judgmentPoints(leader)) < JUDGE_TIE,
+  );
+}
+
+/** The tie's pick: the side-by-side favorite when it leads by PREFER_MARGIN, else the smallest diff, then the earliest finish. */
+function breakTie(tied: ForkScore[], prefer: Record<string, number> | undefined): { pick: ForkScore; by: JudgeTie["by"] } {
+  const p = (s: ForkScore): number => prefer?.[s.agent] ?? 0;
+  if (prefer !== undefined) {
+    const [best, next] = tied.toSorted((a, b) => p(b) - p(a));
+    if (best !== undefined && next !== undefined && p(best) - p(next) >= PREFER_MARGIN) return { pick: best, by: "compare" };
+  }
+  const order = tied.toSorted((a, b) => a.input.linesChanged - b.input.linesChanged || byEnd(a.input, b.input));
+  const [pick = tied[0]!, second] = order;
+  if (second === undefined || pick.input.linesChanged !== second.input.linesChanged) return { pick, by: "diff" };
+  return { pick, by: byEnd(pick.input, second.input) < 0 ? "finish" : "order" };
+}
+
+/**
+ * The race is judged on look when the judge gave any fork a look score. When the top forks tie
+ * within the judge's noise, the tie's pick moves to the front (see JudgeTie).
+ */
+export function scoreForks(inputs: ForkInput[], prefer?: Record<string, number>): ScoreResult {
   const weights: Weights = inputs.some((input) => input.look !== undefined) ? LOOK_WEIGHTS : WEIGHTS;
-  const ranked = rankForks(inputs.map((input) => scoreFork(input, neededFiles(input, inputs), weights)));
+  let ranked = rankForks(inputs.map((input) => scoreFork(input, neededFiles(input, inputs), weights)));
+  const tied = tiedAtTop(ranked);
+  let tie: JudgeTie | undefined;
+  if (tied.length > 1) {
+    const { pick, by } = breakTie(tied, prefer);
+    ranked = [pick, ...ranked.filter((s) => s !== pick)];
+    const others = tied.filter((s) => s !== pick);
+    const gap = round2(Math.max(...others.map((s) => Math.abs(judgmentPoints(pick) - judgmentPoints(s)))));
+    tie = { agents: [pick, ...others].map((s) => s.agent), by, gap, ...(prefer === undefined ? {} : { prefer }) };
+  }
   const first = ranked[0];
-  return { weights, ranked, winner: first?.eligible ? first.agent : null };
+  return { weights, ranked, winner: first?.eligible ? first.agent : null, ...(tie === undefined ? {} : { tie }) };
 }
