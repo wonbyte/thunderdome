@@ -190,3 +190,10 @@ Not closed (documented, not worth more this week):
   real one (`summaryCount` takes the last match); the window ends when the run's leftovers are killed.
 - The fusion gates and the conflict resolvers run `npm test` with the fork's own `package.json`
   (as `tester`). A faked winner script could only change whether a loser's work joins, not who wins.
+
+## Artifacts: forks of one source at once (Oct 7)
+
+Forking the 5 agent repos from a fresh source in parallel cut task creation from about 14 s to 6 s
+once (t-352aa79a), then failed with `INTERNAL_ERROR` on 4 tries in a row, on two templates; the
+same probe with the forks one at a time succeeded (201 in 13.9 s). Forks stay sequential
+(`forkAgents` in `src/room/task.ts`).
