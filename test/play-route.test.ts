@@ -72,7 +72,7 @@ describe("isPlayPath", () => {
 });
 
 describe("play routes", () => {
-  it("X9: POST /play creates and runs a 3-agent task and returns 202 without tokens; 429 when the quota is used up; 400/403 from parsePlay; GET /play/quota returns the view and the invite flag", async () => {
+  it("X9: POST /play creates and runs a 5-agent task and returns 202 without tokens; 429 when the quota is used up; 400/403 from parsePlay; GET /play/quota returns the view and the invite flag", async () => {
     // 202: create then run, the trimmed prompt, 3 agents, no tokens.
     const ok = fakeEnv();
     const response = await handlePlay(play(good, "203.0.113.9"), ok.env);
@@ -87,7 +87,7 @@ describe("play routes", () => {
     expect(PLAY_QUOTA_NAME).toBe("daily");
     expect(ok.quota.take).toHaveBeenCalledWith(utcDay(new Date()), "203.0.113.9", 10);
     expect(ok.roomByName).toHaveBeenCalledWith(body.id);
-    expect(ok.room.create).toHaveBeenCalledWith({ id: body.id, template: "thunderdome-bugs", prompt: "Fix the failing tests please", agents: 3 });
+    expect(ok.room.create).toHaveBeenCalledWith({ id: body.id, template: "thunderdome-bugs", prompt: "Fix the failing tests please", agents: 5 });
     expect(ok.room.run).toHaveBeenCalledTimes(1);
     expect(ok.room.create.mock.invocationCallOrder[0]!).toBeLessThan(ok.room.run.mock.invocationCallOrder[0]!);
 

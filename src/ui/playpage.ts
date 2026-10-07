@@ -146,8 +146,8 @@ async function loadQuota(): Promise<void> {
  */
 const SETUP_STEPS: { at: number; text: string }[] = [
   { at: 0, text: "Copying the demo app into a fresh repo on Artifacts" },
-  { at: 3_000, text: "Forking it for Ponder, Zippy and Testy" },
-  { at: 9_000, text: "Starting 3 sandboxes, one container per robot" },
+  { at: 3_000, text: "Forking it for Ponder, Zippy, Testy, Snip and Sparkle" },
+  { at: 9_000, text: "Starting 5 sandboxes, one container per robot" },
 ];
 /** After this long the note says a cold start is still running. */
 const SETUP_SLOW_MS = 60_000;

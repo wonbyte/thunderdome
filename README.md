@@ -26,8 +26,8 @@ No setup needed: the live deploy runs races for anyone.
 1. Open **[thunderdome.git-bc1.workers.dev/play](https://thunderdome.git-bc1.workers.dev/play)**.
 2. Pick a demo app (`bugs`, `ui` or `clash`) and type a task, for example *"Make the shop page a
    responsive grid of product cards"*. Press start.
-3. Watch Ponder, Zippy and Testy race live. In 2 to 4 minutes the judge picks a winner, merges it,
-   and says why. Click a robot to see its code; open **replay** to watch it again.
+3. Watch Ponder, Zippy, Testy, Snip and Sparkle race live. In 2 to 4 minutes the judge picks a
+   winner, merges it, and says why. Click a robot to see its code; open **replay** to watch it again.
 4. Every race is in the **[gallery](https://thunderdome.git-bc1.workers.dev/races)**, with a
    leaderboard and the judge's reason for each winner.
 
@@ -195,18 +195,19 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 | Conflict race | about $0.10–0.30 | Only when the winner conflicts with a newer source: 3 short resolver runs. |
 | Judge (Workers AI, Clef) | small | 2 short questions per fork, plus 1 question per race and 1 question with 3 screenshots per fork when the task is visual; billed as Workers AI usage. |
 | Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. |
-| Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 3 agent containers busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
+| Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 1 agent container per robot (3 to 5) busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
 | Artifacts | — | Not billed before Oct 15, 2026, when Artifacts billing starts. |
 
 The plan itself is Workers Paid. Each race's agents ran for 53–83 s, and the judge and merge
-took 13–29 s more. `/play` caps public races at `PLAY_DAILY_LIMIT` per day (default 10), so the
-public demo costs at most about $5.50 a day in agent spend.
+took 13–29 s more. `/play` races 5 robots, so its agent spend is about 5/3 of the table:
+$0.72–0.92 a race. It caps public races at `PLAY_DAILY_LIMIT` per day (default 10), so the public
+demo costs at most about $9.20 a day in agent spend.
 
 ## Limits
 
 | What | Limit | Where |
 |---|---|---|
-| Agents per race | 3 to 5 (`/play` always uses 3) | `src/room/task.ts` |
+| Agents per race | 3 to 5 (`/play` always uses 5) | `src/room/task.ts` |
 | Agent run time | 8 minutes each; what it pushed by then still counts | `src/agents/runner.ts` |
 | Race watchdog | 12 minutes after the start, any agent that never reported back (its sandbox lost track, e.g. a deploy reset it) is ended as failed, so the judge still runs on what the forks hold | `src/room/task.ts`, `src/room/TaskRoom.ts` |
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |

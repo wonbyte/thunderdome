@@ -20,7 +20,7 @@ const prompt = "Fix the off-by-one bug in the list";
 describe("parsePlay", () => {
   it("X5: parsePlay accepts a demo template and trims the prompt; rejects other templates, short/long prompts and non-objects with 400; and a wrong or missing invite with 403 only when an invite is set", () => {
     expect(PLAY_TEMPLATES).toEqual(["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
-    expect([PLAY_PROMPT_MIN, PLAY_PROMPT_MAX, PLAY_AGENTS, PLAY_PER_IP]).toEqual([10, 600, 3, 3]);
+    expect([PLAY_PROMPT_MIN, PLAY_PROMPT_MAX, PLAY_AGENTS, PLAY_PER_IP]).toEqual([10, 600, 5, 3]);
 
     for (const template of PLAY_TEMPLATES) {
       expect(parsePlay({ template, prompt: `  ${prompt}\n` }, "")).toEqual({ template, prompt });
