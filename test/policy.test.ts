@@ -83,7 +83,7 @@ describe("decideOutbound for the model API", () => {
   const url = new URL("https://api.anthropic.com/v1/messages");
 
   it("adds the Worker's key for agent sandboxes", () => {
-    expect(decideOutbound(url, { ...props, modelApi: true }, "sk-real")).toEqual({ allow: true, headers: { "x-api-key": "sk-real" } });
+    expect(decideOutbound(url, { ...props, modelApi: true }, "sk-real", "POST")).toEqual({ allow: true, headers: { "x-api-key": "sk-real" } });
   });
 
   it("blocks sandboxes without model access", () => {
@@ -91,11 +91,25 @@ describe("decideOutbound for the model API", () => {
   });
 
   it("trims a pasted key", () => {
-    expect(decideOutbound(url, { ...props, modelApi: true }, " sk-real\n")).toEqual({ allow: true, headers: { "x-api-key": "sk-real" } });
+    expect(decideOutbound(url, { ...props, modelApi: true }, " sk-real\n", "POST")).toEqual({ allow: true, headers: { "x-api-key": "sk-real" } });
   });
 
   it("says when the key is missing", () => {
-    expect(decideOutbound(url, { ...props, modelApi: true })).toMatchObject({ allow: false, status: 503 });
+    expect(decideOutbound(url, { ...props, modelApi: true }, undefined, "POST")).toMatchObject({ allow: false, status: 503 });
+  });
+
+  it("M1: allows only the calls agents make; batches, files and other paths are refused", () => {
+    // Review finding: any path on the model API was open, so a robot could start batches that bill after the race.
+    const agent = { ...props, modelApi: true };
+    const ask = (path: string, method: string) => decideOutbound(new URL(`https://api.anthropic.com${path}`), agent, "sk-real", method).allow;
+    expect(ask("/v1/messages", "POST")).toBe(true);
+    expect(ask("/v1/messages/count_tokens", "POST")).toBe(true);
+    expect(ask("/api/hello", "HEAD")).toBe(true);
+    expect(ask("/api/claude_code/settings", "GET")).toBe(true);
+    expect(ask("/v1/messages/batches", "POST")).toBe(false);
+    expect(ask("/v1/files", "POST")).toBe(false);
+    expect(ask("/v1/messages", "GET")).toBe(false);
+    expect(ask("/v1/messages/../files", "POST")).toBe(false);
   });
 
   it("never sends the key over plain HTTP", () => {

@@ -23,14 +23,19 @@ export function keyShape(key: string | undefined): KeyShape {
 
 /**
  * GET /admin/model-check: one model API call with the Worker's key, sent the way the Outbound
- * Worker sends it. Returns the key's shape and the API's answer, never the key.
+ * Worker sends it. Counting tokens is free and is a call the policy lets agents make. Returns the
+ * key's shape and the API's answer, never the key.
  */
 export async function modelCheck(env: Pick<Env, "ANTHROPIC_API_KEY">, fetcher: typeof fetch = fetch): Promise<Response> {
-  const url = new URL(`https://${MODEL_API_HOST}/v1/models?limit=1`);
+  const url = new URL(`https://${MODEL_API_HOST}/v1/messages/count_tokens`);
   const shape = keyShape(env.ANTHROPIC_API_KEY);
-  const decision = decideOutbound(url, { gitHost: "", gitToken: "", modelApi: true }, env.ANTHROPIC_API_KEY);
+  const decision = decideOutbound(url, { gitHost: "", gitToken: "", modelApi: true }, env.ANTHROPIC_API_KEY, "POST");
   if (!decision.allow) return Response.json({ ok: false, key: shape, error: decision.reason });
-  const response = await fetcher(url, { headers: { ...decision.headers, "anthropic-version": "2023-06-01" } });
+  const response = await fetcher(url, {
+    method: "POST",
+    headers: { ...decision.headers, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({ model: "claude-haiku-4-5", messages: [{ role: "user", content: "ok" }] }),
+  });
   const body = response.ok ? undefined : (await response.text()).slice(0, 500);
   return Response.json({ ok: response.ok, status: response.status, key: shape, error: body });
 }

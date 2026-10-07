@@ -62,6 +62,9 @@ What it does not do yet:
   runs out of time, the ship stays `"conflict"` and nothing is merged. Resolvers see the conflict
   and the task, not the other race that changed the source.
 - Agents run on Anthropic's API, so `ANTHROPIC_API_KEY` must have credits.
+  The Outbound Worker lets agents make only the calls Claude Code needs (`POST /v1/messages`,
+  `count_tokens` and its start-up reads; `MODEL_API_CALLS` in `src/sandbox/policy.ts`), so a robot
+  cannot start batches or upload files. Set a spend limit on the key's Anthropic workspace too.
 
 ## Create a task by hand
 

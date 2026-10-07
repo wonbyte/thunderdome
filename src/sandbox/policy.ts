@@ -122,6 +122,24 @@ export function isPreviewApiPath(url: URL, grant: PreviewApiGrant): boolean {
   return !ambiguousPath(path);
 }
 
+/**
+ * The model API calls an agent makes: messages, and Claude Code's small start-up reads (seen on a
+ * live race, Oct 7). Batches, files and the rest are refused: they could run or bill on after the race.
+ */
+const MODEL_API_CALLS: readonly (readonly [string, string])[] = [
+  ["POST", "/v1/messages"],
+  ["POST", "/v1/messages/count_tokens"],
+  ["HEAD", "/api/hello"],
+  ["GET", "/api/hello"],
+  ["GET", "/api/claude_code/settings"],
+  ["GET", "/api/claude_code/policy_limits"],
+];
+
+/** True for a model API call MODEL_API_CALLS allows. */
+export function isModelApiCall(url: URL, method?: string): boolean {
+  return url.port === "" && MODEL_API_CALLS.some(([m, path]) => m === method && url.pathname === path);
+}
+
 /** The previews API for a preview sandbox; everything else to the Cloudflare API is refused. */
 function decideCloudflareApi(url: URL, props: OutboundProps, method?: string, previewToken?: string): OutboundDecision {
   const grant = props.previewApi;
@@ -157,6 +175,7 @@ export function decideOutbound(
     return { allow: true, headers: { authorization: gitAuthHeader(gitTokenFor(url, props)) } };
   }
   if (url.hostname === MODEL_API_HOST && props.modelApi === true) {
+    if (!isModelApiCall(url, method)) return { allow: false, status: 403, reason: `${method ?? "?"} ${url.pathname} is not a model API call agents make` };
     // A pasted secret can carry a trailing newline.
     const key = modelApiKey?.trim() ?? "";
     if (key === "") return { allow: false, status: 503, reason: "ANTHROPIC_API_KEY is not set on the Worker" };
