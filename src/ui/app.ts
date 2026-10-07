@@ -1672,7 +1672,8 @@ function renderJudgeSteps(b: Board): void {
     ...steps.map((s) => {
       const item = el("li", `jstep ${s.state}`);
       if (s.name.startsWith("fork ")) item.style.setProperty("--color", colorFor(s.name.slice(5)));
-      item.append(el("i", undefined, s.state === "done" ? "✓" : s.state === "failed" ? "✗" : ""), document.createTextNode(s.label));
+      item.title = s.label;
+      item.append(el("i", undefined, s.state === "done" ? "✓" : s.state === "failed" ? "✗" : ""), document.createTextNode(s.short));
       return item;
     }),
   );

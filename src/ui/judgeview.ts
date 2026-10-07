@@ -149,8 +149,15 @@ export function judgeView(body: unknown): JudgeView | undefined {
 /** One step of the judge as the page lists it. */
 export interface JudgeStepView {
   name: string;
-  label: string;
+  label: string; // what the step does, for the tooltip
+  short: string; // the chip's text
   state: "waiting" | "running" | "done" | "failed";
+}
+
+function stepShort(name: string): string {
+  if (name.startsWith("fork ")) return displayName(name.slice(5));
+  const labels: Record<string, string> = { look: "Look", split: "Split?", compare: "Side by side", fuse: "Fusion", ship: "Ship" };
+  return labels[name] ?? name;
 }
 
 function stepLabel(name: string): string {
@@ -170,6 +177,6 @@ export function judgeSteps(agents: string[], steps: WireJudgeStep[]): JudgeStepV
   return always.flatMap((name): JudgeStepView[] => {
     const step = steps.find((s) => s.name === name);
     if (step === undefined && sometimes.has(name)) return [];
-    return [{ name, label: stepLabel(name), state: step?.state ?? "waiting" }];
+    return [{ name, label: stepLabel(name), short: stepShort(name), state: step?.state ?? "waiting" }];
   });
 }

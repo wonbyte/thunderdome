@@ -74,6 +74,7 @@ describe("judge steps", () => {
       ["ship", "waiting"],
     ]);
     expect(steps[0]!.label).toBe("Ponder: tests + Clef");
+    expect(steps.map((s) => s.short)).toEqual(["Ponder", "Zippy", "Split?", "Fusion", "Ship"]);
   });
 
   it("V6: a live judge event updates the task's steps, and a replay plays each step's start and end", () => {
