@@ -43,7 +43,7 @@ const ROUTES = {
 };
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     const url = new URL(request.url);
     const route = `${request.method} ${url.pathname}`;
     const access = accessFor(request.method, url.pathname);
@@ -67,7 +67,7 @@ export default {
       const judgeId = judgeTaskId(url.pathname);
       if (judgeId !== undefined) return await handleJudge(request, env, judgeId);
       if (tasks) return await handleTasks(request, env);
-      if (play) return await handlePlay(request, env);
+      if (play) return await handlePlay(request, env, (work) => ctx.waitUntil(work));
       if (route === "POST /admin/races") return await handleRaceBackfill(request, env);
       if (route === "POST /admin/purge") return await handlePurge(request, env);
       if (route === "GET /admin/model-check") return await modelCheck(env);

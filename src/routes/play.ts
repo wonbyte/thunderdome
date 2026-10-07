@@ -19,11 +19,14 @@ export function isPlayPath(pathname: string): boolean {
   return pathname === "/play" || pathname === "/play/quota";
 }
 
+/** Keeps work going after the response (the Worker's ctx.waitUntil). Without one, the work is awaited. */
+export type WaitUntil = (work: Promise<unknown>) => void;
+
 /**
  * POST /play starts a race when the input checks and the quota allow it; GET /play/quota shows
  * today's quota.
  */
-export async function handlePlay(request: Request, env: PlayEnv): Promise<Response> {
+export async function handlePlay(request: Request, env: PlayEnv, waitUntil?: WaitUntil): Promise<Response> {
   const { pathname } = new URL(request.url);
   const day = utcDay(new Date());
   const limit = playDailyLimit(env.PLAY_DAILY_LIMIT);
@@ -34,14 +37,16 @@ export async function handlePlay(request: Request, env: PlayEnv): Promise<Respon
     return Response.json({ ...view, invite: invite !== "" });
   }
   if (request.method !== "POST") return methodNotAllowed("POST");
-  return startPlay(request, env, day, limit, invite);
+  return startPlay(request, env, day, limit, invite, waitUntil);
 }
 
 /**
  * Checks the input, takes the quota, then creates and runs the task. A failed create or run
- * does not give the play back. The fork tokens are never read into the response.
+ * does not give the play back. The fork tokens are never read into the response. With waitUntil,
+ * the answer comes once the forks exist and the robots start behind it: starting 5 sandboxes takes
+ * about 9 s, and the race page shows them start (a failed start reaches it as a status event).
  */
-async function startPlay(request: Request, env: PlayEnv, day: string, limit: number, invite: string): Promise<Response> {
+async function startPlay(request: Request, env: PlayEnv, day: string, limit: number, invite: string, waitUntil?: WaitUntil): Promise<Response> {
   const input = parsePlay(await request.json().catch(() => undefined), invite);
   if ("error" in input) return Response.json({ error: input.error }, { status: input.status });
   const ip = request.headers.get("CF-Connecting-IP") ?? "unknown";
@@ -54,6 +59,10 @@ async function startPlay(request: Request, env: PlayEnv, day: string, limit: num
   const room = env.TASK_ROOM.getByName(id);
   const created = await room.create({ id, template: input.template, prompt: input.prompt, agents: PLAY_AGENTS });
   if (!created.ok) return Response.json(created.error, { status: created.status });
+  if (waitUntil !== undefined) {
+    waitUntil(room.run().catch((cause: unknown) => console.error({ event: "play.run_failed", id, error: String(cause) })));
+    return Response.json({ id, page: `/race/${id}`, remaining: taken.remaining }, { status: 202 });
+  }
   const run = await room.run();
   if (!run.ok) return Response.json(run.error, { status: run.status });
   return Response.json({ id, page: `/race/${id}`, remaining: taken.remaining }, { status: 202 });

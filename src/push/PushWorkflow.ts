@@ -16,6 +16,8 @@ const BUILD_STEP = {
   retries: { limit: 2, delay: "5 seconds", backoff: "constant" },
   timeout: "90 seconds",
 } as const;
+/** Pushes come in bursts: a build waits this long, then runs only if no newer push replaced its head. */
+const PREVIEW_SETTLE = "3 seconds";
 /** One build try gives up here, inside BUILD_STEP's timeout, so its failure is still recorded. */
 const BUILD_TRY_MS = 80_000;
 const TOKEN_TTL_S = 600;
@@ -39,6 +41,7 @@ interface PushRoom {
   recordPush(push: PushInput): Promise<PushRecordResult>;
   savePreview(agent: string, preview: PreviewInput): Promise<boolean>;
   previewFailed(agent: string, commit: string): Promise<boolean>;
+  needsPreview(agent: string, commit: string): Promise<boolean>;
   saveBasePreview(preview: PreviewInput): Promise<boolean>;
 }
 
@@ -67,6 +70,10 @@ export class PushWorkflow extends WorkflowEntrypoint<Env> {
       return result.build;
     });
     if (!build) return { status: "recorded", taskId, agent, after };
+    // A build for a head a newer push already replaced is a wasted container start.
+    await step.sleep("settle", PREVIEW_SETTLE);
+    const still = await step.do("still the head", () => room(this.env, taskId).needsPreview(agent, after));
+    if (!still) return { status: "recorded", taskId, agent, after };
     let url: string;
     try {
       url = await step.do("build preview", BUILD_STEP, async () => {

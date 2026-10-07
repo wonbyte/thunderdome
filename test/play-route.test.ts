@@ -137,6 +137,15 @@ describe("play routes", () => {
     const stuck = fakeEnv({ run: async () => ({ ok: false, status: 409, error: { error: "Task is running; only a ready task can run" } }) });
     expect((await handlePlay(play(good), stuck.env)).status).toBe(409);
 
+    // With waitUntil the answer does not wait for the robots to start; the run goes on behind it.
+    const quick = fakeEnv();
+    const later: Promise<unknown>[] = [];
+    const answered = await handlePlay(play(good), quick.env, (work) => later.push(work));
+    expect(answered.status).toBe(202);
+    expect(later).toHaveLength(1);
+    await Promise.all(later);
+    expect(quick.room.run).toHaveBeenCalledTimes(1);
+
     // GET /play/quota: the view plus the invite flag.
     const open = fakeEnv();
     const view = await handlePlay(new Request("https://thunderdome.test/play/quota"), open.env);

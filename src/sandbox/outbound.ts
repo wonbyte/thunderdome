@@ -4,7 +4,7 @@
 import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { handleThunderdomeApi } from "./thunderdomeApi";
-import { decideOutbound, isThunderdomeApi, type OutboundProps } from "./policy";
+import { decideOutbound, isThunderdomeApi, MODEL_API_HOST, type OutboundProps } from "./policy";
 
 /** What one sandbox may reach; see policy.ts. */
 export type { OutboundProps } from "./policy";
@@ -29,10 +29,14 @@ export class Outbound extends WorkerEntrypoint<Env, OutboundProps> {
     if (!decision.allow) return new Response(`${decision.reason}\n`, { status: decision.status });
     const headers = new Headers(request.headers);
     for (const [name, value] of Object.entries(decision.headers)) headers.set(name, value);
-    const response = await fetch(new Request(request, { headers }));
+    // A redirect goes back to the sandbox, so following it passes the policy again: the token
+    // chosen for this host never travels to another one.
+    const response = await fetch(new Request(request, { headers, redirect: "manual" }));
+    const url = new URL(request.url);
+    // Which model API paths agents use, before the policy narrows them (temporary, Oct 7).
+    if (url.hostname === MODEL_API_HOST) console.log({ event: "outbound.model", method: request.method, path: url.pathname, status: response.status });
     // A refused model call ends the agent with a short message; keep the details in the Worker logs.
     if (response.status === 401 || response.status === 403) {
-      const url = new URL(request.url);
       console.error({ event: "outbound.refused", host: url.hostname, path: url.pathname, status: response.status });
     }
     return response;

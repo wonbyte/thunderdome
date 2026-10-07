@@ -282,6 +282,12 @@ export class TaskRoom extends DurableObject<Env> {
     return { known: true, recorded, build: needsPreview(task, push.agent, push.after) };
   }
 
+  /** Called by the push Workflow just before a build: false once a newer push replaced this head. */
+  needsPreview(agent: string, commit: string): boolean {
+    const task = this.#task();
+    return task !== undefined && needsPreview(task, agent, commit);
+  }
+
   /** Called by the push Workflow when a preview build failed for good, so the look stops waiting for it. */
   previewFailed(agent: string, commit: string): boolean {
     const task = this.#task();
