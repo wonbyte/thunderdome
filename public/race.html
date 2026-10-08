@@ -17,6 +17,7 @@
     <div class="pills">
       <span id="status" class="pill status">loading</span>
       <span id="live" class="pill live" data-live="off">offline</span>
+      <span id="watchers" class="pill watchers" hidden></span>
       <a id="replay-link" class="pill replay-link" href="#" hidden>▶ replay</a>
       <button id="help" class="pill help" type="button" aria-expanded="false" aria-controls="explainer" title="What am I looking at?" aria-label="What am I looking at?">?</button>
     </div>
@@ -73,9 +74,16 @@
         <span class="core-label">repo</span>
       </div>
       <div id="bots" class="bots"></div>
+      <div id="reactions" class="reactions" aria-hidden="true"></div>
       <div id="banner" class="banner" hidden></div>
       <ol id="judge-steps" class="judge-steps" aria-label="The judge's steps" hidden></ol>
       <ol id="ticker" class="ticker" aria-live="polite"></ol>
+    </section>
+
+    <section id="cheer" class="card cheer" aria-labelledby="cheer-title" hidden>
+      <h2 id="cheer-title">Cheer</h2>
+      <div id="cheer-row" class="cheer-row" role="group" aria-label="Send a reaction"></div>
+      <p class="hint">Everyone watching sees it float over your pick's robot, or over the repo.</p>
     </section>
 
     <section id="guess" class="card guess" aria-labelledby="guess-title" hidden>

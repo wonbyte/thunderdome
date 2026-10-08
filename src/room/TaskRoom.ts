@@ -19,6 +19,7 @@ import {
   type ClaimResult,
 } from "./claims";
 import { RACE_INDEX_MAX, raceMemory, summaryOf, type RaceMemory } from "./races";
+import { parseReaction, roomAllows, socketAllows, type RoomWindow } from "./reactions";
 import {
   applyBasePreview,
   applyOutcome,
@@ -79,7 +80,9 @@ export type LiveEvent =
   | { kind: "agent-end"; taskId: string; agent: string; outcome: AgentOutcome; status: TaskStatus }
   | { kind: "verdict"; taskId: string; verdict: Verdict }
   | { kind: "judge"; taskId: string; step: JudgeStep }
-  | { kind: "base-preview"; taskId: string; preview: Preview };
+  | { kind: "base-preview"; taskId: string; preview: Preview }
+  | { kind: "watchers"; taskId: string; n: number } // how many sockets are open, on every open and close
+  | { kind: "reaction"; taskId: string; emoji: string; agent?: string }; // a viewer's cheer (src/room/reactions.ts); not recorded
 
 /**
  * One TaskRoom per task. It owns the task state, the fork tokens, the claim board, the
@@ -130,25 +133,62 @@ export class TaskRoom extends DurableObject<Env> {
     const task = this.#task() ?? null;
     const taskId = task?.id ?? new URL(request.url).pathname.split("/")[2] ?? "";
     this.#send(server, JSON.stringify({ kind: "snapshot", taskId, task } satisfies LiveEvent));
+    this.#watchers(taskId);
     return new Response(null, { status: 101, webSocket: client });
   }
 
-  /** Clients only listen. */
-  override webSocketMessage(_ws: WebSocket, _message: string | ArrayBuffer): void {}
+  /**
+   * The one thing a client may send: a reaction (src/room/reactions.ts), relayed to every viewer
+   * as an emoji from the list and, when it is one of the race's robots, the viewer's pick. One per
+   * socket per second and ten per room per second; the rest are dropped. Nothing is stored.
+   */
+  override webSocketMessage(ws: WebSocket, message: string | ArrayBuffer): void {
+    const task = this.#task();
+    if (task === undefined) return;
+    const reaction = parseReaction(message, task.agents.map((slot) => slot.name));
+    if (reaction === undefined) return;
+    const now = Date.now();
+    // In memory only: after hibernation the sockets are new objects, and the first reaction passes.
+    if (!socketAllows(this.#reactedAt.get(ws), now)) return;
+    const window = roomAllows(this.#reactions, now);
+    if (window === undefined) return;
+    this.#reactions = window;
+    this.#reactedAt.set(ws, now);
+    this.#broadcast({ kind: "reaction", taskId: task.id, ...reaction });
+  }
 
-  /** Closes our side of a socket the client closed. */
+  /** Closes our side of a socket the client closed, and tells the rest how many are left. */
   override webSocketClose(ws: WebSocket, code: number, reason: string, _wasClean: boolean): void {
     try {
       ws.close(code, reason);
     } catch {
       // Already closed, or a code that cannot be sent back (1005, 1006).
     }
+    this.#watchers(this.#task()?.id, ws);
   }
 
   /** Logs a socket error; the socket is dropped by the runtime. */
-  override webSocketError(_ws: WebSocket, error: unknown): void {
+  override webSocketError(ws: WebSocket, error: unknown): void {
     console.error({ event: "live.socket_error", error: String(error) });
+    this.#watchers(this.#task()?.id, ws);
   }
+
+  /**
+   * How many viewers are connected, to everyone but `leaving`. A socket #send closes (a failed
+   * send) never passes through webSocketClose, so the count can run one high until the next open
+   * or close corrects it.
+   */
+  #watchers(taskId: string | undefined, leaving?: WebSocket): void {
+    if (taskId === undefined) return;
+    const open = this.ctx.getWebSockets().filter((s) => s !== leaving);
+    const message = JSON.stringify({ kind: "watchers", taskId, n: open.length } satisfies LiveEvent);
+    for (const ws of open) this.#send(ws, message);
+  }
+
+  /** When each socket last reacted; see webSocketMessage. */
+  readonly #reactedAt = new WeakMap<WebSocket, number>();
+  /** The room's reaction window; see webSocketMessage. */
+  #reactions: RoomWindow | undefined;
 
   /**
    * Makes the task: the source repo and one fork per agent, with the race memory. Fork tokens stay

@@ -161,8 +161,10 @@ current task. Then every change comes as one JSON message with a `kind` and the 
 | `agent-end` | An agent ended (`outcome`, and the task `status`) |
 | `judge` | A judge step started or ended (`step`: `name` such as `fork ponder`, `look`, `split`, `compare`, `fuse` or `ship`; `state` `running`, `done` or `failed`; `startedAt`, `endedAt`). They are also saved as `judging` on the task, so replays play them. |
 | `verdict` | The judge saved its verdict |
+| `watchers` | A viewer connected or left (`n`: sockets open). Not recorded; replays have none. |
+| `reaction` | A viewer cheered (`emoji`, one of 🔥 👏 😂 😮 💪 ⚡; `agent`: their pick, when it races here). The one message a client may send is `{ "kind": "react", "emoji", "agent"? }`; one per socket per second and ten per race per second are relayed, the rest dropped (`src/room/reactions.ts`). Not recorded. |
 
-A request without `Upgrade: websocket` gets `426`. The server ignores messages you send.
+A request without `Upgrade: websocket` gets `426`. The server ignores every message you send except a reaction (`react`, above).
 
 ## Race gallery
 

@@ -109,7 +109,9 @@ export type BoardEvent =
   | { kind: "agent-end"; taskId: string; agent: string; outcome: { end: "done" | "failed" | "timeout" }; status: WireTaskStatus }
   | { kind: "verdict"; taskId: string; verdict: WireVerdict }
   | { kind: "judge"; taskId: string; step: WireJudgeStep }
-  | { kind: "base-preview"; taskId: string; preview: WirePreview };
+  | { kind: "base-preview"; taskId: string; preview: WirePreview }
+  | { kind: "watchers"; taskId: string; n: number } // viewers connected; the page shows it, the board ignores it
+  | { kind: "reaction"; taskId: string; emoji: string; agent?: string }; // a viewer's cheer; the page floats it, the board ignores it
 
 /** Each robot's color on the page. */
 export const AGENT_COLORS: Readonly<Record<string, string>> = {
@@ -418,6 +420,10 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
       return { ...board, basePreview: { ...event.preview } };
     case "judge":
       return board.task === undefined ? board : { ...board, task: { ...board.task, judging: withJudgeStep(board.task.judging ?? [], event.step) } };
+    case "watchers":
+    case "reaction":
+      // Spectators: the page shows them, the race does not change.
+      return board;
     default:
       return board;
   }

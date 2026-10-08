@@ -1417,6 +1417,36 @@ body.explaining .caption { display: block; }
 @media (max-width: 640px) { .explainer { flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { .explainer { animation: none; } }
 
+/* ---------- spectators ---------- */
+.watchers { color: var(--cyan); border-color: #7fe3ff44; }
+.cheer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.cheer h2 { margin: 0; }
+.cheer .hint { flex-basis: 100%; margin: 0; }
+.cheer-row { display: flex; gap: 6px; }
+.cheer-btn {
+  width: 40px; height: 40px; border-radius: 12px; cursor: pointer; font-size: 20px; line-height: 1;
+  border: 1px solid var(--line); background: var(--panel-2); transition: transform .2s var(--ease), border-color .2s;
+}
+.cheer-btn:hover { transform: translateY(-2px) scale(1.08); border-color: var(--cyan); }
+.cheer-row.sent .cheer-btn { animation: cheer-sent .5s var(--ease); }
+@keyframes cheer-sent { 40% { transform: scale(.92); } }
+/* Above the robots and their effects, below the banner and the judge's steps; the stage isolates it. */
+.reactions { position: absolute; inset: 0; z-index: 5; pointer-events: none; overflow: hidden; }
+.reaction {
+  position: absolute; font-size: 30px; line-height: 1; transform: translate(-50%, -100%);
+  animation: react-float 2.4s var(--ease) forwards; filter: drop-shadow(0 2px 6px #000a);
+}
+@keyframes react-float {
+  0% { opacity: 0; transform: translate(-50%, -100%) scale(.6); }
+  12% { opacity: 1; transform: translate(-50%, -130%) scale(1.15); }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--drift)), -420%) scale(.9); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .reaction { animation: react-fade 2.4s ease forwards; }
+  @keyframes react-fade { 0% { opacity: 0; } 15% { opacity: 1; } 100% { opacity: 0; } }
+  .cheer-btn, .cheer-row.sent .cheer-btn { transition: none; animation: none; }
+}
+
 /* ---------- what Clef saw ---------- */
 .look-panel { margin: 18px 0 6px; padding: 14px 16px; border-radius: 14px; background: #090b14; border: 1px solid var(--line); }
 .look-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 12px; }

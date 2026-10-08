@@ -133,6 +133,8 @@ let stopped = false;
 let pending: BoardEvent[] = [];
 let platform: PlatformState = emptyPlatform();
 let replay: Replay | undefined;
+/** The live socket, for sending a reaction; set on every (re)connect. */
+let socket: WebSocket | undefined;
 /** performance.now() when the judging reveal started; undefined when there is none to play. */
 let revealStart: number | undefined;
 let revealFrame: number | undefined;
@@ -269,6 +271,64 @@ function main(): void {
   // load() marks itself loading at once, so early socket events wait for the board.
   void load(id);
   connect(id, 0);
+  setupCheer();
+}
+
+// ---- spectators ----
+
+/** Mirrors REACTIONS in src/room/reactions.ts: the room relays only these. */
+const REACTIONS = ["🔥", "👏", "😂", "😮", "💪", "⚡"] as const;
+const REACTION_MS = 2_400;
+const REACTIONS_MAX = 30;
+const CHEER_GAP_MS = 1_000;
+let cheeredAt = -Infinity;
+
+/** "12 watching" in the header; hidden in a replay or while reconnecting. */
+function renderWatchers(n: number | undefined): void {
+  const pill = byId("watchers");
+  pill.hidden = replay !== undefined || n === undefined;
+  pill.textContent = n === undefined ? "" : `${n} watching`;
+}
+
+/** The cheer strip: six emoji, live only. A tap sends one, with the viewer's pick. */
+function setupCheer(): void {
+  const row = byId("cheer-row");
+  row.replaceChildren(
+    ...REACTIONS.map((emoji) => {
+      const button = el("button", "cheer-btn", emoji);
+      button.type = "button";
+      button.setAttribute("aria-label", `Cheer ${emoji}`);
+      button.addEventListener("click", () => sendReaction(emoji));
+      return button;
+    }),
+  );
+  byId("cheer").hidden = false;
+}
+
+/** Sends a reaction once a second at most, only while the socket is open. */
+function sendReaction(emoji: string): void {
+  const now = performance.now();
+  if (now - cheeredAt < CHEER_GAP_MS || socket === undefined || socket.readyState !== WebSocket.OPEN || replay !== undefined) return;
+  cheeredAt = now;
+  socket.send(JSON.stringify({ kind: "react", emoji, ...(pick === undefined ? {} : { agent: pick }) }));
+  kick(byId("cheer-row"), "sent");
+}
+
+/** An emoji floats up from the robot the viewer picked, or from the core, on every viewer's stage. */
+function floatReaction(emoji: unknown, agent: unknown): void {
+  if (typeof emoji !== "string" || !(REACTIONS as readonly string[]).includes(emoji)) return;
+  const layer = byId("reactions");
+  if (layer.childElementCount >= REACTIONS_MAX) return;
+  const stage = byId("stage").getBoundingClientRect();
+  const from = (typeof agent === "string" ? bots.get(agent)?.root : undefined) ?? byId("core");
+  const box = from.getBoundingClientRect();
+  const node = el("span", "reaction", emoji);
+  // A little scatter, so two cheers for the same robot do not stack.
+  node.style.left = `${box.left - stage.left + box.width / 2 + (Math.random() - 0.5) * 40}px`;
+  node.style.top = `${box.top - stage.top}px`;
+  node.style.setProperty("--drift", `${(Math.random() - 0.5) * 60}px`);
+  layer.append(node);
+  setTimeout(() => node.remove(), REACTION_MS);
 }
 
 /** Floating dust in the stage, so the page is never still. */
@@ -350,16 +410,18 @@ async function loadSteps(id: string): Promise<WireStep[]> {
 function connect(id: string, attempt: number): void {
   if (stopped) return;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  const socket = new WebSocket(`${scheme}://${location.host}/tasks/${id}/live`);
+  const ws = new WebSocket(`${scheme}://${location.host}/tasks/${id}/live`);
+  socket = ws;
   let opened = false;
-  socket.addEventListener("open", () => {
+  ws.addEventListener("open", () => {
     opened = true;
     setLive("live");
     if (attempt > 0) void load(id);
   });
-  socket.addEventListener("message", (message: MessageEvent) => onMessage(message.data));
-  socket.addEventListener("close", () => {
+  ws.addEventListener("message", (message: MessageEvent) => onMessage(message.data));
+  ws.addEventListener("close", () => {
     setLive("reconnecting");
+    renderWatchers(undefined);
     if (stopped) return;
     const step = opened ? 0 : Math.min(attempt, BACKOFF_MS.length - 1);
     setTimeout(() => connect(id, opened ? 1 : attempt + 1), BACKOFF_MS[step] ?? 10000);
@@ -386,6 +448,9 @@ function onMessage(data: unknown): void {
   const event = parseEvent(data);
   if (event === undefined) return;
   if (event.kind === "steps" && Array.isArray(event.steps)) addLog(event.steps);
+  // Spectators are not part of the race: shown at once, never buffered, never on the board.
+  if (event.kind === "watchers") return renderWatchers(typeof event.n === "number" ? event.n : undefined);
+  if (event.kind === "reaction") return floatReaction(event.emoji, event.agent);
   if (loading) {
     pending.push(event);
     return;
@@ -753,6 +818,8 @@ function render(b: Board): void {
   renderTimer();
   renderRail(b);
   renderGuess(b);
+  // Cheering is for a race in progress: live only, and gone once it has ended.
+  byId("cheer").hidden = replay !== undefined || b.ended;
   flushScroll();
 }
 

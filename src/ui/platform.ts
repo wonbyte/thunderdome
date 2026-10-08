@@ -135,6 +135,10 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
       }
       break;
     }
+    case "watchers":
+    case "reaction":
+      // Spectators touch no product.
+      break;
     case "judge": {
       // The judge Workflow's steps, as they start and end.
       const { name, state: stepState } = event.step;
