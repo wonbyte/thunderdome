@@ -1,7 +1,6 @@
 // The Thunderdome API that an agent calls from its sandbox (see the claim CLI in image/claim.mjs).
 // The agent's identity comes from the Outbound props, never from the request.
 import type { ClaimBoard, ClaimResult } from "../room/claims";
-import { coloOf, traceColo } from "../room/regions";
 import { THUNDERDOME_API_PREFIX, type OutboundProps } from "./policy";
 
 /** The TaskRoom methods this API uses. */
@@ -12,7 +11,7 @@ export interface ClaimRoom {
 }
 
 /**
- * Answers an agent's claim, release and board calls, and where its sandbox runs. The agent comes from the Outbound props, never
+ * Answers an agent's claim, release and board calls. The agent comes from the Outbound props, never
  * from the request.
  */
 export async function handleThunderdomeApi(request: Request, props: OutboundProps, roomFor: (taskId: string) => ClaimRoom): Promise<Response> {
@@ -23,7 +22,6 @@ export async function handleThunderdomeApi(request: Request, props: OutboundProp
   const room = roomFor(props.taskId);
   const route = `${request.method} ${new URL(request.url).pathname.slice(THUNDERDOME_API_PREFIX.length)}`;
   if (route === "GET claims") return Response.json(await room.claimBoard());
-  if (route === "GET where") return Response.json({ colo: await coloAt(request) ?? null });
   if (route !== "POST claims" && route !== "POST release") return Response.json({ error: "not found" }, { status: 404 });
   let body: Record<string, unknown>;
   try {
@@ -40,16 +38,3 @@ export async function handleThunderdomeApi(request: Request, props: OutboundProp
   return Response.json(result, { status: result.ok ? 200 : result.status });
 }
 
-/**
- * The data center a sandbox request reached: the request's own `cf.colo` when the runtime sets it
- * on an intercepted request, else where this Worker runs, from Cloudflare's trace page.
- */
-async function coloAt(request: Request): Promise<string | undefined> {
-  const seen = coloOf((request as { cf?: { colo?: unknown } }).cf?.colo);
-  if (seen !== undefined) return seen;
-  try {
-    return traceColo(await (await fetch("https://www.cloudflare.com/cdn-cgi/trace", { signal: AbortSignal.timeout(5_000) })).text());
-  } catch {
-    return undefined;
-  }
-}

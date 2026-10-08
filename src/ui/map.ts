@@ -12,7 +12,9 @@ export const REGION_INFO: Readonly<Record<string, RegionInfo>> = {
   enam: { name: "Eastern North America", lat: 39, lon: -77.5 },
   weur: { name: "Western Europe", lat: 50.1, lon: 8.7 },
   eeur: { name: "Eastern Europe", lat: 52.2, lon: 21 },
-  apac: { name: "Asia-Pacific", lat: 1.35, lon: 103.8 },
+  oc: { name: "Oceania", lat: -33.9, lon: 151.2 },
+  // No longer handed out (its robot landed in Hong Kong, which the model API refuses); kept so races from Oct 8 still draw it.
+  apac: { name: "Asia-Pacific", lat: 22.3, lon: 114.2 },
 };
 
 /** The map's viewBox: longitude -180..180, latitude 80..-60 (no polar caps). */

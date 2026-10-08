@@ -202,3 +202,16 @@ Forking the 5 agent repos from a fresh source in parallel cut task creation from
 once (t-352aa79a), then failed with `INTERNAL_ERROR` on 4 tries in a row, on two templates; the
 same probe with the forks one at a time succeeded (201 in 13.9 s). Forks stay sequential
 (`forkAgents` in `src/room/task.ts`).
+
+## Location hints and where things ran (Oct 8, t-0bf89c65)
+
+- Location hint `apac` put a sandbox Durable Object in HKG. The model API refuses Hong Kong: every
+  call from that robot, start-up reads included, got 403 "Request not allowed", and the agent failed
+  at once. `src/room/regions.ts` uses only regions the model API serves (`oc` in place of `apac`).
+- `weur` landed in AMS. A Durable Object can read its own colo from `https://www.cloudflare.com/cdn-cgi/trace`.
+- A container's intercepted requests reach the Outbound Worker with no `cf.colo`, and a probe from
+  inside the container through the Outbound Worker returned no colo either. Cloudflare's docs say a
+  container may start away from its Durable Object; there is no way found yet to see where.
+- The fusion push waited 9 minutes on a sandbox RPC and then failed with "The container connection
+  is temporarily unavailable, try again shortly"; the fuse-push container was already inactive.
+  Earlier 5-robot races fused in 33–45 s. The push now has its own 60 s limit (`FUSE_PUSH_WAIT_MS`).

@@ -1,20 +1,14 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import { coloOf, REGIONS, regionFor, traceColo } from "../src/room/regions";
-import { handleThunderdomeApi, type ClaimRoom } from "../src/sandbox/thunderdomeApi";
-import type { OutboundProps } from "../src/sandbox/policy";
 import { mapPins, MAP_H, MAP_W, project, REGION_INFO } from "../src/ui/map";
-
-const props: OutboundProps = { gitHost: "git.test", gitToken: "t", modelApi: true, taskId: "t-0123abcd", agent: "ponder" };
-const room = {} as ClaimRoom;
-const where = (cf?: { colo: unknown }): Request => Object.assign(new Request("https://git.test/_thunderdome/where"), cf === undefined ? {} : { cf });
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe("regions", () => {
   it("G1: the first three robots get three continents, and five get five regions", () => {
-    expect([0, 1, 2].map(regionFor)).toEqual(["wnam", "weur", "apac"]);
-    expect([0, 1, 2, 3, 4].map(regionFor)).toEqual(["wnam", "weur", "apac", "enam", "eeur"]);
+    expect([0, 1, 2].map(regionFor)).toEqual(["wnam", "weur", "oc"]);
+    expect([0, 1, 2, 3, 4].map(regionFor)).toEqual(["wnam", "weur", "oc", "enam", "eeur"]);
+    // Hong Kong (where "apac" landed) is refused by the model API.
+    expect(REGIONS).not.toContain("apac");
     expect(regionFor(5)).toBe("wnam");
     expect(new Set(REGIONS).size).toBe(5);
     // The page draws every region the server hands out.
@@ -28,16 +22,6 @@ describe("regions", () => {
     expect(traceColo("colo=\n")).toBeUndefined();
   });
 
-  it("G3: GET where answers the request's colo, else where the Worker runs", async () => {
-    expect(await (await handleThunderdomeApi(where({ colo: "NRT" }), props, () => room)).json()).toEqual({ colo: "NRT" });
-    vi.stubGlobal("fetch", async () => new Response("colo=FRA\n"));
-    expect(await (await handleThunderdomeApi(where(), props, () => room)).json()).toEqual({ colo: "FRA" });
-    vi.stubGlobal("fetch", async () => { throw new Error("offline"); });
-    expect(await (await handleThunderdomeApi(where({ colo: "bad" }), props, () => room)).json()).toEqual({ colo: null });
-    // A sandbox that runs no agent has no Thunderdome API.
-    expect((await handleThunderdomeApi(where({ colo: "NRT" }), { gitHost: "git.test", gitToken: "t" }, () => room)).status).toBe(404);
-  });
-
   it("G4: each region lands on its continent, and robots sharing a region sit side by side", () => {
     // [lon min, lon max, lat min, lat max] per region's continent.
     const boxes: Record<string, [number, number, number, number]> = {
@@ -45,7 +29,8 @@ describe("regions", () => {
       enam: [-90, -65, 25, 50],
       weur: [-10, 15, 40, 60],
       eeur: [15, 40, 40, 60],
-      apac: [90, 150, -10, 40],
+      oc: [113, 154, -44, -10],
+      apac: [100, 125, 15, 30],
     };
     for (const [region, info] of Object.entries(REGION_INFO)) {
       const [lonMin, lonMax, latMin, latMax] = boxes[region]!;

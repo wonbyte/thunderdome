@@ -8,9 +8,8 @@ import { clip, parseEvent, resultOf, splitLines, stepsOf, type RunResult, type S
 import { agentCommand, gitIdentity, POLL_INTERVAL_MS, type AgentOutcome, type AgentSpec } from "../agents/runner";
 import type { AgentName } from "../agents/prompt";
 import { retry } from "../retry";
-import { coloOf, traceColo } from "../room/regions";
+import { traceColo } from "../room/regions";
 import type { Outbound, OutboundProps } from "./outbound";
-import { thunderdomeApiBase } from "./policy";
 
 /** Where a sandbox clones the repo it works on. */
 export const REPO_DIR = "/workspace/repo";
@@ -26,8 +25,6 @@ const STDERR_PATH = `${RUN_DIR}/stderr.log`;
 const EXIT_PATH = `${RUN_DIR}/exit-code`;
 const PID_PATH = `${RUN_DIR}/pid`;
 const RUN_KEY = "agent-run";
-/** Prints the colo the Thunderdome API answers for this container; 5 s at most. */
-const WHERE_SCRIPT = `fetch(process.argv[1], { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).then((b) => process.stdout.write(String(b.colo ?? "")))`;
 /** Any Cloudflare-served host answers this with the colo that served it. */
 const TRACE_URL = "https://www.cloudflare.com/cdn-cgi/trace";
 const READ_CHUNK_BYTES = 1 << 20;
@@ -176,7 +173,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
       shouldRetry: () => true,
     });
     const base = (await this.#must(["git", "rev-parse", "HEAD"])).stdout.trim();
-    const colo = await this.#where(props, spec.fork);
+    const colo = await this.#where(spec.fork);
     await this.#files.remove(RUN_DIR, { recursive: true, force: true });
     await this.#files.mkdir(RUN_DIR, { recursive: true });
     const { argv, env } = agentCommand(spec);
@@ -200,17 +197,13 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
   }
 
   /**
-   * Where the container runs: the data center the Thunderdome API saw its request at. Asked from
-   * inside the container, before the agent starts. A failed answer never fails the start.
+   * The data center this Durable Object runs in, where its location hint put it. The container
+   * usually starts nearby; Cloudflare does not promise it, and its egress shows no location
+   * (an in-container probe came back empty, Oct 8). A failed answer never fails the start.
    */
-  async #where(props: OutboundProps, fork: string): Promise<string | undefined> {
+  async #where(fork: string): Promise<string | undefined> {
     try {
-      const out = await this.#execRaw(["node", "-e", WHERE_SCRIPT, `${thunderdomeApiBase(props.gitHost)}/where`], REPO_DIR, {});
-      const container = coloOf(out.stdout);
-      // Day-one check: a container may start away from its Durable Object; the log shows both.
-      const object = traceColo(await (await fetch(TRACE_URL, { signal: AbortSignal.timeout(5_000) })).text());
-      console.log({ event: "sandbox.where", fork, container, object });
-      return container;
+      return traceColo(await (await fetch(TRACE_URL, { signal: AbortSignal.timeout(5_000) })).text());
     } catch (error) {
       console.error({ event: "sandbox.where_failed", fork, error: String(error).slice(0, 200) });
       return undefined;

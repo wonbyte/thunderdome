@@ -96,7 +96,7 @@ export interface AgentSlot extends ForkSlot, Partial<Omit<AgentOutcome, "end">> 
   push?: PushState;
   usage?: Usage; // the agent's model calls so far, counted by the Outbound Worker
   region?: Region; // the location hint its sandbox was given
-  colo?: string; // the Cloudflare data center its sandbox answered from ("AMS"), when known
+  colo?: string; // the Cloudflare data center its sandbox's Durable Object ran in ("AMS"), when known
 }
 
 /** creating → ready → running → finished. "failed" means the forks could not be made. */

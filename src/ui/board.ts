@@ -29,7 +29,7 @@ export interface WireAgent {
   costUsd?: number;
   usage?: WireUsage; // races from before the meter have none
   region?: string; // the location hint its sandbox got (src/room/regions.ts); older races have none
-  colo?: string; // the data center its sandbox answered from, when known
+  colo?: string; // the data center its sandbox's Durable Object ran in, when known
 }
 /** An agent's model calls so far (src/agents/usage.ts Usage). */
 export interface WireUsage { calls: number; input: number; output: number; cacheRead: number; cacheWrite: number; usd: number; unpriced?: number }

@@ -466,18 +466,17 @@ curl $THUNDERDOME/tasks/<id>/forks/ponder/diff
 ## Where the robots ran
 
 Each robot's sandbox Durable Object gets a location hint when the race starts
-(`src/room/regions.ts`): Western North America, Western Europe and Asia-Pacific for the first
-three, then Eastern North America and Eastern Europe. The fork name is new each race, so the hint
-always applies; builds, the judge and the ship keep the default. The agent's slot records it as
-`region`.
+(`src/room/regions.ts`): Western North America, Western Europe and Oceania for the first three,
+then Eastern North America and Eastern Europe. The fork name is new each race, so the hint always
+applies; builds, the judge and the ship keep the default. The agent's slot records it as `region`.
+Only regions the model API serves are used: `apac` put a robot in Hong Kong on Oct 8, and every
+model call from there got 403 "Request not allowed".
 
-A container is not bound to its Durable Object's location: Cloudflare starts it where capacity and
-the image are. So before the agent starts, the sandbox asks from inside the container
-(`GET <git host>/_thunderdome/where`, answered by the Outbound Worker) and the slot records the
-data center code as `colo`. That answer comes from the Outbound Worker, which may run where the
-Durable Object is rather than where the container is; the Worker log line `sandbox.where` shows
-both colos so the two can be told apart. The race page draws a world map with a pin per robot at its region,
-labeled with its colo, so "asked for Asia-Pacific, ran in SJC" is visible when it happens.
+Before the agent starts, the sandbox reads Cloudflare's trace page from its Durable Object and the
+slot records that data center code as `colo` ("AMS"). The container usually starts near its
+Durable Object, but Cloudflare does not promise it, and the container's own requests carry no
+location (a probe from inside the container came back empty). The race page draws a world map with
+a pin per robot at its region, labeled with its colo.
 
 ## What Clef saw
 

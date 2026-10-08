@@ -61,6 +61,11 @@ const FUSE_STEP = {
 const FUSE_BUDGET_MS = 5 * 60 * 1_000;
 /** A push may not start later than this after the budget. */
 const FUSE_PUSH_MS = 2 * 60 * 1_000;
+/**
+ * How long the push itself may take. It takes seconds; a sandbox whose container went away left it
+ * waiting 9 minutes for "The container connection is temporarily unavailable" (t-0bf89c65, Oct 8).
+ */
+const FUSE_PUSH_WAIT_MS = 60 * 1_000;
 /** Scoring the fused head (one Clef call with retries) is given up after this; the fusion is then kept unscored. */
 const FUSE_SCORE_MS = 90 * 1_000;
 /** Screenshots and Clef questions for every fork, after waiting for the final previews. */
@@ -411,7 +416,7 @@ async function fuseInSandbox(env: Env, input: JudgeInput, result: JudgeResult): 
     await box.stop().catch((cause: unknown) => console.error({ event: "fuse.stop_failed", error: String(cause) }));
   }
   if (bundle === undefined) return fused;
-  const problem = bundle.length > FUSE_BUNDLE_MAX ? "the fusion bundle is too big to push" : Date.now() > deadline + FUSE_PUSH_MS ? "the fusion round ran out of time" : await pushFusion(env, winner, winnerRead, fused, bundle);
+  const problem = bundle.length > FUSE_BUNDLE_MAX ? "the fusion bundle is too big to push" : Date.now() > deadline + FUSE_PUSH_MS ? "the fusion round ran out of time" : await within(pushFusion(env, winner, winnerRead, fused, bundle), Math.min(FUSE_PUSH_WAIT_MS, deadline + FUSE_PUSH_MS - Date.now()), "the fusion push took too long");
   if (problem === undefined) return fused;
   // Nothing reached the fork, so nothing was added after all.
   const { commit: _commit, ...rest } = fused;
@@ -436,13 +441,15 @@ async function scoreInBox(
   if ("error" in started) return { ...fused, scoreNote: `the fork's starting point was not found: ${started.error}` };
   const limit = Math.min(FUSE_SCORE_MS, leftMs);
   if (limit <= 0) return { ...fused, scoreNote: "the fusion round had no time left to score it" };
+  const scoring = scoreFusion({ ...deps, scorer: clefScorer(env.AI) }, fused, { task: input.task, winner, weights: result.scores.weights, forkBase: started.base });
+  return within(scoring, limit, { ...fused, scoreNote: `scoring took longer than ${Math.round(limit / 1_000)} seconds` });
+}
+
+/** `work`'s result, or `late` once `ms` have passed; a call into a sandbox can hang when its container goes away. */
+async function within<T>(work: Promise<T>, ms: number, late: T): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<FusionResult>((resolve) => {
-    timer = setTimeout(() => resolve({ ...fused, scoreNote: `scoring took longer than ${Math.round(limit / 1_000)} seconds` }), limit);
-  });
   try {
-    const scoring = scoreFusion({ ...deps, scorer: clefScorer(env.AI) }, fused, { task: input.task, winner, weights: result.scores.weights, forkBase: started.base });
-    return await Promise.race([scoring, late]);
+    return await Promise.race([work, new Promise<T>((resolve) => { timer = setTimeout(() => resolve(late), Math.max(0, ms)); })]);
   } finally {
     clearTimeout(timer);
   }
