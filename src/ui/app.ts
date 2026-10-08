@@ -4,6 +4,7 @@
 import { AGENT_IDS, applyEvent, applyScores, colorFor, styleLabel, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
 import type { Action, Board, BoardEvent, Fighter, WireAgent, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
 import { agentUsd, billLine, billOf, usd } from "./bill";
+import { LAND_PATH, MAP_H, MAP_W, mapPins, project, REGION_INFO } from "./map";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
@@ -145,6 +146,7 @@ let revealFrame: number | undefined;
 /** armed: the verdict is in but the scores are not, so the result waits for the reveal. */
 let revealArmed = false;
 let botsKey = "";
+let mapKey = "";
 let claimsKey = "";
 let previewsKey = "";
 let resultKey = "";
@@ -823,6 +825,7 @@ function render(b: Board): void {
   renderRail(b);
   renderGuess(b);
   renderBill(b);
+  renderMap(b);
   // Cheering is for a race in progress: live only, and gone once it has ended.
   byId("cheer").hidden = replay !== undefined || b.ended;
   flushScroll();
@@ -1422,6 +1425,59 @@ function renderBill(b: Board): void {
   // An ended race is billed up to its verdict: a judge step that never reported its end must not run on.
   const end = b.ended ? Date.parse(task.verdict?.judgedAt ?? task.finishedAt ?? "") : Number.NaN;
   line.textContent = billLine(billOf(task, Number.isNaN(end) ? Date.now() : end));
+}
+
+/** "Where the robots ran": a pin per robot at the region it asked for, labeled with where it ran. */
+function renderMap(b: Board): void {
+  const pins = mapPins(b.task?.agents ?? []);
+  const key = JSON.stringify(pins);
+  if (key === mapKey) return;
+  mapKey = key;
+  const panel = byId("map-panel");
+  panel.hidden = pins.length === 0;
+  if (pins.length === 0) return;
+  const svg = document.createElementNS(svgNs, "svg");
+  svg.setAttribute("viewBox", `0 0 ${MAP_W} ${MAP_H}`);
+  svg.setAttribute("class", "world");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "World map of where the robots ran");
+  const land = document.createElementNS(svgNs, "path");
+  land.setAttribute("d", LAND_PATH);
+  land.setAttribute("class", "land");
+  svg.append(land);
+  for (const [region, info] of Object.entries(REGION_INFO)) {
+    const at = project(info.lat, info.lon);
+    const dot = document.createElementNS(svgNs, "circle");
+    dot.setAttribute("cx", String(at.x));
+    dot.setAttribute("cy", String(at.y));
+    dot.setAttribute("r", "1.6");
+    dot.setAttribute("class", "region-dot");
+    dot.dataset.region = region;
+    svg.append(dot);
+  }
+  const list = el("ul", "map-list");
+  for (const pin of pins) {
+    const g = document.createElementNS(svgNs, "g");
+    g.setAttribute("class", "pin");
+    g.style.setProperty("--color", colorFor(pin.agent));
+    const dot = document.createElementNS(svgNs, "circle");
+    dot.setAttribute("cx", String(pin.x));
+    dot.setAttribute("cy", String(pin.y));
+    dot.setAttribute("r", "3");
+    const label = document.createElementNS(svgNs, "text");
+    label.setAttribute("x", String(pin.x));
+    label.setAttribute("y", String(pin.y - 5));
+    label.textContent = pin.colo ?? "?";
+    const title = document.createElementNS(svgNs, "title");
+    title.textContent = `${displayName(pin.agent)}: asked for ${pin.name}${pin.colo === undefined ? "" : `, ran in ${pin.colo}`}`;
+    g.append(title, dot, label);
+    svg.append(g);
+    const item = el("li");
+    item.style.setProperty("--color", colorFor(pin.agent));
+    item.append(el("b", undefined, displayName(pin.agent)), el("span", undefined, ` asked for ${pin.name}`), el("em", undefined, pin.colo === undefined ? " · not reported" : ` · ran in ${pin.colo}`));
+    list.append(item);
+  }
+  byId("map").replaceChildren(svg, list);
 }
 
 function renderMeters(b: Board, elapsed: number | undefined): void {

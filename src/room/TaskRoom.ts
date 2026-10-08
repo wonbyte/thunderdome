@@ -20,6 +20,7 @@ import {
   type ClaimResult,
 } from "./claims";
 import { RACE_INDEX_MAX, raceMemory, summaryOf, type RaceMemory } from "./races";
+import { regionFor } from "./regions";
 import { parseReaction, roomAllows, socketAllows, type RoomWindow } from "./reactions";
 import {
   applyBasePreview,
@@ -247,10 +248,11 @@ export class TaskRoom extends DurableObject<Env> {
     const now = Date.now();
     task.status = "running";
     task.startedAt = new Date(now).toISOString();
-    for (const slot of task.agents) {
+    task.agents.forEach((slot, i) => {
       slot.status = "starting";
       slot.startedAt = task.startedAt;
-    }
+      slot.region = regionFor(i);
+    });
     // Written before the first await, so a second run sees "running".
     this.#save(task);
     // The watchdog ends the race even if a sandbox never reports back.
@@ -259,7 +261,8 @@ export class TaskRoom extends DurableObject<Env> {
     await this.#index(task);
     const settled = await Promise.allSettled(
       task.agents.map((slot) =>
-        this.env.SANDBOX.getByName(slot.fork).startAgent({
+        // The fork name is new each race, so the hint applies: it counts only when the object is created.
+        this.env.SANDBOX.getByName(slot.fork, slot.region === undefined ? undefined : { locationHint: slot.region }).startAgent({
           taskId: task.id,
           agent: slot.name,
           fork: slot.fork,
@@ -281,6 +284,7 @@ export class TaskRoom extends DurableObject<Env> {
       settled.map((result, index) => ({
         agent: task.agents[index]!.name,
         error: result.status === "rejected" ? String(result.reason) : undefined,
+        colo: result.status === "fulfilled" ? result.value.colo : undefined,
       })),
       new Date().toISOString(),
     );

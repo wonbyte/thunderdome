@@ -8,7 +8,9 @@ import { clip, parseEvent, resultOf, splitLines, stepsOf, type RunResult, type S
 import { agentCommand, gitIdentity, POLL_INTERVAL_MS, type AgentOutcome, type AgentSpec } from "../agents/runner";
 import type { AgentName } from "../agents/prompt";
 import { retry } from "../retry";
+import { coloOf, traceColo } from "../room/regions";
 import type { Outbound, OutboundProps } from "./outbound";
+import { thunderdomeApiBase } from "./policy";
 
 /** Where a sandbox clones the repo it works on. */
 export const REPO_DIR = "/workspace/repo";
@@ -24,6 +26,10 @@ const STDERR_PATH = `${RUN_DIR}/stderr.log`;
 const EXIT_PATH = `${RUN_DIR}/exit-code`;
 const PID_PATH = `${RUN_DIR}/pid`;
 const RUN_KEY = "agent-run";
+/** Prints the colo the Thunderdome API answers for this container; 5 s at most. */
+const WHERE_SCRIPT = `fetch(process.argv[1], { signal: AbortSignal.timeout(5000) }).then((r) => r.json()).then((b) => process.stdout.write(String(b.colo ?? "")))`;
+/** Any Cloudflare-served host answers this with the colo that served it. */
+const TRACE_URL = "https://www.cloudflare.com/cdn-cgi/trace";
 const READ_CHUNK_BYTES = 1 << 20;
 /**
  * Output goes to files, so the agent keeps running after the request that started it ends.
@@ -154,7 +160,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
   }
 
   /** Clones the fork and starts the agent in the background. The alarm follows it from here. */
-  async startAgent(spec: AgentSpec): Promise<{ base: string }> {
+  async startAgent(spec: AgentSpec): Promise<{ base: string; colo?: string }> {
     if (this.ctx.storage.kv.get(RUN_KEY) !== undefined) throw new Error(`An agent already runs in ${spec.fork}`);
     const props: OutboundProps = {
       gitHost: new URL(spec.remote).hostname,
@@ -170,6 +176,7 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
       shouldRetry: () => true,
     });
     const base = (await this.#must(["git", "rev-parse", "HEAD"])).stdout.trim();
+    const colo = await this.#where(props, spec.fork);
     await this.#files.remove(RUN_DIR, { recursive: true, force: true });
     await this.#files.mkdir(RUN_DIR, { recursive: true });
     const { argv, env } = agentCommand(spec);
@@ -189,7 +196,25 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     };
     this.ctx.storage.kv.put(RUN_KEY, run);
     await this.ctx.storage.setAlarm(Date.now() + POLL_INTERVAL_MS);
-    return { base };
+    return colo === undefined ? { base } : { base, colo };
+  }
+
+  /**
+   * Where the container runs: the data center the Thunderdome API saw its request at. Asked from
+   * inside the container, before the agent starts. A failed answer never fails the start.
+   */
+  async #where(props: OutboundProps, fork: string): Promise<string | undefined> {
+    try {
+      const out = await this.#execRaw(["node", "-e", WHERE_SCRIPT, `${thunderdomeApiBase(props.gitHost)}/where`], REPO_DIR, {});
+      const container = coloOf(out.stdout);
+      // Day-one check: a container may start away from its Durable Object; the log shows both.
+      const object = traceColo(await (await fetch(TRACE_URL, { signal: AbortSignal.timeout(5_000) })).text());
+      console.log({ event: "sandbox.where", fork, container, object });
+      return container;
+    } catch (error) {
+      console.error({ event: "sandbox.where_failed", fork, error: String(error).slice(0, 200) });
+      return undefined;
+    }
   }
 
   /** Sends new steps to the TaskRoom, and ends the run when the agent exits or time runs out. */

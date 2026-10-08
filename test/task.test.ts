@@ -255,6 +255,12 @@ function runningTask(): Task {
 }
 
 describe("applyStarts", () => {
+  it("G5: a start records where its container ran, and only a data center code", () => {
+    const task = runningTask();
+    applyStarts(task, [{ agent: "ponder", colo: "AMS" }, { agent: "zippy", colo: "<script>" }, { agent: "testy", error: "x", colo: "NRT" }], "t1");
+    expect(task.agents.map((slot) => slot.colo)).toEqual(["AMS", undefined, "NRT"]);
+  });
+
   it("marks started agents running and failed starts failed", () => {
     const task = runningTask();
     applyStarts(task, [{ agent: "ponder" }, { agent: "zippy", error: "clone failed" }, { agent: "testy" }], "t1");

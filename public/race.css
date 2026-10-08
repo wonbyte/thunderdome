@@ -1476,3 +1476,17 @@ body.explaining .caption { display: block; }
 .shot-full { display: block; width: auto; max-width: 100%; height: auto; margin: 0 auto; }
 @media (max-width: 640px) { .look-pair { grid-template-columns: 1fr; } .shot.phone { height: 260px; } }
 
+/* ---------- where the robots ran ---------- */
+.map { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 16px; align-items: center; }
+.world { width: 100%; height: auto; display: block; }
+.world .land { fill: color-mix(in srgb, var(--dim) 22%, transparent); stroke: color-mix(in srgb, var(--dim) 40%, transparent); stroke-width: .3; }
+.world .region-dot { fill: var(--faint); }
+.world .pin circle { fill: var(--color); stroke: #0c0f1c; stroke-width: .8; }
+.world .pin text { fill: var(--color); font-size: 6px; font-weight: 700; text-anchor: middle; font-variant-numeric: tabular-nums; }
+.map-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 13px; color: var(--dim); }
+.map-list b { color: var(--color); }
+.map-list em { font-style: normal; color: var(--text); }
+@media (max-width: 640px) {
+  .map { grid-template-columns: 1fr; }
+}
+.map-panel .hint { margin-top: 12px; }

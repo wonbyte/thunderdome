@@ -8,6 +8,7 @@ import type { JudgeInput } from "../judge/judge";
 import type { ScoreParts } from "../judge/score";
 import type { DecidedBy } from "../judge/why";
 import type { BaseRequest } from "../push/push"; // type-only: push.ts imports isTaskId from here
+import { coloOf, type Region } from "./regions";
 import { retry } from "../retry";
 import type { ShipResult } from "../ship/ship";
 import type { FusionResult } from "../judge/fusion";
@@ -94,6 +95,8 @@ export interface AgentSlot extends ForkSlot, Partial<Omit<AgentOutcome, "end">> 
   endedAt?: string;
   push?: PushState;
   usage?: Usage; // the agent's model calls so far, counted by the Outbound Worker
+  region?: Region; // the location hint its sandbox was given
+  colo?: string; // the Cloudflare data center its sandbox answered from ("AMS"), when known
 }
 
 /** creating → ready → running → finished. "failed" means the forks could not be made. */
@@ -334,10 +337,13 @@ export function applyOutcome(task: Task, agent: string, outcome: AgentOutcome, n
  * Records whether each sandbox started. Only agents still "starting" change, so an end that
  * arrived first is kept.
  */
-export function applyStarts(task: Task, starts: { agent: string; error?: string }[], now: string): void {
+export function applyStarts(task: Task, starts: { agent: string; error?: string; colo?: string }[], now: string): void {
   for (const start of starts) {
     const slot = slotOf(task, start.agent);
     if (slot === undefined || slot.status !== "starting") continue;
+    // Read from the container's output: kept only when it is a data center code.
+    const colo = coloOf(start.colo);
+    if (colo !== undefined) slot.colo = colo;
     if (start.error === undefined) {
       slot.status = "running";
     } else {

@@ -463,6 +463,22 @@ It returns `{ agent, diff, clipped }`, where `clipped` is true when the diff was
 curl $THUNDERDOME/tasks/<id>/forks/ponder/diff
 ```
 
+## Where the robots ran
+
+Each robot's sandbox Durable Object gets a location hint when the race starts
+(`src/room/regions.ts`): Western North America, Western Europe and Asia-Pacific for the first
+three, then Eastern North America and Eastern Europe. The fork name is new each race, so the hint
+always applies; builds, the judge and the ship keep the default. The agent's slot records it as
+`region`.
+
+A container is not bound to its Durable Object's location: Cloudflare starts it where capacity and
+the image are. So before the agent starts, the sandbox asks from inside the container
+(`GET <git host>/_thunderdome/where`, answered by the Outbound Worker) and the slot records the
+data center code as `colo`. That answer comes from the Outbound Worker, which may run where the
+Durable Object is rather than where the container is; the Worker log line `sandbox.where` shows
+both colos so the two can be told apart. The race page draws a world map with a pin per robot at its region,
+labeled with its colo, so "asked for Asia-Pacific, ran in SJC" is visible when it happens.
+
 ## What Clef saw
 
 On a visual task the look step keeps its screenshots: each fork's preview at desktop (1280×800)
