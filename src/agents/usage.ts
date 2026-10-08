@@ -1,6 +1,7 @@
 // What a robot's model calls used and cost, counted as they pass through the Outbound Worker.
 // Pure: the Outbound Worker pipes each streamed reply through usageTap and the room adds them up.
-// The dollars are an estimate at list price; Claude Code's own costUsd stays the final figure.
+// The dollars are at list price. The page trusts them over Claude Code's own costUsd, which prices
+// claude-haiku-5-5 at Opus 5.5 rates (src/ui/bill.ts agentUsd).
 
 /** Token counts and estimated dollars for one or more model calls. */
 export interface Usage {

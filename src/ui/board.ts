@@ -599,7 +599,7 @@ function applyAgentEnd(board: Board, agent: string, end: "done" | "failed" | "ti
   let next = board;
   if (board.task !== undefined) {
     const task = board.task;
-    // Claude Code's own cost replaces the meter's estimate on a page that watched the race.
+    // Claude Code's own cost, for a page that watched the race; the meter's figure still comes first (bill.ts agentUsd).
     const cost = costUsd === undefined ? {} : { costUsd };
     const agents = task.agents.map((slot) => (slot.name === agent ? { ...slot, status: end, endedAt: slot.endedAt ?? at, ...cost } : slot));
     const finishedAt = task.finishedAt ?? (status === "finished" ? at : undefined);

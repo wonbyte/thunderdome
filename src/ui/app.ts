@@ -3,7 +3,7 @@
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
 import { AGENT_IDS, applyEvent, applyScores, colorFor, styleLabel, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
 import type { Action, Board, BoardEvent, Fighter, WireAgent, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
-import { billLine, billOf, usd } from "./bill";
+import { agentUsd, billLine, billOf, usd } from "./bill";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
@@ -1387,21 +1387,22 @@ function updateBot(b: Board, f: Fighter, index: number): void {
   }
 }
 
-/** "142k in · 3.1k out · $0.19" under a robot: its meter while it runs, Claude Code's figure once it ends. */
+/** "142k in · 3.1k out · $0.019" under a robot, from its meter (agentUsd says which figure). */
 function renderSpend(view: HTMLElement, slot: WireAgent | undefined): void {
   const usage = slot?.usage;
-  const final = slot?.costUsd;
-  view.hidden = usage === undefined && final === undefined;
+  const cost = slot === undefined ? undefined : agentUsd(slot);
+  view.hidden = usage === undefined && cost === undefined;
   if (view.hidden) return;
   const parts: HTMLElement[] = [];
   if (usage !== undefined) parts.push(el("span", "spend-tokens", `${tokens(usage.input + usage.cacheRead + usage.cacheWrite)} in · ${tokens(usage.output)} out · `));
-  const priced = usage !== undefined && (usage.unpriced ?? 0) < usage.calls;
-  parts.push(el("b", undefined, final !== undefined ? usd(final) : priced ? `≈ ${usd(usage.usd)}` : "$?"));
+  parts.push(el("b", undefined, cost === undefined ? "$?" : usd(cost)));
   view.replaceChildren(...parts);
-  view.title = final !== undefined
-    ? `Claude Code's own cost for this run${usage === undefined ? "" : `; ${usage.calls} model calls counted on the way out`}`
-    : priced
-      ? `Live estimate at list price from ${usage.calls} model calls; the final figure is Claude Code's own`
+  const metered = usage !== undefined && usage.calls > 0 && (usage.unpriced ?? 0) === 0;
+  const reported = slot?.costUsd === undefined ? "" : `; Claude Code reported ${usd(slot.costUsd)}`;
+  view.title = metered
+    ? `${usage.calls} model calls at list price, counted on the way out${reported}`
+    : cost !== undefined && cost === slot?.costUsd
+      ? "Claude Code's own cost for this run"
       : "The model's price is not in the table, so only the tokens are counted";
 }
 

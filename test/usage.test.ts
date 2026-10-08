@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { addUsage, callUsage, usageOfJson, usageTap, type Usage } from "../src/agents/usage";
 import { isMessageCall, messageUpstream } from "../src/sandbox/policy";
-import { billLine, billOf } from "../src/ui/bill";
+import { agentUsd, billLine, billOf } from "../src/ui/bill";
 import { applyEvent, emptyBoard, type WireTask } from "../src/ui/board";
 
 /** Pipes `chunks` through the tap; returns what came out and what the tap reported. */
@@ -101,7 +101,17 @@ describe("the meter", () => {
     expect(bill.clefCalls).toBe(6 + 1 + 2 + 1);
     expect(bill.browserSeconds).toBeCloseTo(7.589, 6);
     expect(bill.agentsUsd).toBeCloseTo(0.75, 9);
-    expect(billLine(bill)).toMatch(/^7 containers · 6 container-min · 10 Clef calls · Cloudflare ≈ \$0\.0\d+ · agents \$0\.75$/);
+    expect(billLine(bill)).toMatch(/^7 containers · 6 container-min · 10 Clef calls · Cloudflare ≈ \$0\.0\d\d · agents \$0\.75$/);
+  });
+
+  it("M7: an agent's cost is the meter's when it priced every call, else Claude Code's", () => {
+    const usage = { calls: 16, input: 32, output: 13001, cacheRead: 615912, cacheWrite: 28770, usd: 0.0163 };
+    // t-7dc4f1ff: Claude Code priced this Haiku 5.5 run at Opus 5.5 rates.
+    expect(agentUsd({ name: "ponder", status: "done", costUsd: 0.5272, usage })).toBe(0.0163);
+    expect(agentUsd({ name: "ponder", status: "done", costUsd: 0.5272, usage: { ...usage, unpriced: 2 } })).toBe(0.5272);
+    expect(agentUsd({ name: "ponder", status: "done", costUsd: 0.5272 })).toBe(0.5272);
+    expect(agentUsd({ name: "ponder", status: "running", usage: { ...usage, unpriced: 2 } })).toBe(0.0163);
+    expect(agentUsd({ name: "ponder", status: "starting" })).toBeUndefined();
   });
 
   it("M6: a usage event replaces that agent's running total on the board", () => {

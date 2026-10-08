@@ -6,11 +6,12 @@ for the admin secret.
 
 ## Costs
 
-Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
+Measured on the live deploy with 3 agents. The agents ran `claude-haiku-5-5` (`AGENT_MODEL`):
 
 | Part | Cost per race | Notes |
 |---|---|---|
-| Agents (Anthropic API) | $0.43–0.55 | Reported by Claude Code per agent (`costUsd` on each agent). The `bugs` and `ui` demos cost $0.29–0.46 (PLAN.md, Day 9). |
+| Agents (Anthropic API) | about $0.04 | By the meter: $0.010–0.016 per agent, 8–17 model calls each, 270k–660k prompt tokens (mostly cache reads), `ui` demo, Oct 8. Claude Code's own `costUsd` said $0.35–0.53 per agent: it prices `claude-haiku-5-5` at Opus 5.5 rates. On Oct 5, with Claude Code's default model, the `clash` demo cost $0.43–0.55 a race. |
+| Cloudflare, all of it | about $0.04 | The race page's bill for the same race: 18 containers, 14 container-minutes, 25 Clef calls, 14 s of browser. |
 | Conflict race | about $0.10–0.30 | Only when the winner conflicts with a newer source: 3 short resolver runs. |
 | Judge (Workers AI, Clef) | small | 3 questions per fork, asked in both file orders; 1 split question when robots added tests; 2 side-by-side calls on a tie; 1 visual question per race and 1 look question per fork when the task is visual. |
 | Browser Rendering | small | Only for visual tasks: 1 browser per race for 1 + 2 per fork screenshots, about 30–60 s. Plus 1 short browser per race for the result card, on its first request (link previews, the gallery). |
@@ -19,7 +20,8 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 
 **The meter.** The Outbound Worker reads the token counts out of each model reply as it streams
 past (`src/agents/usage.ts`) and the race page shows them under each robot, priced at list price.
-Once an agent ends, its `costUsd` replaces the estimate. The pipeline header shows the race's
+The page trusts the meter over Claude Code's `costUsd`, which it shows only for races before the
+meter or a model the meter has no price for (`agentUsd` in `src/ui/bill.ts`). The pipeline header shows the race's
 Cloudflare bill (`src/ui/bill.ts`): container-seconds of the agents, preview builds and judge
 steps at the `standard-1` list price, Clef calls at $0.24 per million input tokens (one measured
 call read 3,650), and the look step's browser time. It is an estimate, not an invoice.
@@ -29,10 +31,10 @@ calls go through it, tagged with the race and robot (`cf-aig-metadata`). The san
 `api.anthropic.com`; the Outbound Worker changes where the call goes. Empty (the default) goes
 straight to the model API.
 
-The plan itself is Workers Paid. Each race's agents ran for 53–83 s, and the judge and merge
-took 13–29 s more. `/play` races 5 robots, so its agent spend is about 5/3 of the table:
-$0.72–0.92 a race. It caps public races at `PLAY_DAILY_LIMIT` per day (default 10), so the public
-demo costs at most about $9.20 a day in agent spend.
+The plan itself is Workers Paid. Each race's agents ran for 45–96 s, and the judge and merge
+took 13–29 s more. `/play` races 5 robots, so its agent spend is about 5/3 of the table: about
+$0.07 a race on Haiku 5.5. It caps public races at `PLAY_DAILY_LIMIT` per day (default 10), so the
+public demo costs about $0.70 a day in agent spend.
 
 ## Limits
 

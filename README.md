@@ -137,10 +137,11 @@ Agents get at most 8 minutes and usually finish in 1 to 2; judging takes about a
 
 ## Costs
 
-Agents are the main cost: $0.43–0.55 a race with 3 agents on Anthropic's API (measured Oct 5),
-about $0.72–0.92 with the 5 that `/play` uses. `/play` allows 10 races a day, so the public demo
-costs at most about $9 a day. Clef, Browser Rendering, containers, Durable Objects, Workflows and
-previews are small Workers Paid usage. Artifacts is not billed before Oct 15, 2026.
+On Claude Haiku 5.5 a race with 3 agents costs about $0.04 on Anthropic's API and about $0.04 on
+Cloudflare (measured Oct 8; the race page shows both). `/play` races 5 agents and allows 10 races a
+day, so the public demo costs about $1 a day. Claude Code's own cost figure prices Haiku 5.5 at
+Opus 5.5 rates, about 32 times too high; the page uses the meter instead. Artifacts is not billed
+before Oct 15, 2026.
 
 ## Limits
 

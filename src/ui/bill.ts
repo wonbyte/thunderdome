@@ -1,7 +1,7 @@
 // What one race cost: Cloudflare's part estimated from the race record at list price, and the
 // agents' part from their meters. Pure; app.ts shows it in the pipeline header.
 
-import type { WireTask } from "./board";
+import type { WireAgent, WireTask } from "./board";
 
 /** Containers billed per second of a `standard-1` (1/2 vCPU, 4 GiB, 8 GB disk), as if busy throughout. */
 const CONTAINER_USD_PER_S = 0.5 * 0.00002 + 4 * 0.0000025 + 8 * 0.00000007;
@@ -26,12 +26,23 @@ export interface Bill {
 
 const seconds = (from: string, to: string | number): number => Math.max(0, ((typeof to === "number" ? to : Date.parse(to)) - Date.parse(from)) / 1000) || 0;
 
-/** Dollars, with a third digit for amounts under a cent. */
+/** Dollars, with a third digit under 10 cents: a Haiku robot's run costs about a cent. */
 export function usd(v: number): string {
-  return `$${v < 0.01 && v > 0 ? v.toFixed(3) : v.toFixed(2)}`;
+  return `$${v < 0.1 && v > 0 ? v.toFixed(3) : v.toFixed(2)}`;
 }
 
 /** The bill so far. `now` (ms) ends whatever is still running. */
+/**
+ * What one agent's model calls cost: the meter's figure when it priced every call, else Claude
+ * Code's own (races before the meter, or a model the meter has no price for). Claude Code's figure
+ * is not trusted first: it prices claude-haiku-5-5 at Opus 5.5 rates, 32x too high (Oct 8).
+ */
+export function agentUsd(slot: WireAgent): number | undefined {
+  const usage = slot.usage;
+  if (usage !== undefined && usage.calls > 0 && (usage.unpriced ?? 0) === 0) return usage.usd;
+  return slot.costUsd ?? usage?.usd;
+}
+
 export function billOf(task: WireTask, now: number): Bill {
   let containers = 0;
   let containerSeconds = 0;
@@ -39,8 +50,7 @@ export function billOf(task: WireTask, now: number): Bill {
   let browserSeconds = 0;
   let agentsUsd = 0;
   for (const slot of task.agents) {
-    // Claude Code's own figure once the agent ends; the meter's estimate until then.
-    agentsUsd += slot.costUsd ?? slot.usage?.usd ?? 0;
+    agentsUsd += agentUsd(slot) ?? 0;
     if (slot.startedAt !== undefined) {
       containers++;
       containerSeconds += seconds(slot.startedAt, slot.endedAt ?? now);
