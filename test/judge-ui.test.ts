@@ -32,6 +32,24 @@ function body(split?: number) {
   };
 }
 
+describe("look view", () => {
+  it("L1: judged forks in rank order with Clef's answers, a fork's error kept, and whether the before shot exists", () => {
+    const b = body();
+    const out = b.output as Record<string, unknown>;
+    out.look = { visual: 0.97, judged: true, forks: [{ agent: "ponder", look: 0.68, fit: 0.61, quality: 0.78 }, { agent: "testy", look: 0, error: "the preview did not load: 500" }] };
+    const view = judgeView(b)?.look;
+    expect(view?.before).toBe(true);
+    expect(view?.forks.map((f) => f.agent)).toEqual(["testy", "ponder"]);
+    expect(view?.forks[1]).toEqual({ agent: "ponder", look: 0.68, fit: 0.61, quality: 0.78 });
+    expect(view?.forks[0]?.error).toBe("the preview did not load: 500");
+    // Not judged on look: no view. A before page that did not load: before is false.
+    out.look = { visual: 0.2, judged: false, forks: [], before: "no before preview" };
+    expect(judgeView(b)?.look).toBeUndefined();
+    out.look = { visual: 0.97, judged: true, forks: [{ agent: "ponder", look: 0.5 }], before: "the before preview did not load" };
+    expect(judgeView(b)?.look?.before).toBe(false);
+  });
+});
+
 describe("judgeView", () => {
   it("V1: reads the tie with each tied robot's Clef points and the side-by-side vote", () => {
     const tie = judgeView(body())?.tie;

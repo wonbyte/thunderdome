@@ -79,6 +79,8 @@ const PREVIEW_WAIT_MS = 90 * 1_000;
 const LOOK_BUDGET_MS = 8 * 60 * 1_000;
 const PREVIEW_POLL_MS = 5_000;
 const PAGE_TIMEOUT_MS = 30_000;
+/** A look screenshot bigger than this is not kept (a full-page JPEG is usually 100–300 KB). */
+const SHOT_MAX_BYTES = 900_000;
 /** Base64 written per exec call, under the kernel's limit for one argument. */
 const BUNDLE_CHUNK = 64 * 1_024;
 const TOKEN_TTL_S = 3_600;
@@ -251,11 +253,20 @@ async function lookAtPreviews(env: Env, input: JudgeInput): Promise<LookResult> 
       browser ??= launch(env.BROWSER);
       return screenshot(await browser, url, viewport);
     };
-    const deps = { ai: env.AI, shoot, now: () => Date.now(), deadline: budget };
+    // The shots are kept for the result page ("what Clef saw"), one that fits a row at a time.
+    const room = env.TASK_ROOM.getByName(input.taskId);
+    const keep = async (agent: string, kind: string, base64: string): Promise<void> => {
+      const bytes = Buffer.from(base64, "base64");
+      if (bytes.byteLength > SHOT_MAX_BYTES) {
+        console.warn({ event: "look.shot_too_big", agent, kind, bytes: bytes.byteLength });
+        return;
+      }
+      await room.saveShot(agent, kind, bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer);
+    };
+    const deps = { ai: env.AI, shoot, keep, now: () => Date.now(), deadline: budget };
     // Asked first: it needs only the task, so a race that is not visual never waits for previews.
     const visual = await visualTask(deps, input.task);
     if (visual < VISUAL_THRESHOLD) return { visual, judged: false, forks: [] };
-    const room = env.TASK_ROOM.getByName(input.taskId);
     let task = await room.state();
     // Anchored at the race's end: a retried look step must not start a fresh wait.
     const waitUntil = previewWaitUntil(task?.finishedAt, Date.now(), PREVIEW_WAIT_MS);

@@ -446,6 +446,16 @@ It returns `{ agent, diff, clipped }`, where `clipped` is true when the diff was
 curl $THUNDERDOME/tasks/<id>/forks/ponder/diff
 ```
 
+## What Clef saw
+
+On a visual task the look step keeps its screenshots: each fork's preview at desktop (1280×800)
+and phone (390×844) width, and the source's before page at desktop width, as the JPEGs Clef was
+shown (`src/judge/look.ts` `keep`, `src/judge/JudgeWorkflow.ts`). `GET /tasks/<id>/shots/<agent>/desktop.jpg`
+and `phone.jpg` are public (`<agent>` is `before` for the source); `404` when the look kept none
+(a race that is not visual, a fork without a preview, a race from before Oct 8, or a shot over
+900 KB). They never change, so they are cached at the edge for a year. The result panel shows
+them under "What Clef saw" with each fork's look points and Clef's fit and quality answers.
+
 ## Verdict commits
 
 `GET /tasks/<id>/commits/<sha>` is public and reads a commit from Artifacts. It answers only for

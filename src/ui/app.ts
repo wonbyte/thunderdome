@@ -13,7 +13,8 @@ import { assistsOf, FUSE_BAR, fusionView, scoreBars, type FuseOutcome, type Fuse
 import { fusionOf, gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
 import { gitLog, type LogLine } from "./gitlog";
 import { drawGraph } from "./graphview";
-import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type JudgeView, type TieView } from "./judgeview";
+import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type JudgeView, type LookView, type TieView } from "./judgeview";
+import { closeButton, modal, showing } from "./dialog";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
 import { PHASE_LABELS, PHASES, phaseOf, phaseStarts, railStates, type Phase } from "./phases";
 import { verdictLine } from "./verdict";
@@ -1849,7 +1850,7 @@ function renderWipe(b: Board): void {
 
 function renderResult(b: Board): void {
   const scored = b.fighters.filter((f): f is Scored => f.score !== undefined).toSorted((x, y) => x.score.place - y.score.place);
-  const key = JSON.stringify([b.ended, b.winner, b.why, scored.map((f) => [f.agent, f.score]), judged?.tie, judged?.fit, b.task?.verdict?.fusion, b.task?.verdict?.ship?.status]);
+  const key = JSON.stringify([b.ended, b.winner, b.why, scored.map((f) => [f.agent, f.score]), judged?.tie, judged?.fit, judged?.look, b.task?.verdict?.fusion, b.task?.verdict?.ship?.status]);
   if (key === resultKey) return;
   resultKey = key;
   byId("result-panel").hidden = !b.ended && scored.length === 0;
@@ -1876,7 +1877,86 @@ function renderResult(b: Board): void {
   byId("scoreboard").replaceChildren(...scored.map(scoreRow));
   byId("legend-look").hidden = !scored.some((f) => f.score.parts.look !== undefined);
   renderPhotoFinish(b.ended ? judged?.tie : undefined);
+  renderLook(b, b.ended ? judged?.look : undefined);
   renderRunAgain(b);
+}
+
+/** A look screenshot's address. */
+const shotUrl = (agent: string, kind: "desktop" | "phone"): string => `/tasks/${taskId}/shots/${agent}/${kind}.jpg`;
+/** Clef's 0..1 answer as a percentage. */
+const pct = (x: number | undefined): string => (x === undefined ? "–" : `${Math.round(x * 100)}%`);
+
+/** "What Clef saw": the before page, then each judged fork's two shots with its look points and Clef's two answers. */
+function renderLook(b: Board, look: LookView | undefined): void {
+  const panel = byId("look-panel");
+  // Hidden until the first shot loads: shots are kept per race since Oct 8, so a race without
+  // them (every earlier one) would show captions and no pictures. The first thumbnail is the probe.
+  panel.hidden = true;
+  const box = byId("look-shots");
+  if (look === undefined) return box.replaceChildren();
+  const figures: HTMLElement[] = [];
+  if (look.before) {
+    const fig = el("figure", "look-fork before");
+    fig.style.setProperty("--color", "#8a90a6");
+    const cap = el("figcaption");
+    cap.append(el("b", undefined, "Before"), el("span", undefined, "the source, before the race"));
+    fig.append(cap, shotThumb("before", "desktop", "the source before the race, desktop"));
+    figures.push(fig);
+  }
+  for (const f of look.forks) {
+    const fig = el("figure", `look-fork${f.error === undefined ? "" : " failed"}`);
+    fig.style.setProperty("--color", colorFor(f.agent));
+    const points = b.fighters.find((x) => x.agent === f.agent)?.score?.parts.look;
+    const cap = el("figcaption");
+    cap.append(el("b", undefined, displayName(f.agent)), el("span", undefined, points === undefined ? "" : `${points.toFixed(2)} look points`));
+    const answers = el("p", "look-answers");
+    answers.textContent = f.error === undefined ? `fit ${pct(f.fit)} · quality ${pct(f.quality)}` : f.error;
+    const shots = el("div", "look-pair");
+    if (f.error === undefined) shots.append(shotThumb(f.agent, "desktop", `${displayName(f.agent)}'s page, desktop`), shotThumb(f.agent, "phone", `${displayName(f.agent)}'s page, phone`));
+    fig.append(cap, answers, shots);
+    figures.push(fig);
+  }
+  box.replaceChildren(...figures);
+  const probe = box.querySelector("img");
+  if (probe === null) return;
+  probe.loading = "eager";
+  const show = (): void => {
+    panel.hidden = false;
+  };
+  if (probe.complete && probe.naturalWidth > 0) show();
+  else probe.addEventListener("load", show, { once: true });
+}
+
+/** A thumbnail that opens the full shot; one the room never kept (older races) removes itself. */
+function shotThumb(agent: string, kind: "desktop" | "phone", label: string): HTMLElement {
+  const button = el("button", `shot ${kind}`);
+  button.type = "button";
+  button.setAttribute("aria-label", `Open ${label}`);
+  const img = el("img");
+  img.src = shotUrl(agent, kind);
+  img.alt = label;
+  img.loading = "lazy";
+  img.decoding = "async";
+  img.addEventListener("error", () => button.remove());
+  button.append(img, el("i", undefined, kind));
+  button.addEventListener("click", () => openShot(agent, kind, label));
+  return button;
+}
+
+/** The full screenshot in a dialog, scrolling for a tall page. */
+function openShot(agent: string, kind: "desktop" | "phone", label: string): void {
+  const d = modal("shot-dialog", "diff-dialog shot-dialog");
+  const check = showing(d, `${agent}/${kind}`);
+  const close = (): void => d.close();
+  const head = el("div", "diff-head");
+  head.append(el("b", undefined, label), closeButton(close));
+  const img = el("img", "shot-full");
+  img.src = shotUrl(agent, kind);
+  img.alt = label;
+  const body = el("div", "shot-body");
+  body.append(img);
+  d.replaceChildren(head, body);
+  if (check() && !d.open) d.showModal();
 }
 
 /** The demo apps /play accepts (mirrors TEMPLATES in playpage.ts and src/play/play.ts). */

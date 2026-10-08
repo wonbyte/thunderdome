@@ -163,3 +163,16 @@ describe("accessFor", () => {
     }
   });
 });
+
+describe("look shots", () => {
+  it("U9: GET /tasks/:id/shots/:agent/<desktop|phone>.jpg is public, for forks and the before page only", async () => {
+    const { isShotPath } = await import("../src/routes/access");
+    expect(accessFor("GET", `/tasks/${id}/shots/ponder/desktop.jpg`)).toBe("public");
+    expect(accessFor("GET", `/tasks/${id}/shots/before/desktop.jpg`)).toBe("public");
+    expect(isShotPath(`/tasks/${id}/shots/zippy/phone.jpg`)).toBe(true);
+    expect(accessFor("GET", `/tasks/${id}/shots/ponder/tablet.jpg`)).toBe("admin");
+    expect(accessFor("GET", `/tasks/${id}/shots/Ponder/desktop.jpg`)).toBe("admin");
+    expect(accessFor("POST", `/tasks/${id}/shots/ponder/desktop.jpg`)).toBe("admin");
+    expect(isShotPath(`/tasks/bad/shots/ponder/desktop.jpg`)).toBe(false);
+  });
+});

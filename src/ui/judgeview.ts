@@ -41,10 +41,26 @@ export interface CrossView {
   split: boolean; // the task gave robots different parts, so only the repo's tests counted
 }
 
+/** One fork as the look step saw it: Clef's two answers, or why it could not be judged. */
+export interface LookForkView {
+  agent: string;
+  look: number; // 0..1
+  fit?: number; // 0..1: how completely the page shows what the task asks
+  quality?: number; // 0..1: how clean and readable it is
+  error?: string;
+}
+
+/** The look step's output: the forks it judged, in the score's rank order, and whether the source's before shot exists. */
+export interface LookView {
+  forks: LookForkView[];
+  before: boolean;
+}
+
 /** Everything the page draws from the judge's output. */
 export interface JudgeView {
   tie?: TieView;
   cross?: CrossView;
+  look?: LookView;
   fit: Record<string, number[]>; // Clef's probability of each task-fit level, lowest first
 }
 
@@ -151,6 +167,23 @@ function fitOf(forks: unknown[]): Record<string, number[]> {
   return fit;
 }
 
+/** The look view: only when the race was judged on look. Forks follow `ranked`'s order; one Clef could not score keeps its error. */
+function lookOf(look: unknown, ranked: unknown): LookView | undefined {
+  if (!isObject(look) || look.judged !== true || !Array.isArray(look.forks)) return undefined;
+  const order = Array.isArray(ranked) ? ranked.filter(isObject).map((s) => s.agent).filter((a): a is string => typeof a === "string") : [];
+  const forks = look.forks.filter(isObject).flatMap((f): LookForkView[] => {
+    const agent = str(f.agent);
+    const value = num(f.look);
+    if (agent === undefined || value === undefined) return [];
+    const fit = num(f.fit);
+    const quality = num(f.quality);
+    const error = str(f.error);
+    return [{ agent, look: value, ...(fit === undefined ? {} : { fit }), ...(quality === undefined ? {} : { quality }), ...(error === undefined ? {} : { error }) }];
+  });
+  const rank = (a: string): number => (order.includes(a) ? order.indexOf(a) : order.length);
+  return { forks: forks.toSorted((a, b) => rank(a.agent) - rank(b.agent)), before: str(look.before) === undefined };
+}
+
 /** The judge view from a GET /tasks/:id/judge body, or undefined when it has no output yet. */
 export function judgeView(body: unknown): JudgeView | undefined {
   if (!isObject(body) || !isObject(body.output)) return undefined;
@@ -159,7 +192,8 @@ export function judgeView(body: unknown): JudgeView | undefined {
   const split = (num(out.split) ?? 0) >= 0.5;
   const tie = isObject(out.scores) ? tieOf(out.scores) : undefined;
   const cross = crossOf(forks, split, out.counted);
-  return { ...(tie === undefined ? {} : { tie }), ...(cross === undefined ? {} : { cross }), fit: fitOf(forks) };
+  const look = lookOf(out.look, isObject(out.scores) ? out.scores.ranked : undefined);
+  return { ...(tie === undefined ? {} : { tie }), ...(cross === undefined ? {} : { cross }), ...(look === undefined ? {} : { look }), fit: fitOf(forks) };
 }
 
 /** One step of the judge as the page lists it. */

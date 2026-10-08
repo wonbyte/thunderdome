@@ -2,7 +2,7 @@
 // Durable Objects, Workflows and the Outbound Worker that wrangler.jsonc binds.
 
 import { isArtifactsError, isRepoName } from "./artifacts/repo";
-import { accessFor, pageAsset } from "./routes/access";
+import { accessFor, isShotPath, pageAsset } from "./routes/access";
 import { modelCheck } from "./routes/admin";
 import { handlePlay, isPlayPath } from "./routes/play";
 import { cardTaskId } from "./routes/card";
@@ -36,6 +36,7 @@ const ROUTES = {
   "POST /tasks/:id/judge": "Start the judge by hand on a finished task if it did not start on its own. 409 when it exists.",
   "GET /tasks/:id/judge": "The judge's status and, when done, its output: scores, why and the ship result. No auth.",
   "GET /tasks/:id/forks/:agent/diff": "The diff the judge scored for an agent's fork: { agent, diff, clipped }. 404 before the judge saved it. No auth.",
+  "GET /tasks/:id/shots/:agent/desktop.jpg": "A screenshot the look step kept of the agent's preview (also phone.jpg; agent `before` is the source). 404 when there is none. No auth.",
   "POST /play": "Start a 5-agent race on a demo template: { template, prompt, invite? }. Daily quota; 202 { id, page, remaining }. No auth.",
   "GET /play/quota": "Today's play quota: { day, used, limit, remaining, invite }. No auth.",
   "GET /play": "The run-your-own-race page. No auth.",
@@ -79,6 +80,7 @@ export default {
       const waitUntil = (work: Promise<unknown>): void => ctx.waitUntil(work);
       if (cardId !== undefined && request.method === "GET") return await cached(edge, request, 0, () => handleCard(env, cardId), waitUntil);
       if (route === "GET /tasks") return await cached(edge, request, RACE_LIST_TTL_S, () => handleTasks(request, env), waitUntil);
+      if (isShotPath(url.pathname) && request.method === "GET") return await cached(edge, request, 0, () => handleTasks(request, env), waitUntil);
       const judgeId = judgeTaskId(url.pathname);
       if (judgeId !== undefined) return await handleJudge(request, env, judgeId);
       if (tasks) return await handleTasks(request, env);

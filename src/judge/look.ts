@@ -16,6 +16,20 @@ const ERROR_CHARS = 300;
 
 /** A screenshot's viewport size in CSS pixels. */
 export interface Viewport { width: number; height: number }
+/** Which screenshot of a page: the desktop or the phone width. */
+export type ShotKind = "desktop" | "phone";
+/** The agent name under which the source's before screenshot is kept. */
+export const BEFORE_AGENT = "before";
+
+/** Keeps a shot when the deps can; a failure is logged and the look goes on. */
+async function keepShot(deps: LookDeps, agent: string, kind: ShotKind, base64: string): Promise<void> {
+  if (deps.keep === undefined) return;
+  try {
+    await deps.keep(agent, kind, base64);
+  } catch (cause) {
+    console.error({ event: "look.keep_failed", agent, kind, error: String(cause) });
+  }
+}
 
 /**
  * What judging the look needs from the outside: Clef and a screenshot taker. Injected so it runs in
@@ -29,6 +43,8 @@ export interface LookDeps {
   /** When now() passes deadline (ms) before the forks are judged, the race is judged without look. */
   now?: () => number;
   deadline?: number;
+  /** Keeps a screenshot for the page (the result's "what Clef saw"); `agent` is "before" for the source. Optional, and never fails the look. */
+  keep?: (agent: string, kind: ShotKind, base64: string) => Promise<void>;
 }
 
 /** One fork's preview to judge. */
@@ -232,6 +248,7 @@ async function lookFork(deps: LookDeps, task: string, before: Promise<string | u
   } catch (cause) {
     return { agent: fork.agent, look: 0, error: `the preview did not load: ${errorText(cause)}` };
   }
+  await Promise.all([keepShot(deps, fork.agent, "desktop", desktop), keepShot(deps, fork.agent, "phone", phone)]);
   try {
     const answers = await ask(deps, lookRequest(task, await before, desktop, phone));
     const fit = scoreOf(answers, "look_fit");
@@ -258,10 +275,15 @@ export async function judgeLook(deps: LookDeps, input: LookInput): Promise<LookR
   const before: Promise<string | undefined> =
     input.before === undefined
       ? Promise.resolve(undefined)
-      : shoot(deps, input.before, DESKTOP).catch((cause: unknown) => {
-          beforeError = `the before preview did not load: ${errorText(cause)}`;
-          return undefined;
-        });
+      : shoot(deps, input.before, DESKTOP)
+          .then(async (shot) => {
+            await keepShot(deps, BEFORE_AGENT, "desktop", shot);
+            return shot;
+          })
+          .catch((cause: unknown) => {
+            beforeError = `the before preview did not load: ${errorText(cause)}`;
+            return undefined;
+          });
   // Each fork has its own pages and Clef call, so the forks are judged at once, alongside the before page.
   const forks = await Promise.all(input.forks.map((fork) => lookFork(deps, input.task, before, fork)));
   await before;

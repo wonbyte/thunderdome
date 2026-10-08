@@ -1417,3 +1417,27 @@ body.explaining .caption { display: block; }
 @media (max-width: 640px) { .explainer { flex-direction: column; } }
 @media (prefers-reduced-motion: reduce) { .explainer { animation: none; } }
 
+/* ---------- what Clef saw ---------- */
+.look-panel { margin: 18px 0 6px; padding: 14px 16px; border-radius: 14px; background: #090b14; border: 1px solid var(--line); }
+.look-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 14px; margin-bottom: 12px; }
+.look-head h3 { margin: 0; font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: #ff6ab3; }
+.look-head .hint { margin: 0; flex: 1 1 320px; }
+.look-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
+.look-fork { margin: 0; padding: 10px; border-radius: 12px; background: var(--panel); border: 1px solid color-mix(in srgb, var(--color) 40%, transparent); }
+.look-fork figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.look-fork figcaption b { color: var(--color); }
+.look-fork figcaption span { font: 600 11px var(--mono); color: var(--dim); }
+.look-answers { margin: 4px 0 8px; font: 600 12px var(--mono); color: #d5d9e6; }
+.look-fork.failed .look-answers { color: #ff9a9c; font-family: var(--sans); font-weight: 500; }
+.look-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.look-fork.before .shot { width: 100%; }
+.shot { position: relative; display: block; width: 100%; padding: 0; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #000; cursor: zoom-in; aspect-ratio: 16 / 10; }
+.shot.phone { aspect-ratio: 390 / 844; height: 200px; width: auto; justify-self: center; }
+.shot img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.shot i { position: absolute; left: 6px; bottom: 6px; padding: 1px 7px; border-radius: 999px; font: 700 10px var(--mono); font-style: normal; background: #000a; color: #d5d9e6; }
+.shot:hover { border-color: var(--cyan); }
+.shot-dialog { width: min(1240px, 96vw); max-height: 92vh; padding: 0; }
+.shot-body { overflow: auto; max-height: calc(92vh - 52px); background: #000; }
+.shot-full { display: block; width: 100%; height: auto; }
+@media (max-width: 640px) { .look-pair { grid-template-columns: 1fr; } .shot.phone { height: 260px; } }
+

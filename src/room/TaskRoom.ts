@@ -94,6 +94,19 @@ export class TaskRoom extends DurableObject<Env> {
     // The result card (GET /race/:id/card.png), drawn once after the verdict. One row; a race that
     // was never shared has none.
     ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS card (key TEXT PRIMARY KEY, type TEXT NOT NULL, body BLOB NOT NULL, at TEXT NOT NULL)");
+    // The look step's screenshots (JPEG), keyed "<agent>/<desktop|phone>"; "before" is the source.
+    ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS shots (key TEXT PRIMARY KEY, body BLOB NOT NULL, at TEXT NOT NULL)");
+  }
+
+  /** A look screenshot, or null when the look never kept one. */
+  shot(agent: string, kind: string): ArrayBuffer | null {
+    const row = this.ctx.storage.sql.exec<{ body: ArrayBuffer }>("SELECT body FROM shots WHERE key = ?", `${agent}/${kind}`).toArray()[0];
+    return row === undefined ? null : row.body;
+  }
+
+  /** Keeps a look screenshot; a retried look step replaces the first. */
+  saveShot(agent: string, kind: string, body: ArrayBuffer): void {
+    this.ctx.storage.sql.exec("INSERT OR REPLACE INTO shots (key, body, at) VALUES (?, ?, ?)", `${agent}/${kind}`, body, new Date().toISOString());
   }
 
   /** The saved result card, or null before one was drawn. */

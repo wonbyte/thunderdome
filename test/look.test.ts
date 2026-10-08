@@ -251,6 +251,23 @@ describe("scoring with look", () => {
   });
 });
 
+describe("kept shots", () => {
+  it("L0: keeps each judged fork's two shots and the before page; a keep that fails never fails the look", async () => {
+    const { deps, shots } = fakeDeps();
+    const kept: string[] = [];
+    deps.keep = async (agent, kind, base64) => {
+      if (agent === "zippy") throw new Error("row too big");
+      kept.push(`${agent}/${kind}:${base64}`);
+    };
+    const result = await judgeLook(deps, input);
+    expect(result.judged).toBe(true);
+    expect(kept.toSorted()).toEqual(["before/desktop:jpeg:https://base.test:1280", "ponder/desktop:jpeg:https://ponder.test:1280", "ponder/phone:jpeg:https://ponder.test:390"]);
+    expect(result.forks.find((f) => f.agent === "zippy")?.error).toBeUndefined();
+    // The before page, and two widths for each fork with a preview.
+    expect(shots).toHaveLength(5);
+  });
+});
+
 describe("applyLook", () => {
   const judged = (agent: string): JudgedFork => ({
     agent,

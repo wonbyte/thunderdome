@@ -2,7 +2,7 @@
 import { judgeInstanceId } from "../judge/judge";
 import { RACE_INDEX_MAX, RACE_LIST_LIMIT, summaryOf } from "../room/races";
 import { isTaskId, judgeInput, newTaskId, parseCreateTask } from "../room/task";
-import { isForkAgent } from "./access";
+import { isForkAgent, isShotPath } from "./access";
 import { commitResponse, isCommitSha } from "./commits";
 
 // The room starts the judge with the same params, so both come from one place.
@@ -46,6 +46,8 @@ export async function handleTasks(request: Request, env: TasksEnv): Promise<Resp
   if (action === "forks" && rest.length === 2 && leaf === "diff" && isForkAgent(agent)) return forkDiff(request, env, id, agent);
   // /tasks/:id/commits/:sha
   if (action === "commits" && rest.length === 1 && isCommitSha(agent)) return verdictCommit(request, env, id, agent);
+  // /tasks/:id/shots/:agent/<desktop|phone>.jpg
+  if (action === "shots" && isShotPath(pathname)) return lookShot(request, env, id, agent, (leaf ?? "").replace(/\.jpg$/, ""));
   if (rest.length > 0) return notFound();
   const room = env.TASK_ROOM.getByName(id);
   if (action === undefined) {
@@ -98,6 +100,14 @@ async function forkDiff(request: Request, env: TasksEnv, id: string, agent: stri
   if (request.method !== "GET") return methodNotAllowed("GET");
   const saved = await env.TASK_ROOM.getByName(id).forkDiff(agent);
   return saved === null ? notFound() : Response.json({ agent, diff: saved.diff, clipped: saved.clipped });
+}
+
+/** GET /tasks/:id/shots/:agent/:kind.jpg: a screenshot the look step kept. Shots never change, so a found one is cached for good. */
+async function lookShot(request: Request, env: TasksEnv, id: string, agent: string, kind: string): Promise<Response> {
+  if (request.method !== "GET") return methodNotAllowed("GET");
+  const body = await env.TASK_ROOM.getByName(id).shot(agent, kind);
+  if (body === null) return notFound();
+  return new Response(body, { headers: { "content-type": "image/jpeg", "content-length": String(body.byteLength), "cache-control": "public, max-age=31536000, immutable" } });
 }
 
 /** GET /tasks/:id/commits/:sha: the fusion commit or the merge the verdict names, read from Artifacts. */

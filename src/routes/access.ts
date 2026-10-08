@@ -19,6 +19,13 @@ function isDiffPath(pathname: string): boolean {
   return parts.length === 6 && empty === "" && root === "tasks" && isTaskId(id) && forks === "forks" && isForkAgent(agent) && diff === "diff";
 }
 
+/** GET /tasks/:id/shots/:agent/<desktop|phone>.jpg: a look screenshot; `before` is the source's. */
+export function isShotPath(pathname: string): boolean {
+  const parts = pathname.split("/");
+  const [empty, root, id = "", shots, agent = "", file] = parts;
+  return parts.length === 6 && empty === "" && root === "tasks" && isTaskId(id) && shots === "shots" && (isForkAgent(agent) || agent === "before") && (file === "desktop.jpg" || file === "phone.jpg");
+}
+
 /** GET /tasks/:id/commits/:sha with a valid id and a full commit hash. */
 function isCommitPath(pathname: string): boolean {
   const parts = pathname.split("/");
@@ -35,7 +42,7 @@ export function accessFor(method: string, pathname: string): Access {
   if (method !== "GET") return "admin";
   if (pathname === "/" || pathname === "/tasks" || pathname === "/play/quota") return "public";
   if (pathname === "/races" || pathname === "/play") return "page";
-  if (isDiffPath(pathname) || isCommitPath(pathname)) return "public";
+  if (isDiffPath(pathname) || isCommitPath(pathname) || isShotPath(pathname)) return "public";
   const [empty, root, id = "", action, ...rest] = pathname.split("/");
   if (empty !== "" || rest.length > 0 || !isTaskId(id)) return "admin";
   if (root === "race" && action === undefined) return "page";
