@@ -29,7 +29,10 @@
     // npm run deploy -- --var PLAY_INVITE:<code>
     "PLAY_INVITE": "",
     // Judged races older than this (outside the gallery's newest 50) lose their repos; replays stay.
-    "RACE_RETENTION_DAYS": "30"
+    "RACE_RETENTION_DAYS": "30",
+    // AI Gateway id on CF_ACCOUNT_ID that the agents' model calls go through. Empty means straight
+    // to the model API. Create the gateway first, then: npm run deploy -- --var MODEL_GATEWAY:<id>
+    "MODEL_GATEWAY": ""
   },
   "secrets": {
     // ADMIN_TOKEN: Bearer token for the admin routes.

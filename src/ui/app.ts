@@ -2,7 +2,8 @@
 // the board, the Cloudflare pipeline under it, the judging and the before/after compare.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
 import { AGENT_IDS, applyEvent, applyScores, colorFor, styleLabel, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
-import type { Action, Board, BoardEvent, Fighter, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
+import type { Action, Board, BoardEvent, Fighter, WireAgent, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
+import { billLine, billOf, usd } from "./bill";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
@@ -98,6 +99,9 @@ interface BotView {
   body: HTMLElement;
   /** "⚡ assist" on the nameplate of a loser whose files the fusion round shipped. */
   assist: HTMLElement;
+  /** The robot's spend: tokens and dollars, live from its meter. */
+  spend: HTMLElement;
+  spendKey?: string;
   action?: Action;
   actionAt?: number;
   bubbleKey?: string;
@@ -818,6 +822,7 @@ function render(b: Board): void {
   renderTimer();
   renderRail(b);
   renderGuess(b);
+  renderBill(b);
   // Cheering is for a race in progress: live only, and gone once it has ended.
   byId("cheer").hidden = replay !== undefined || b.ended;
   flushScroll();
@@ -1309,7 +1314,9 @@ function botView(f: Fighter, index: number): BotView {
   const state = el("span", "state");
   const meta = el("div", "meta");
   meta.append(pips, state);
-  root.append(bubble, el("div", "shadow"), body, plate, meta);
+  const spend = el("div", "spend");
+  spend.hidden = true;
+  root.append(bubble, el("div", "shadow"), body, plate, meta, spend);
   root.tabIndex = 0;
   root.setAttribute("role", "button");
   root.setAttribute("aria-label", `${displayName(f.agent)}: see the code`);
@@ -1321,7 +1328,7 @@ function botView(f: Fighter, index: number): BotView {
       void openDiff(taskId, f.agent);
     }
   });
-  const view: BotView = { root, bubble, bubbleText, pips, state, meter, segs, meterValue, body, assist };
+  const view: BotView = { root, bubble, bubbleText, pips, state, meter, segs, meterValue, body, assist, spend };
   bots.set(f.agent, view);
   return view;
 }
@@ -1371,6 +1378,49 @@ function updateBot(b: Board, f: Fighter, index: number): void {
   view.pips.setAttribute("aria-label", done.length === 0 ? "not started" : done.join(", "));
   view.state.textContent = f.score === undefined ? LABELS[f.action] : `#${f.score.place}`;
   root.setAttribute("aria-label", `${displayName(f.agent)}: ${LABELS[f.action]}, ${f.commits} commits`);
+  const slot = b.task?.agents.find((s) => s.name === f.agent);
+  // Steps arrive several times a second; the spend changes only once per model call.
+  const spendKey = JSON.stringify([slot?.usage, slot?.costUsd]);
+  if (spendKey !== view.spendKey) {
+    view.spendKey = spendKey;
+    renderSpend(view.spend, slot);
+  }
+}
+
+/** "142k in · 3.1k out · $0.19" under a robot: its meter while it runs, Claude Code's figure once it ends. */
+function renderSpend(view: HTMLElement, slot: WireAgent | undefined): void {
+  const usage = slot?.usage;
+  const final = slot?.costUsd;
+  view.hidden = usage === undefined && final === undefined;
+  if (view.hidden) return;
+  const parts: HTMLElement[] = [];
+  if (usage !== undefined) parts.push(el("span", "spend-tokens", `${tokens(usage.input + usage.cacheRead + usage.cacheWrite)} in · ${tokens(usage.output)} out · `));
+  const priced = usage !== undefined && (usage.unpriced ?? 0) < usage.calls;
+  parts.push(el("b", undefined, final !== undefined ? usd(final) : priced ? `≈ ${usd(usage.usd)}` : "$?"));
+  view.replaceChildren(...parts);
+  view.title = final !== undefined
+    ? `Claude Code's own cost for this run${usage === undefined ? "" : `; ${usage.calls} model calls counted on the way out`}`
+    : priced
+      ? `Live estimate at list price from ${usage.calls} model calls; the final figure is Claude Code's own`
+      : "The model's price is not in the table, so only the tokens are counted";
+}
+
+/** 950, 12k, 1.4M. */
+function tokens(n: number): string {
+  if (n < 1_000) return String(n);
+  if (n < 1_000_000) return `${n < 10_000 ? (n / 1_000).toFixed(1) : Math.round(n / 1_000)}k`;
+  return `${(n / 1_000_000).toFixed(1)}M`;
+}
+
+/** The race's bill in the pipeline header, once the race has started. */
+function renderBill(b: Board): void {
+  const line = byId("bill");
+  const task = b.task;
+  line.hidden = task?.startedAt === undefined;
+  if (task === undefined || line.hidden) return;
+  // An ended race is billed up to its verdict: a judge step that never reported its end must not run on.
+  const end = b.ended ? Date.parse(task.verdict?.judgedAt ?? task.finishedAt ?? "") : Number.NaN;
+  line.textContent = billLine(billOf(task, Number.isNaN(end) ? Date.now() : end));
 }
 
 function renderMeters(b: Board, elapsed: number | undefined): void {

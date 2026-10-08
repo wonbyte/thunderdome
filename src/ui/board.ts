@@ -27,7 +27,10 @@ export interface WireAgent {
     log?: { at: string; commit: string; commits: number; message?: string }[]; // tasks from before the log have none
   };
   costUsd?: number;
+  usage?: WireUsage; // races from before the meter have none
 }
+/** An agent's model calls so far (src/agents/usage.ts Usage). */
+export interface WireUsage { calls: number; input: number; output: number; cacheRead: number; cacheWrite: number; usd: number; unpriced?: number }
 /** The judge's verdict (src/room/task.ts Verdict). */
 export interface WireVerdict {
   winner: string | null;
@@ -106,12 +109,13 @@ export type BoardEvent =
   | { kind: "release"; taskId: string; agent: string; released: string[] }
   | { kind: "push"; taskId: string; agent: string; push: { commits: number; pushes?: number; lastPushAt?: string } }
   | { kind: "preview"; taskId: string; agent: string; preview: WirePreview }
-  | { kind: "agent-end"; taskId: string; agent: string; outcome: { end: "done" | "failed" | "timeout" }; status: WireTaskStatus }
+  | { kind: "agent-end"; taskId: string; agent: string; outcome: { end: "done" | "failed" | "timeout"; costUsd?: number }; status: WireTaskStatus }
   | { kind: "verdict"; taskId: string; verdict: WireVerdict }
   | { kind: "judge"; taskId: string; step: WireJudgeStep }
   | { kind: "base-preview"; taskId: string; preview: WirePreview }
   | { kind: "watchers"; taskId: string; n: number } // viewers connected; the page shows it, the board ignores it
-  | { kind: "reaction"; taskId: string; emoji: string; agent?: string }; // a viewer's cheer; the page floats it, the board ignores it
+  | { kind: "reaction"; taskId: string; emoji: string; agent?: string } // a viewer's cheer; the page floats it, the board ignores it
+  | { kind: "usage"; taskId: string; agent: string; usage: WireUsage }; // an agent's running total of model calls
 
 /** Each robot's color on the page. */
 export const AGENT_COLORS: Readonly<Record<string, string>> = {
@@ -396,7 +400,7 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
       return withFighter(board, event.agent, (f) => ({ ...f, preview }));
     }
     case "agent-end":
-      return applyAgentEnd(board, event.agent, event.outcome.end, event.status, now);
+      return applyAgentEnd(board, event.agent, event.outcome.end, event.status, now, event.outcome.costUsd);
     case "verdict": {
       const { winner, why, judgedAt, ship, fusion } = event.verdict;
       const verdict: WireVerdict = {
@@ -420,6 +424,12 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
       return { ...board, basePreview: { ...event.preview } };
     case "judge":
       return board.task === undefined ? board : { ...board, task: { ...board.task, judging: withJudgeStep(board.task.judging ?? [], event.step) } };
+    case "usage": {
+      const task = board.task;
+      if (task === undefined) return board;
+      const usage = event.usage;
+      return { ...board, task: { ...task, agents: task.agents.map((slot) => (slot.name === event.agent ? { ...slot, usage } : slot)) } };
+    }
     case "watchers":
     case "reaction":
       // Spectators: the page shows them, the race does not change.
@@ -584,12 +594,14 @@ function gridOf(cells: Grid["cells"]): Grid {
 }
 
 /** The server frees an ended agent's files without a release event, so the board does too. */
-function applyAgentEnd(board: Board, agent: string, end: "done" | "failed" | "timeout", status: WireTaskStatus, now: number): Board {
+function applyAgentEnd(board: Board, agent: string, end: "done" | "failed" | "timeout", status: WireTaskStatus, now: number, costUsd?: number): Board {
   const at = new Date(now).toISOString();
   let next = board;
   if (board.task !== undefined) {
     const task = board.task;
-    const agents = task.agents.map((slot) => (slot.name === agent ? { ...slot, status: end, endedAt: slot.endedAt ?? at } : slot));
+    // Claude Code's own cost replaces the meter's estimate on a page that watched the race.
+    const cost = costUsd === undefined ? {} : { costUsd };
+    const agents = task.agents.map((slot) => (slot.name === agent ? { ...slot, status: end, endedAt: slot.endedAt ?? at, ...cost } : slot));
     const finishedAt = task.finishedAt ?? (status === "finished" ? at : undefined);
     next = { ...board, task: { ...task, agents, status, ...(finishedAt === undefined ? {} : { finishedAt }) } };
   }

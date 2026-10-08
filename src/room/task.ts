@@ -2,6 +2,7 @@
 // so the unit tests can run it with a mock Artifacts binding.
 import { AGENT_NAMES, type AgentName } from "../agents/prompt";
 import { AGENT_TIME_LIMIT_MS, type AgentOutcome } from "../agents/runner";
+import type { Usage } from "../agents/usage";
 import { deleteRepo, forkFor, forkName, isArtifactsError, isRepoName, latestCommit, notReady } from "../artifacts/repo";
 import type { JudgeInput } from "../judge/judge";
 import type { ScoreParts } from "../judge/score";
@@ -92,6 +93,7 @@ export interface AgentSlot extends ForkSlot, Partial<Omit<AgentOutcome, "end">> 
   startedAt?: string;
   endedAt?: string;
   push?: PushState;
+  usage?: Usage; // the agent's model calls so far, counted by the Outbound Worker
 }
 
 /** creating → ready → running → finished. "failed" means the forks could not be made. */

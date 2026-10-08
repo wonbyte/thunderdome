@@ -140,6 +140,21 @@ export function isModelApiCall(url: URL, method?: string): boolean {
   return url.port === "" && MODEL_API_CALLS.some(([m, path]) => m === method && url.pathname === path);
 }
 
+/** True for the one model call that runs the model and bills: a message. */
+export function isMessageCall(url: URL, method?: string): boolean {
+  return method === "POST" && url.hostname === MODEL_API_HOST && url.port === "" && url.pathname === "/v1/messages";
+}
+
+/**
+ * Where a message call goes: through AI Gateway `gateway` on `accountId` when both are well
+ * formed, else straight to the model API. The sandbox still calls the model API host, so its
+ * policy and Claude Code's start-up reads are unchanged.
+ */
+export function messageUpstream(url: URL, accountId?: string, gateway?: string): URL {
+  if (accountId === undefined || gateway === undefined || !/^[0-9a-f]{32}$/.test(accountId) || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(gateway)) return url;
+  return new URL(`https://gateway.ai.cloudflare.com/v1/${accountId}/${gateway}/anthropic${url.pathname}${url.search}`);
+}
+
 /** The previews API for a preview sandbox; everything else to the Cloudflare API is refused. */
 function decideCloudflareApi(url: URL, props: OutboundProps, method?: string, previewToken?: string): OutboundDecision {
   const grant = props.previewApi;

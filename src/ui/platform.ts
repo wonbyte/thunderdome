@@ -135,6 +135,7 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
       }
       break;
     }
+    case "usage":
     case "watchers":
     case "reaction":
       // Spectators touch no product.

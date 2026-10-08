@@ -17,6 +17,18 @@ Measured on the live deploy, Oct 5, 8 races of the `clash` demo with 3 agents:
 | Containers, Durable Objects, Workflows, Previews | small | Billed by Cloudflare usage on the Workers Paid plan. One race keeps 1 agent container per robot (3 to 5) busy for about 1 to 2 minutes, plus short-lived containers for preview builds, the judge (one per fork) and the merge. |
 | Artifacts | — | Billed from Oct 15, 2026. A race makes 6 repos (source + 5 forks); retention deletes them after `RACE_RETENTION_DAYS`, so the count stays bounded. |
 
+**The meter.** The Outbound Worker reads the token counts out of each model reply as it streams
+past (`src/agents/usage.ts`) and the race page shows them under each robot, priced at list price.
+Once an agent ends, its `costUsd` replaces the estimate. The pipeline header shows the race's
+Cloudflare bill (`src/ui/bill.ts`): container-seconds of the agents, preview builds and judge
+steps at the `standard-1` list price, Clef calls at $0.24 per million input tokens (one measured
+call read 3,650), and the look step's browser time. It is an estimate, not an invoice.
+
+**AI Gateway.** Set `MODEL_GATEWAY` to a gateway id on `CF_ACCOUNT_ID` and the agents' message
+calls go through it, tagged with the race and robot (`cf-aig-metadata`). The sandbox still calls
+`api.anthropic.com`; the Outbound Worker changes where the call goes. Empty (the default) goes
+straight to the model API.
+
 The plan itself is Workers Paid. Each race's agents ran for 53–83 s, and the judge and merge
 took 13–29 s more. `/play` races 5 robots, so its agent spend is about 5/3 of the table:
 $0.72–0.92 a race. It caps public races at `PLAY_DAILY_LIMIT` per day (default 10), so the public
@@ -159,6 +171,7 @@ current task. Then every change comes as one JSON message with a `kind` and the 
 | `preview` | A preview of the agent's newest push is live (`preview`: `url`, `commit`, `at`) |
 | `base-preview` | The base preview of the source is live (`preview`: `url`, `commit`, `at`) |
 | `agent-end` | An agent ended (`outcome`, and the task `status`) |
+| `usage` | An agent's model calls so far (`agent`, `usage`: `calls`, `input`, `output`, `cacheRead`, `cacheWrite` tokens and `usd` at list price; `unpriced` counts calls whose model has no price). Sent after each call the Outbound Worker passes; the same total is saved on the agent as `usage`. |
 | `judge` | A judge step started or ended (`step`: `name` such as `fork ponder`, `look`, `split`, `compare`, `fuse` or `ship`; `state` `running`, `done` or `failed`; `startedAt`, `endedAt`). They are also saved as `judging` on the task, so replays play them. |
 | `verdict` | The judge saved its verdict |
 | `watchers` | A viewer connected or left (`n`: sockets open). Not recorded; replays have none. |

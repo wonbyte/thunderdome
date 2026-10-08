@@ -4,6 +4,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Step } from "../agents/events";
+import { addUsage, type Usage } from "../agents/usage";
 import { AGENT_TIME_LIMIT_MS, type AgentOutcome } from "../agents/runner";
 import type { SavedDiff } from "../judge/diffs";
 import { judgeInstanceId } from "../judge/judge";
@@ -78,6 +79,7 @@ export type LiveEvent =
   | { kind: "push"; taskId: string; agent: string; push: Omit<PushState, "seen" | "preview"> }
   | { kind: "preview"; taskId: string; agent: string; preview: Preview }
   | { kind: "agent-end"; taskId: string; agent: string; outcome: AgentOutcome; status: TaskStatus }
+  | { kind: "usage"; taskId: string; agent: string; usage: Usage } // the agent's running total
   | { kind: "verdict"; taskId: string; verdict: Verdict }
   | { kind: "judge"; taskId: string; step: JudgeStep }
   | { kind: "base-preview"; taskId: string; preview: Preview }
@@ -315,6 +317,17 @@ export class TaskRoom extends DurableObject<Env> {
     }
     const taskId = this.#task()?.id;
     if (taskId !== undefined && logged.length > 0) this.#broadcast({ kind: "steps", taskId, agent, steps: logged });
+  }
+
+  /** Called by the Outbound Worker after each of an agent's model calls, with that call's usage. */
+  usage(agent: string, call: Usage): void {
+    const task = this.#task();
+    const slot = task?.agents.find((candidate) => candidate.name === agent);
+    if (task === undefined || slot === undefined) return;
+    slot.usage = addUsage(slot.usage, call);
+    this.#save(task);
+    // One event per model call: a call takes seconds, so this stays near one a second per robot.
+    this.#broadcast({ kind: "usage", taskId: task.id, agent, usage: slot.usage });
   }
 
   /** Called by a sandbox once its agent has ended and its work is pushed: the agent's DONE. */
