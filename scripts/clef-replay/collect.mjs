@@ -2,7 +2,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
 const [dir, ...ids] = process.argv.slice(2);
-const LIVE = "https://thunderdome.git-bc1.workers.dev";
+const LIVE = "https://thunderdome.wonbyte.dev";
 const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: "utf8", maxBuffer: 64 << 20, ...opts });
 for (const id of ids) {
   const task = await (await fetch(`${LIVE}/tasks/${id}`)).json();

@@ -5,7 +5,7 @@ every fork, the winner merges, and the "why" stays in the merge commit. It runs 
 Cloudflare: Artifacts (git), Sandbox containers, Durable Objects, Workflows, Workers Previews,
 Workers AI (Clef) and Browser Rendering.
 
-- Live: https://thunderdome.git-bc1.workers.dev (`/play` starts a public race, `/races` is the gallery).
+- Live: https://thunderdome.wonbyte.dev (`/play` starts a public race, `/races` is the gallery).
 - Entry for the Cloudflare contest. Deadline **Oct 14, 2026**: a 5–10 min video, MIT source, run steps.
 - `README.md` is the short overview and run steps; keep it short. `docs/reference.md` has every
   route, live event, cost and limit. `PLAN.md` is the original day-by-day plan; `docs/plan-under-the-hood.md` is the Oct 8–14 plan

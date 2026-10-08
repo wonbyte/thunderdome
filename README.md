@@ -21,11 +21,11 @@ Workers Previews, Workers AI (Clef), Browser Rendering and static assets.
 
 No setup: the live deploy runs races for anyone.
 
-1. Open **[thunderdome.git-bc1.workers.dev/play](https://thunderdome.git-bc1.workers.dev/play)**.
+1. Open **[thunderdome.wonbyte.dev/play](https://thunderdome.wonbyte.dev/play)**.
 2. Pick a demo app (`bugs`, `ui`, `clash` or `fusion`), edit the task if you like, and start.
 3. Watch five robots race. In 2 to 4 minutes the judge picks a winner, merges it and says why.
    Click a robot to see its code, or open **replay** to watch it again.
-4. Every race is in the **[gallery](https://thunderdome.git-bc1.workers.dev/races)**, with a
+4. Every race is in the **[gallery](https://thunderdome.wonbyte.dev/races)**, with a
    leaderboard and the judge's reason for each winner.
 
 ## How it works

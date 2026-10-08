@@ -5,6 +5,8 @@
   "compatibility_date": "2026-09-15",
   // @cloudflare/sandbox Files resolves Linux errno names through node:os.
   "compatibility_flags": ["nodejs_compat"],
+  // The live site. The workers.dev address keeps working too.
+  "routes": [{ "pattern": "thunderdome.wonbyte.dev", "custom_domain": true }],
   // The race page. The Worker answers every path that is not a file in public/.
   // html_handling "none": the default would redirect /race.html to /race and lose the task id.
   "assets": {

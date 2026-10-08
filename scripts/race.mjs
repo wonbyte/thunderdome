@@ -4,7 +4,7 @@
 // /tasks/:id/live until the verdict, then fetches the base and agent previews. Prints no tokens.
 import { readFileSync } from "node:fs";
 
-const B = process.env.THUNDERDOME_URL ?? "https://thunderdome.git-bc1.workers.dev";
+const B = process.env.THUNDERDOME_URL ?? "https://thunderdome.wonbyte.dev";
 const app = process.argv[2];
 const md = readFileSync(new URL("../demo/README.md", import.meta.url), "utf8");
 const block = md.split(`**${app}**`)[1]?.split("**")[0] ?? "";

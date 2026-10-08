@@ -14,7 +14,7 @@ import { fusionOf, gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph"
 import { gitLog, type LogLine } from "./gitlog";
 import { drawGraph } from "./graphview";
 import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type JudgeView, type LookView, type TieView } from "./judgeview";
-import { closeButton, modal, showing } from "./dialog";
+import { closeButton, modal } from "./dialog";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
 import { PHASE_LABELS, PHASES, phaseOf, phaseStarts, railStates, type Phase } from "./phases";
 import { verdictLine } from "./verdict";
@@ -1946,7 +1946,6 @@ function shotThumb(agent: string, kind: "desktop" | "phone", label: string): HTM
 /** The full screenshot in a dialog, scrolling for a tall page. */
 function openShot(agent: string, kind: "desktop" | "phone", label: string): void {
   const d = modal("shot-dialog", "diff-dialog shot-dialog");
-  const check = showing(d, `${agent}/${kind}`);
   const close = (): void => d.close();
   const head = el("div", "diff-head");
   head.append(el("b", undefined, label), closeButton(close));
@@ -1956,7 +1955,7 @@ function openShot(agent: string, kind: "desktop" | "phone", label: string): void
   const body = el("div", "shot-body");
   body.append(img);
   d.replaceChildren(head, body);
-  if (check() && !d.open) d.showModal();
+  if (!d.open) d.showModal();
 }
 
 /** The demo apps /play accepts (mirrors TEMPLATES in playpage.ts and src/play/play.ts). */

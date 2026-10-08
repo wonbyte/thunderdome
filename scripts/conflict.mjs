@@ -2,7 +2,7 @@
 // Runs two races at once on one source repo (a fresh fork of thunderdome-clash). Both change the
 // routes and the page, so the race that ships second conflicts and starts the conflict race.
 // Prints both verdicts' ship results. Prints no tokens. About $1 in agent spend.
-const B = process.env.THUNDERDOME_URL ?? "https://thunderdome.git-bc1.workers.dev";
+const B = process.env.THUNDERDOME_URL ?? "https://thunderdome.wonbyte.dev";
 const auth = { authorization: `Bearer ${process.env.ADMIN_TOKEN}` };
 const t0 = Date.now();
 const at = () => `${((Date.now() - t0) / 1000).toFixed(1)}s`;
