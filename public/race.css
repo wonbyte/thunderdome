@@ -1438,6 +1438,7 @@ body.explaining .caption { display: block; }
 .shot:hover { border-color: var(--cyan); }
 .shot-dialog { width: min(1240px, 96vw); max-height: 92vh; padding: 0; }
 .shot-body { overflow: auto; max-height: calc(92vh - 52px); background: #000; }
-.shot-full { display: block; width: 100%; height: auto; }
+/* Shown at the size it was taken (a phone page stays phone-wide); never scaled up. */
+.shot-full { display: block; width: auto; max-width: 100%; height: auto; margin: 0 auto; }
 @media (max-width: 640px) { .look-pair { grid-template-columns: 1fr; } .shot.phone { height: 260px; } }
 
