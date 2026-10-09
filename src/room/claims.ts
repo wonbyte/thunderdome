@@ -10,6 +10,8 @@
 
 /** Files one claim call may name. */
 export const MAX_FILES_PER_CLAIM = 50;
+/** Claims one agent may make in a race, counting re-claims after a release. */
+export const MAX_CLAIMS_PER_AGENT = 200;
 const MAX_PATH_LENGTH = 300;
 
 /**
@@ -81,6 +83,9 @@ export function holdersOf(board: ClaimBoard, file: string): Claim[] {
  * with shared set, every new claim is shared.
  */
 export function claimFiles(board: ClaimBoard, agent: string, files: string[], shared: boolean, at: string): ClaimResult {
+  // The board is one stored value and goes into the judge's input: unbounded, it would outgrow both.
+  const made = board.history.filter((claim) => claim.agent === agent).length;
+  if (made + files.length > MAX_CLAIMS_PER_AGENT) return { ok: false, status: 429, error: `at most ${MAX_CLAIMS_PER_AGENT} claims per agent in a race` };
   const clashes: Conflict[] = [];
   const already: string[] = [];
   const claimed: string[] = [];

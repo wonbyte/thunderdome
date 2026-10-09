@@ -1,6 +1,6 @@
 // The task routes. The caller checks admin auth first.
 import { judgeInstanceId } from "../judge/judge";
-import { RACE_INDEX_MAX, RACE_LIST_LIMIT, summaryOf } from "../room/races";
+import { RACE_INDEX_MAX, RACE_INDEX_NAME, RACE_LIST_LIMIT, summaryOf } from "../room/races";
 import { isTaskId, judgeInput, newTaskId, parseCreateTask } from "../room/task";
 import { isForkAgent, isShotPath } from "./access";
 import { commitResponse, isCommitSha } from "./commits";
@@ -10,7 +10,6 @@ export { judgeInput } from "../room/task";
 
 const JUDGE_PATH = /^\/tasks\/([^/]+)\/judge$/;
 /** The one RaceIndex instance. */
-const RACE_INDEX_NAME = "all";
 /** Ids one backfill call may record. */
 const MAX_BACKFILL_IDS = 50;
 

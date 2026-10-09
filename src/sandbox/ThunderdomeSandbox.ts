@@ -143,19 +143,6 @@ export class ThunderdomeSandbox extends DurableObject<Env> {
     await this.#must(["git", "clone", "--", remote, REPO_DIR], "/workspace");
   }
 
-  /** Writes a file; a relative path is under the repo clone. */
-  async writeFile(path: string, content: string): Promise<void> {
-    await this.#files.writeFile(path, content, { cwd: REPO_DIR });
-  }
-
-  /** Commits every change in REPO_DIR and pushes it. Returns the new commit hash. */
-  async commitAndPush(message: string): Promise<string> {
-    await this.#must(["git", "add", "--all"]);
-    await this.#must(["git", "commit", "--message", message]);
-    await this.#must(["git", "push", "origin", "HEAD"]);
-    return (await this.#must(["git", "rev-parse", "HEAD"])).stdout.trim();
-  }
-
   /** Clones the fork and starts the agent in the background. The alarm follows it from here. */
   async startAgent(spec: AgentSpec): Promise<{ base: string; colo?: string }> {
     if (this.ctx.storage.kv.get(RUN_KEY) !== undefined) throw new Error(`An agent already runs in ${spec.fork}`);

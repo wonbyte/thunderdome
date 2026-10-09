@@ -151,8 +151,12 @@ describe("agentCommand", () => {
   });
 
   it("passes a model when one is set", () => {
-    const { argv } = agentCommand({ ...spec, model: "some-model" });
+    const { argv, env } = agentCommand({ ...spec, model: "some-model" });
     expect(argv[argv.indexOf("--model") + 1]).toBe("some-model");
+    // The Outbound Worker refuses other models, so Claude Code's own picks use this one too.
+    expect(env.ANTHROPIC_SMALL_FAST_MODEL).toBe("some-model");
+    expect(env.ANTHROPIC_DEFAULT_SONNET_MODEL).toBe("some-model");
+    expect(agentCommand(spec).env.ANTHROPIC_SMALL_FAST_MODEL).toBeUndefined();
   });
 
   it("names the agent in git commits", () => {

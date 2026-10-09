@@ -11,7 +11,7 @@ import { cached } from "./routes/cache";
 import { retainRaces } from "./routes/retain";
 import { handleJudge, handlePurge, handleRaceBackfill, handleTasks, isTasksPath, judgeTaskId } from "./routes/tasks";
 import { CommandError } from "./sandbox/ThunderdomeSandbox";
-import { isDemoApp, runDay1, seedSample } from "./spike";
+import { isDemoApp, seedSample } from "./spike";
 
 export { ThunderdomeSandbox } from "./sandbox/ThunderdomeSandbox";
 export { Outbound } from "./sandbox/outbound";
@@ -23,7 +23,6 @@ export { PushWorkflow } from "./push/PushWorkflow";
 
 const ROUTES = {
   "POST /spike/seed": "Create a repo and push a demo app (once): { repo?, app? }, default thunderdome-sample with sample-app. Apps are the folders in demo/.",
-  "POST /spike/day1": "Seed, fork, push from a sandbox, and read the commit back.",
   "GET /tasks": "The race list, newest first (at most 50). No auth.",
   "POST /tasks": "Create a task: { repo | template, prompt, agents: 3..5 }. A template is forked into a fresh source repo <template>-<id> first. Returns 1 fork and 1 write token per agent.",
   "GET /tasks/:id": "Task state (no tokens). Once judged, verdict holds the winner, the why and the merge result. No auth.",
@@ -90,7 +89,6 @@ export default {
       if (route === "GET /admin/model-check") return await modelCheck(env);
       if (route === "POST /admin/retain") return Response.json(await retainRaces(env));
       if (route === "POST /spike/seed") return await seed(request, env);
-      if (route === "POST /spike/day1") return Response.json(await runDay1(env));
       return Response.json({ error: "not found" }, { status: 404 });
     } catch (cause) {
       return errorResponse(cause);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { retentionPicks, summaryOf, type RaceSummary } from "../src/room/races";
+import { recordRace, retentionPicks, summaryOf, type RaceSummary } from "../src/room/races";
 import type { Task } from "../src/room/task";
 import { cached, type EdgeCache } from "../src/routes/cache";
 import { retentionDays } from "../src/routes/retain";
@@ -38,6 +38,21 @@ describe("retention", () => {
     const task = { id: "t-0123abcd", repo: "r", prompt: "p", status: "finished", createdAt: "2026-10-01T00:00:00.000Z", agents: [], reposDeletedAt: "2026-10-07T04:23:00.000Z" } as unknown as Task;
     expect(summaryOf(task, []).reposGone).toBe(true);
     expect(summaryOf({ ...task, reposDeletedAt: undefined }, []).reposGone).toBeUndefined();
+  });
+
+  it("RT5: a judged race that drops off the list with its repos stays owed to retention until they are gone", () => {
+    // Audit finding: at 10 races a day a race left the 200-race list before its 30 days, and its repos stayed forever.
+    const list = [race(1), race(2, { winner: undefined, judgedAt: undefined }), race(3)];
+    // A newer race pushes the oldest two off a list of 2: the judged one is owed, the unjudged one cannot be released.
+    const first = recordRace(list, [], race(0), 2);
+    expect(first.races.map((r) => r.id)).toEqual([race(0).id, race(1).id]);
+    expect(first.pending.map((r) => r.id)).toEqual([race(3).id]);
+    // Retention sees it after the list, so the gallery's newest are still skipped.
+    expect(retentionPicks([...first.races, ...first.pending], now, 1, 2).map((r) => r.id)).toEqual([race(3).id]);
+    // releaseRepos records it again with reposGone: it leaves pending and does not come back to the list.
+    const second = recordRace(first.races, first.pending, race(3, { reposGone: true }), 2);
+    expect(second.races.map((r) => r.id)).toEqual([race(0).id, race(1).id]);
+    expect(second.pending).toEqual([]);
   });
 });
 

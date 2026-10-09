@@ -146,6 +146,21 @@ export function isMessageCall(url: URL, method?: string): boolean {
 }
 
 /**
+ * Whether a message call's body asks for the race's model. Any process in a sandbox can make the
+ * call, so without this it could bill a pricier model on the Worker's key. A body that is not JSON
+ * or names another model is refused. wanted "" (Claude Code's default model) allows any.
+ */
+export function messageModelAllowed(body: string, wanted: string): boolean {
+  if (wanted === "") return true;
+  try {
+    const parsed: unknown = JSON.parse(body);
+    return typeof parsed === "object" && parsed !== null && (parsed as { model?: unknown }).model === wanted;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Where a message call goes: through AI Gateway `gateway` on `accountId` when both are well
  * formed, else straight to the model API. The sandbox still calls the model API host, so its
  * policy and Claude Code's start-up reads are unchanged.

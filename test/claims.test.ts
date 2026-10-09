@@ -5,6 +5,7 @@ import {
   claimsOf,
   describeClaim,
   emptyBoard,
+  MAX_CLAIMS_PER_AGENT,
   MAX_FILES_PER_CLAIM,
   normalizeFile,
   parseFiles,
@@ -124,5 +125,18 @@ describe("describeClaim", () => {
       describeClaim({ ok: true, claimed: ["a.ts", "b.ts"], already: [], shared: ["a.ts"], clashes: [{ file: "a.ts", heldBy: ["ponder"] }] }),
     ).toBe("claimed b.ts; shared claim a.ts; clash: a.ts (also held by ponder)");
     expect(describeClaim({ ok: false, status: 400, error: "files must not be empty" })).toBe("claim refused: files must not be empty");
+  });
+
+  it("C9: an agent may make at most MAX_CLAIMS_PER_AGENT claims in a race, release or not; others still may", () => {
+    // Audit finding: endless claims outgrew the stored board and the judge's input, so the race was never judged.
+    const board = emptyBoard();
+    const batch = (n: number) => Array.from({ length: MAX_FILES_PER_CLAIM }, (_, i) => `src/f${n}-${i}.ts`);
+    for (let n = 0; n < MAX_CLAIMS_PER_AGENT / MAX_FILES_PER_CLAIM; n++) {
+      expect(claimFiles(board, "zippy", batch(n), false, "t").ok).toBe(true);
+      releaseFiles(board, "zippy");
+    }
+    expect(claimFiles(board, "zippy", ["src/one-more.ts"], false, "t")).toMatchObject({ ok: false, status: 429 });
+    expect(board.history).toHaveLength(MAX_CLAIMS_PER_AGENT);
+    expect(claimFiles(board, "ponder", ["src/one-more.ts"], false, "t").ok).toBe(true);
   });
 });

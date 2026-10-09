@@ -11,6 +11,9 @@ export { MODEL_API_HOST };
 /** Claude Code needs a key to start. The Outbound Worker replaces it with the real key. */
 export const PLACEHOLDER_API_KEY = "provided-by-worker";
 
+/** Claude Code's settings for the models it picks on its own (background calls, subagent aliases). */
+const MODEL_ALIAS_ENV = ["ANTHROPIC_SMALL_FAST_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL"];
+
 /** The hook that commits and pushes the agent's work as it goes (image/autopush.mjs). */
 export const AUTOPUSH_HOOK_PATH = "/usr/local/bin/autopush";
 /** Outside the repo, so it stays out of the diff (same dir as ThunderdomeSandbox's RUN_DIR). */
@@ -68,6 +71,8 @@ export interface AgentOutcome {
 export function agentCommand(spec: AgentSpec): { argv: string[]; env: Record<string, string> } {
   const minutes = Math.max(1, Math.round((spec.deadline - Date.now()) / 60_000));
   const model = spec.model === "" ? [] : ["--model", spec.model];
+  // Background calls and subagents use these, and the Outbound Worker refuses any other model.
+  const sameModel = spec.model === "" ? {} : Object.fromEntries(MODEL_ALIAS_ENV.map((name) => [name, spec.model]));
   return {
     argv: [
       "claude",
@@ -87,6 +92,7 @@ export function agentCommand(spec: AgentSpec): { argv: string[]; env: Record<str
     ],
     env: {
       ...gitIdentity(spec.agent),
+      ...sameModel,
       // The claim CLI calls the Thunderdome API here.
       THUNDERDOME_API: thunderdomeApiBase(new URL(spec.remote).hostname),
       ANTHROPIC_API_KEY: PLACEHOLDER_API_KEY,

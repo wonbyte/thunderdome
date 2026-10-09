@@ -49,7 +49,6 @@ describe("accessFor", () => {
       ["GET", `/tasks/${id}/nope`],
       ["GET", "/spike/seed"],
       ["POST", "/spike/seed"],
-      ["POST", "/spike/day1"],
       ["GET", "/admin/model-check"],
       ["GET", "/nope"],
       ["GET", "/race.html"],
@@ -95,7 +94,6 @@ describe("accessFor", () => {
       ["GET", `/race/${id}/x`],
       ["GET", `/tasks/${id}/run`],
       ["GET", "/spike/seed"],
-      ["POST", "/spike/day1"],
       ["GET", "/admin/model-check"],
       ["GET", "/nope"],
     ];

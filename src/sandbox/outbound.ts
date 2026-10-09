@@ -5,7 +5,7 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 
 import { usageOfJson, usageTap, type Usage } from "../agents/usage";
 import { handleThunderdomeApi } from "./thunderdomeApi";
-import { decideOutbound, isMessageCall, isThunderdomeApi, messageUpstream, type OutboundProps } from "./policy";
+import { decideOutbound, isMessageCall, isThunderdomeApi, messageModelAllowed, messageUpstream, type OutboundProps } from "./policy";
 
 /** What one sandbox may reach; see policy.ts. */
 export type { OutboundProps } from "./policy";
@@ -32,12 +32,19 @@ export class Outbound extends WorkerEntrypoint<Env, OutboundProps> {
     for (const [name, value] of Object.entries(decision.headers)) headers.set(name, value);
     const url = new URL(request.url);
     const message = isMessageCall(url, request.method);
+    // Read once to check the model, then sent on as it came.
+    const body = message ? await request.text() : undefined;
+    if (body !== undefined && !messageModelAllowed(body, this.env.AGENT_MODEL ?? "")) {
+      // The body is agent-written: log who, never what.
+      console.error({ event: "outbound.model_refused", taskId: this.ctx.props.taskId, agent: this.ctx.props.agent });
+      return new Response(`Only ${this.env.AGENT_MODEL} may be called from this sandbox\n`, { status: 403 });
+    }
     const upstream = message ? messageUpstream(url, this.env.CF_ACCOUNT_ID, this.env.MODEL_GATEWAY) : url;
     // The gateway's log filters by race and robot.
     if (upstream !== url) headers.set("cf-aig-metadata", JSON.stringify({ task: this.ctx.props.taskId, agent: this.ctx.props.agent }));
     // A redirect goes back to the sandbox, so following it passes the policy again: the token
     // chosen for this host never travels to another one.
-    const forward = new Request(request, { headers, redirect: "manual" });
+    const forward = new Request(request, { headers, redirect: "manual", ...(body === undefined ? {} : { body }) });
     const response = await fetch(upstream === url ? forward : new Request(upstream.href, forward));
     // A refused model call ends the agent with a short message; keep the details in the Worker logs.
     if (response.status === 401 || response.status === 403) {

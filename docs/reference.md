@@ -79,20 +79,12 @@ What it does not do yet:
 - Agents run on Anthropic's API, so `ANTHROPIC_API_KEY` must have credits.
   The Outbound Worker lets agents make only the calls Claude Code needs (`POST /v1/messages`,
   `count_tokens` and its start-up reads; `MODEL_API_CALLS` in `src/sandbox/policy.ts`), so a robot
-  cannot start batches or upload files. Set a spend limit on the key's Anthropic workspace too.
+  cannot start batches or upload files. A message call must ask for `AGENT_MODEL`
+  (`messageModelAllowed`), so a robot cannot bill a pricier model. Set a spend limit on the key's Anthropic workspace too.
 
 ## Create a task by hand
 
-The Day 1 check seeds the `thunderdome-sample` repo (once), forks it, clones the fork in a sandbox,
-pushes a commit, and reads the commit back through the binding:
-
-```sh
-curl -X POST $THUNDERDOME/spike/day1 -H "authorization: Bearer $ADMIN_TOKEN"
-```
-
-Pass: the JSON has `"ok": true`.
-
-Then make a task. It forks the repo (or a template, with `"template"` in place of `"repo"`) once
+Make a task. It forks the repo (or a template, with `"template"` in place of `"repo"`) once
 per agent (3 to 5, default 3) and returns one write token per fork. Only this response shows the tokens.
 
 ```sh

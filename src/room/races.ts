@@ -4,6 +4,8 @@ import type { DecidedBy } from "../judge/why";
 import type { Claim } from "./claims";
 import type { Task, TaskStatus } from "./task";
 
+/** The one RaceIndex instance. */
+export const RACE_INDEX_NAME = "all";
 /** Summaries the index keeps, and how many GET /tasks returns. */
 export const RACE_INDEX_MAX = 200;
 /** Summaries one GET /tasks page returns. */
@@ -138,6 +140,19 @@ export function upsertRace(list: readonly RaceSummary[], summary: RaceSummary, m
   return [summary, ...list.filter((race) => race.id !== summary.id)]
     .toSorted((a, b) => (a.createdAt < b.createdAt ? 1 : a.createdAt > b.createdAt ? -1 : 0))
     .slice(0, Math.max(0, max));
+}
+
+/**
+ * upsertRace, plus the races retention still owes: a judged race that drops off the list with its
+ * repos goes on `pending`, so retention still deletes them, and leaves it once its repos are gone.
+ */
+export function recordRace(list: readonly RaceSummary[], pending: readonly RaceSummary[], summary: RaceSummary, max: number = RACE_INDEX_MAX): { races: RaceSummary[]; pending: RaceSummary[] } {
+  const races = upsertRace(list, summary, max);
+  const kept = new Set(races.map((r) => r.id));
+  const owed = (r: RaceSummary): boolean => r.winner !== undefined && r.reposGone !== true;
+  const dropped = [summary, ...list.filter((r) => r.id !== summary.id)].filter((r) => !kept.has(r.id) && owed(r));
+  const dropping = new Set(dropped.map((r) => r.id));
+  return { races, pending: [...pending.filter((r) => r.id !== summary.id && !dropping.has(r.id)), ...dropped] };
 }
 
 /**

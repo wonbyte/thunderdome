@@ -19,7 +19,7 @@ import {
   type ClaimBoard,
   type ClaimResult,
 } from "./claims";
-import { RACE_INDEX_MAX, raceMemory, summaryOf, type RaceMemory } from "./races";
+import { RACE_INDEX_MAX, RACE_INDEX_NAME, raceMemory, summaryOf, type RaceMemory } from "./races";
 import { regionFor } from "./regions";
 import { parseReaction, roomAllows, socketAllows, type RoomWindow } from "./reactions";
 import {
@@ -67,8 +67,6 @@ const DIFF_KEY_PREFIX = "diff:";
 const MAX_STEPS_PER_PAGE = 500;
 /** Close code for a socket whose send failed. */
 const CLOSE_SEND_FAILED = 1011;
-/** The one RaceIndex instance. */
-const RACE_INDEX_NAME = "all";
 
 /** One message on the live WebSocket. Each change is sent once, after it is saved. */
 export type LiveEvent =

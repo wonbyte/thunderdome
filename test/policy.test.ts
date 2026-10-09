@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { decideOutbound, gitRepoPath, isPreviewApiPath, previewApiPrefix } from "../src/sandbox/policy";
+import { decideOutbound, gitRepoPath, isPreviewApiPath, messageModelAllowed, previewApiPrefix } from "../src/sandbox/policy";
 
 const props = { gitHost: "git.test", gitToken: "secret" };
 
@@ -114,6 +114,15 @@ describe("decideOutbound for the model API", () => {
 
   it("never sends the key over plain HTTP", () => {
     expect(decideOutbound(new URL("http://api.anthropic.com/v1/messages"), { ...props, modelApi: true }, "sk-real")).toMatchObject({ allow: false });
+  });
+
+  it("M2: a message call may ask only for the race's model; another model or a body that is not JSON is refused", () => {
+    // Audit finding: a process in a sandbox could bill a pricier model on the Worker's key.
+    expect(messageModelAllowed(JSON.stringify({ model: "claude-haiku-5-5", max_tokens: 10 }), "claude-haiku-5-5")).toBe(true);
+    expect(messageModelAllowed(JSON.stringify({ model: "claude-opus-5-5" }), "claude-haiku-5-5")).toBe(false);
+    expect(messageModelAllowed(JSON.stringify({}), "claude-haiku-5-5")).toBe(false);
+    expect(messageModelAllowed("not json", "claude-haiku-5-5")).toBe(false);
+    expect(messageModelAllowed(JSON.stringify({ model: "anything" }), "")).toBe(true);
   });
 });
 
