@@ -148,6 +148,7 @@ let revealArmed = false;
 let botsKey = "";
 let mapKey = "";
 let ganttKey = "";
+let ganttShape = "";
 let claimsKey = "";
 let previewsKey = "";
 let resultKey = "";
@@ -1460,49 +1461,67 @@ function renderGantt(b: Board): void {
   const key = JSON.stringify(gantt);
   if (key === ganttKey) return;
   ganttKey = key;
-  const layer = el("div", "gantt-layer");
-  layer.setAttribute("aria-hidden", "true");
-  for (let i = 0; i <= 4; i++) {
-    const label = el("span", "gantt-tick", mmss(((gantt.end - gantt.start) * i) / 4));
-    label.style.left = `${i * 25}%`;
-    layer.append(label);
+  // Rebuilt only when rows or marks come or go; while anything runs, the numbers below change every
+  // second and are set in place, so a hovered bar keeps its label.
+  const shape = JSON.stringify([gantt.rows.map((r) => [r.key, r.label, r.product]), gantt.marks.map((m) => [m.key, m.product]), replay !== undefined]);
+  if (shape !== ganttShape) {
+    ganttShape = shape;
+    const layer = el("div", "gantt-layer");
+    layer.setAttribute("aria-hidden", "true");
+    for (let i = 0; i <= 4; i++) {
+      const label = el("span", "gantt-tick");
+      label.style.left = `${i * 25}%`;
+      layer.append(label);
+    }
+    for (const mark of gantt.marks) {
+      const line = el("span", "gantt-mark");
+      line.dataset.product = mark.product;
+      line.dataset.mark = mark.key;
+      layer.append(line);
+    }
+    if (replay !== undefined) layer.append(el("span", "gantt-cursor"));
+    const list = el("ol", "gantt-rows");
+    for (const row of gantt.rows) {
+      const item = el("li", "gantt-row");
+      const bar = el("span", "gantt-bar");
+      bar.dataset.product = row.product;
+      bar.setAttribute("role", "img");
+      const track = el("span", "gantt-track");
+      track.append(bar);
+      item.append(el("span", "gantt-label", row.label), track);
+      list.append(item);
+    }
+    const legend = el("ul", "gantt-legend");
+    for (const product of new Set([...gantt.rows.map((r) => r.product), ...gantt.marks.map((m) => m.product)])) {
+      const chip = el("li", undefined, STAGE_INFO[product].product);
+      chip.dataset.product = product;
+      legend.append(chip);
+    }
+    const body = el("div", "gantt-body");
+    body.append(list, layer);
+    box.replaceChildren(legend, body, el("p", "gantt-marks"));
   }
-  for (const mark of gantt.marks) {
-    const line = el("span", "gantt-mark");
-    line.dataset.product = mark.product;
-    line.dataset.mark = mark.key;
-    line.style.left = pct(mark.at);
-    layer.append(line);
-  }
-  if (replay !== undefined) layer.append(el("span", "gantt-cursor"));
-  const list = el("ol", "gantt-rows");
-  for (const row of gantt.rows) {
-    const item = el("li", "gantt-row");
-    const bar = el("span", "gantt-bar");
-    bar.dataset.product = row.product;
+  box.querySelectorAll<HTMLElement>(".gantt-tick").forEach((label, i) => (label.textContent = mmss(((gantt.end - gantt.start) * i) / 4)));
+  box.querySelectorAll<HTMLElement>(".gantt-mark").forEach((line, i) => {
+    const mark = gantt.marks[i];
+    if (mark !== undefined) line.style.left = pct(mark.at);
+  });
+  box.querySelectorAll<HTMLElement>(".gantt-bar").forEach((bar, i) => {
+    const row = gantt.rows[i];
+    if (row === undefined) return;
     bar.classList.toggle("running", row.running);
     bar.classList.toggle("approx", row.approx);
     bar.classList.toggle("failed", row.failed);
     bar.style.left = pct(row.from);
     bar.style.width = `max(2px, ${share(row.to - row.from)})`;
-    bar.title = `${row.title} · ${STAGE_INFO[row.product].product}`;
-    bar.setAttribute("role", "img");
-    bar.setAttribute("aria-label", bar.title);
-    const track = el("span", "gantt-track");
-    track.append(bar);
-    item.append(el("span", "gantt-label", row.label), track);
-    list.append(item);
-  }
-  const legend = el("ul", "gantt-legend");
-  for (const product of new Set([...gantt.rows.map((r) => r.product), ...gantt.marks.map((m) => m.product)])) {
-    const chip = el("li", undefined, STAGE_INFO[product].product);
-    chip.dataset.product = product;
-    legend.append(chip);
-  }
-  const body = el("div", "gantt-body");
-  body.append(list, layer);
-  const marks = el("p", "gantt-marks", gantt.marks.map((m) => `${m.label} at ${mmss(m.at - gantt.start)}`).join(" · "));
-  box.replaceChildren(legend, body, marks);
+    const title = `${row.title} · ${STAGE_INFO[row.product].product}`;
+    if (bar.title !== title) {
+      bar.title = title;
+      bar.setAttribute("aria-label", title);
+    }
+  });
+  const marksLine = box.querySelector(".gantt-marks");
+  if (marksLine !== null) marksLine.textContent = gantt.marks.map((m) => `${m.label} at ${mmss(m.at - gantt.start)}`).join(" · ");
   byId("gantt-stat").textContent = `${gantt.rows.length} runs · ${mmss(gantt.end - gantt.start)}`;
 }
 

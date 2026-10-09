@@ -39,18 +39,22 @@ function judgedTask(): WireTask {
 describe("ganttOf", () => {
   it("T1: rows are the base preview, each agent with its builds, then the judge steps by start", () => {
     const gantt = ganttOf(judgedTask(), at(86));
-    expect(gantt?.rows.map((r) => r.key)).toEqual(["base", "agent:ponder", "build:ponder:0", "build:ponder:1", "agent:zippy", "build:zippy:0", "judge:look", "judge:fork zippy", "judge:fork ponder", "judge:ship"]);
-    expect(gantt?.rows.map((r) => r.product)).toEqual(["previews", "containers", "previews", "previews", "containers", "previews", "ai", "containers", "containers", "merge"]);
+    expect(gantt?.rows.map((r) => r.key)).toEqual(["base", "agent:ponder", "build:ponder:1", "agent:zippy", "build:zippy:0", "judge:look", "judge:fork zippy", "judge:fork ponder", "judge:ship"]);
+    expect(gantt?.rows.map((r) => r.product)).toEqual(["previews", "containers", "previews", "containers", "previews", "ai", "containers", "containers", "merge"]);
     expect(gantt?.rows[0]).toMatchObject({ from: at(0), to: at(15), title: "base preview · 15.0 s" });
     expect(gantt?.start).toBe(at(0));
   });
 
-  it("T2: a build with no preview ends at its 80 s limit, estimated, but never past the race's end", () => {
-    const rows = ganttOf(judgedTask(), at(86))?.rows ?? [];
+  it("T2: a build before the shown preview is left out; one after it ends at its 80 s limit, estimated, never past the race's end", () => {
+    const task = judgedTask();
+    task.agents[0]!.push!.log!.push({ at: iso(55), commit: "c3", commits: 1 });
+    const rows = ganttOf(task, at(86))?.rows ?? [];
     expect(rows.find((r) => r.key === "build:ponder:1")).toMatchObject({ from: at(40), to: at(50), approx: false });
-    // c1 was superseded before its preview: 30 s + 80 s would be 110 s, past the verdict at 86 s.
-    expect(rows.find((r) => r.key === "build:ponder:0")).toMatchObject({ from: at(30), to: at(86), approx: true });
-    expect(rows.find((r) => r.key === "build:ponder:0")?.title).toContain("(estimated)");
+    // c1's build has no end in the record: c2's preview replaced it.
+    expect(rows.find((r) => r.key === "build:ponder:0")).toBeUndefined();
+    // c3 never got a preview: 55 s + 80 s would be 135 s, past the verdict at 86 s.
+    expect(rows.find((r) => r.key === "build:ponder:2")).toMatchObject({ from: at(55), to: at(86), approx: true });
+    expect(rows.find((r) => r.key === "build:ponder:2")?.title).toContain("(estimated)");
   });
 
   it("T3: an agent still running and a running judge step end at now", () => {

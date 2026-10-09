@@ -79,15 +79,17 @@ export function ganttOf(task: WireTask, now: number): Gantt | undefined {
     if (from === undefined) continue;
     const name = displayName(slot.name);
     add({ key: `agent:${slot.name}`, label: name, product: "containers", from }, ms(slot.endedAt), { failed: slot.status === "failed" });
-    dots
-      .filter((d) => d.agent === slot.name)
-      .forEach((d, i) => {
-        const preview = slot.push?.preview;
-        const shown = d.commit !== undefined && preview?.commit === d.commit;
-        const label = `${name}'s preview${d.commit === undefined ? "" : ` ${d.commit.slice(0, 7)}`}`;
-        const end = buildEnd(d.at, d.commit, preview);
-        add({ key: `build:${slot.name}:${i}`, label, product: "previews", from: d.at }, shown ? end : Math.min(now, end), { approx: !shown });
-      });
+    const preview = slot.push?.preview;
+    const mine = dots.filter((d) => d.agent === slot.name);
+    // The record keeps only the latest preview, so a build before it has no end: leave it out.
+    const latest = mine.findIndex((d) => d.commit !== undefined && d.commit === preview?.commit);
+    mine.forEach((d, i) => {
+      if (i < latest) return;
+      const shown = i === latest;
+      const label = `${name}'s preview${d.commit === undefined ? "" : ` ${d.commit.slice(0, 7)}`}`;
+      const end = buildEnd(d.at, d.commit, preview);
+      add({ key: `build:${slot.name}:${i}`, label, product: "previews", from: d.at }, shown ? end : Math.min(now, end), { approx: !shown });
+    });
   }
   // One segment per step: the record keeps only a step's latest attempt.
   for (const step of (task.judging ?? []).toSorted((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))) {
