@@ -1976,6 +1976,7 @@ function previewView(slot: Slot): PreviewView {
   const commit = el("span", "commit");
   bar.append(dots, host, commit);
   const frame = el("div", "frame");
+  frameSizer?.observe(frame);
   const caption = el("figcaption");
   caption.append(el("span", "who", slot.label));
   const link = el("a", "open");
@@ -2057,7 +2058,7 @@ function httpsUrl(url: string): string | undefined {
 // ---- before / after ----
 
 const FLIP_MS = 2000;
-const PAGE_WIDTH = 800; // the width each page is laid out at, then scaled to fit its frame
+const PAGE_WIDTH = 1280; // the width each page is laid out at (the look step's desktop shot), then scaled to fit its frame
 let flipTimer: ReturnType<typeof setInterval> | undefined;
 let flipPaused = false;
 const frameSizer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(fitFrames);
@@ -2070,6 +2071,7 @@ function fitFrames(entries: ResizeObserverEntry[]): void {
   for (const entry of entries) {
     const box = entry.target as HTMLElement;
     const width = entry.contentRect.width;
+    if (width === 0) continue; // hidden (a folded panel, a phone's unpicked robot): keep the last fit
     const page = Math.max(PAGE_WIDTH, width);
     box.style.setProperty("--pw", `${page}px`);
     box.style.setProperty("--s", String(width / page));

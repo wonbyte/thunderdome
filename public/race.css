@@ -458,7 +458,7 @@ h1.prompt { font-weight: 400; }
 }
 .frame iframe {
   position: absolute; top: 0; left: 0; border: 0; background: #fff;
-  width: 166.667%; height: 166.667%; transform: scale(.6); transform-origin: 0 0;
+  width: var(--pw, 166.667%); height: calc(100% / var(--s, .6)); transform: scale(var(--s, .6)); transform-origin: 0 0;
 }
 .skeleton { position: absolute; inset: 0; background: #0b0e17; padding: 18px; display: grid; gap: 10px; align-content: start; }
 .skeleton span {
