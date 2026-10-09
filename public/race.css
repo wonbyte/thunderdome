@@ -1205,13 +1205,12 @@ h1.prompt { font-weight: 400; }
 .diff-tag { margin-left: 10px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--dim); font: 600 11px var(--mono); }
 .commit-files { margin: 0 0 8px; font-size: 11px; color: var(--dim); }
 
-.handoff { list-style: none; counter-reset: hop; display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 0 0 6px; padding: 0; }
+.handoff { list-style: none; counter-reset: hop; display: flex; flex-wrap: wrap; gap: 8px 26px; margin: 0 0 14px; padding: 0; }
 .handoff li { counter-increment: hop; position: relative; display: flex; flex-direction: column; padding: 6px 12px 6px 34px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); font-size: 12.5px; }
 .handoff li::before { content: counter(hop); position: absolute; left: 10px; top: 7px; width: 16px; height: 16px; border-radius: 50%; background: color-mix(in srgb, var(--fuse) 22%, transparent); color: var(--fuse); font: 700 10.5px/16px var(--mono); text-align: center; }
 .handoff li + li::after { content: "→"; position: absolute; left: -20px; top: 50%; transform: translateY(-50%); color: var(--fuse); font-weight: 700; }
 .handoff li span { color: var(--dim); }
 .handoff code { font: 12px var(--mono); color: var(--text); }
-.handoff-why { margin: 0 0 14px; font-size: 12.5px; color: var(--dim); }
 @media (max-width: 640px) {
   .handoff { flex-direction: column; gap: 18px; }
   .handoff li + li::after { content: "↓"; left: 14px; top: -16px; transform: none; }

@@ -997,7 +997,7 @@ function setupExplainer(): void {
   showExplainer(!dismissed);
 }
 
-/** Shows or hides the strip and the three captions; the ? pill reopens it any time. */
+/** Shows or hides the strip and the stage's and result's captions; the ? pill reopens it any time. */
 function showExplainer(on: boolean): void {
   explaining = on;
   byId("explainer").hidden = !on;
