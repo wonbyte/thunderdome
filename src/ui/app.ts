@@ -20,7 +20,6 @@ import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type Jud
 import { closeButton, modal } from "./dialog";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
 import { PHASE_LABELS, PHASES, phaseOf, phaseStarts, railStates, type Phase } from "./phases";
-import { verdictLine } from "./verdict";
 import { guessView } from "./guess";
 import { momentLink, parseMoment } from "./moment";
 import type { TimedEvent, Timeline } from "./timeline";
@@ -268,8 +267,11 @@ function main(): void {
       renderGantt(board);
     }
   }, 250);
-  // The timeline starts collapsed on a phone, where it is long and narrow.
-  if (window.matchMedia("(max-width: 640px)").matches) byId("gantt-panel").removeAttribute("open");
+  // A closed panel has no width, so the graph scrolls to its newest pushes when opened.
+  byId("graph-panel").addEventListener("toggle", () => {
+    const box = byId("graph");
+    box.scrollLeft = box.scrollWidth;
+  });
   window.addEventListener("resize", () => {
     if (board !== undefined) drawBeams(board);
   });
@@ -876,6 +878,7 @@ function phaseTarget(phase: Phase): HTMLElement | undefined {
 }
 
 function scrollToPanel(target: HTMLElement): void {
+  if (target instanceof HTMLDetailsElement) target.open = true;
   target.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
 }
 
@@ -1924,12 +1927,47 @@ function renderPreviews(b: Board): void {
     const view = views[i];
     if (view !== undefined) updatePreview(view, slot, b.ended && b.winner === slot.key.slice("agent:".length));
   });
+  renderPick(b);
+}
+
+/** The robot a viewer picked on a phone; until then the winner, or the first robot. */
+let picked: string | undefined;
+
+/** On a phone the previews and Clef's shots show one robot at a time, picked from a row of buttons. */
+function renderPick(b: Board): void {
+  const keys = ["base", ...b.fighters.map((f) => f.agent)];
+  const bar = byId("pick");
+  if (bar.childElementCount !== keys.length) {
+    bar.replaceChildren(
+      ...keys.map((key) => {
+        const button = el("button", undefined, key === "base" ? "Before" : displayName(key));
+        button.type = "button";
+        button.dataset.pick = key;
+        if (key !== "base") button.style.setProperty("--color", colorFor(key));
+        button.addEventListener("click", () => {
+          picked = key;
+          showPick(key);
+        });
+        return button;
+      }),
+    );
+  }
+  showPick(picked ?? b.winner ?? keys[1] ?? "base");
+}
+
+function showPick(key: string): void {
+  for (const button of byId("pick").querySelectorAll<HTMLButtonElement>("button")) {
+    button.classList.toggle("on", button.dataset.pick === key);
+    button.setAttribute("aria-pressed", String(button.dataset.pick === key));
+  }
+  for (const item of byId("previews-card").querySelectorAll<HTMLElement>("[data-pick]:not(button)")) item.classList.toggle("unpicked", item.dataset.pick !== key);
 }
 
 function previewView(slot: Slot): PreviewView {
   const existing = previews.get(slot.key);
   if (existing !== undefined) return existing;
   const root = el("figure", slot.key === "base" ? "preview base" : "preview");
+  root.dataset.pick = slot.key === "base" ? "base" : slot.key.slice("agent:".length);
   if (slot.color !== undefined) root.style.setProperty("--color", slot.color);
   const bar = el("div", "chrome");
   const dots = el("span", "dots");
@@ -2104,26 +2142,8 @@ function renderResult(b: Board): void {
   if (key === resultKey) return;
   resultKey = key;
   byId("result-panel").hidden = !b.ended && scored.length === 0;
-  const line = b.ended
-    ? verdictLine({
-        winner: b.winner,
-        scored: scored.map((f) => ({ agent: f.agent, total: f.score.total, parts: f.score.parts })),
-        tie: judged?.tie,
-        fusion: fusionView(b.task?.verdict),
-      })
-    : undefined;
-  const verdict = byId("verdict");
-  verdict.hidden = line === undefined;
-  verdict.textContent = line ?? "";
   byId("winner").textContent = b.winner ? displayName(b.winner) : "no winner";
-  const decided = decidedLine(b.why);
-  const decidedBox = byId("decided");
-  decidedBox.hidden = decided === undefined;
-  decidedBox.textContent = decided === undefined ? "" : whyWithNames(decided, b.fighters.map((f) => f.agent));
   byId("why").textContent = whyWithNames(b.why ?? "", b.fighters.map((f) => f.agent));
-  // Podium order: 2nd, 1st, 3rd.
-  const top = [scored[1], scored[0], scored[2]].filter((f): f is Scored => f !== undefined);
-  byId("podium").replaceChildren(...top.map(podiumStep));
   byId("scoreboard").replaceChildren(...scored.map(scoreRow));
   byId("legend-look").hidden = !scored.some((f) => f.score.parts.look !== undefined);
   renderPhotoFinish(b.ended ? judged?.tie : undefined);
@@ -2147,6 +2167,7 @@ function renderLook(b: Board, look: LookView | undefined): void {
   const figures: HTMLElement[] = [];
   if (look.before) {
     const fig = el("figure", "look-fork before");
+    fig.dataset.pick = "base";
     fig.style.setProperty("--color", "#8a90a6");
     const cap = el("figcaption");
     cap.append(el("b", undefined, "Before"), el("span", undefined, "the source, before the race"));
@@ -2155,6 +2176,7 @@ function renderLook(b: Board, look: LookView | undefined): void {
   }
   for (const f of look.forks) {
     const fig = el("figure", `look-fork${f.error === undefined ? "" : " failed"}`);
+    fig.dataset.pick = f.agent;
     fig.style.setProperty("--color", colorFor(f.agent));
     const points = b.fighters.find((x) => x.agent === f.agent)?.score?.parts.look;
     const cap = el("figcaption");
@@ -2167,6 +2189,7 @@ function renderLook(b: Board, look: LookView | undefined): void {
     figures.push(fig);
   }
   box.replaceChildren(...figures);
+  renderPick(b);
   const probe = box.querySelector("img");
   if (probe === null) return;
   probe.loading = "eager";
@@ -2365,17 +2388,6 @@ function fitSpark(agent: string): HTMLElement | undefined {
     spark.append(bar);
   });
   return spark;
-}
-
-function podiumStep(f: Scored): HTMLElement {
-  const step = el("div", `step place-${f.score.place}`);
-  step.style.setProperty("--color", f.color);
-  const bot = art("podium-bot", robotSvg(f.color));
-  if (f.score.place === 1) bot.append(art("podium-crown", crownSvg()));
-  const block = el("div", "block");
-  block.append(el("span", "place", String(f.score.place)), el("span", "pname", displayName(f.agent)), el("span", "total", f.score.total.toFixed(2)));
-  step.append(bot, block);
-  return step;
 }
 
 /** One stacked bar per robot; each part's width is its points out of 100. */

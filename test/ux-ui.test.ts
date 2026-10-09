@@ -1,11 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { applyScores, initBoard, type WireJudgeStep, type WireScore, type WireTask } from "../src/ui/board";
-import { fusionView } from "../src/ui/fusion";
 import { guessView } from "../src/ui/guess";
 import { phaseOf, phaseStarts, railStates } from "../src/ui/phases";
 import { boardAt, buildTimeline } from "../src/ui/timeline";
-import { verdictLine } from "../src/ui/verdict";
 
 const T0 = Date.parse("2026-10-07T18:00:00.000Z");
 const iso = (s: number) => new Date(T0 + s * 1000).toISOString();
@@ -94,45 +92,6 @@ describe("phase rail", () => {
     expect(starts.judge).toBe(T0 + 60_000);
     expect(starts.fuse).toBe(T0 + 71_000);
     expect(starts.merge).toBe(T0 + 81_000);
-  });
-});
-
-describe("verdict line", () => {
-  const scored = scores.map(({ agent, total, parts }) => ({ agent, total, parts }));
-
-  it("V1: the margin, the tests and the part the winner topped every fork on, as the judge's why leads", () => {
-    // Testy has the best task fit, so look is the part Ponder won outright, even though it gained more on task fit over Zippy.
-    expect(verdictLine({ winner: "ponder", scored })).toBe("Ponder won by 1.9: every test passed and the best look.");
-    // Topped nothing: the biggest gain over the runner-up, named against it.
-    expect(verdictLine({ winner: "ponder", scored: scored.map((s) => (s.agent === "testy" ? { ...s, parts: { ...s.parts, look: 11 } } : s)) })).toBe("Ponder won by 1.9: every test passed and more task fit than Zippy.");
-  });
-
-  it("V2: a tie names its tie-break, not a part", () => {
-    const tie = { agents: ["ponder", "zippy"], by: "compare", gap: 0.4, judgment: {} };
-    expect(verdictLine({ winner: "ponder", scored, tie })).toBe("Ponder won by 1.9: every test passed and Clef's side-by-side vote broke the tie.");
-  });
-
-  it("V3: the fusion round in one clause: kept, or left out with a short reason", () => {
-    const verdict = finished().verdict;
-    const left = fusionView({ ...verdict!, fusion: { tried: [{ agent: "zippy", status: "rejected", kind: "hunk", files: ["src/shop.ts"], note: "the fused change scored 87.0, below 87.2 for the winner alone" }] } });
-    expect(verdictLine({ winner: "ponder", scored, fusion: left })).toMatch(/ Zippy's hunk was left out \(scored lower\)\.$/);
-    const kept = fusionView({ ...verdict!, fusion: { tried: [{ agent: "zippy", status: "added", kind: "file", files: ["test/z.test.ts"] }], commit: "f".repeat(40) } });
-    expect(verdictLine({ winner: "ponder", scored, fusion: kept })).toMatch(/ Zippy's file was fused in and shipped\.$/);
-  });
-
-  it("V4: no winner, no scores yet and a lone fork each get a plain line", () => {
-    expect(verdictLine({ winner: null, scored: [] })).toBe("No winner: no fork passed.");
-    expect(verdictLine({ winner: "ponder", scored: [] })).toBe("Ponder won.");
-    expect(verdictLine({ winner: "ponder", scored: scored.slice(0, 1) })).toBe("Ponder won with 87.2, the only fork scored.");
-    expect(verdictLine({ winner: undefined, scored })).toBeUndefined();
-  });
-
-  it("V5: agent-written fusion notes are matched, never shown", () => {
-    const verdict = finished().verdict;
-    const fusion = fusionView({ ...verdict!, fusion: { tried: [{ agent: "zippy", status: "failed", files: ["a.ts"], note: "<script>alert(1)</script>" }] } });
-    const line = verdictLine({ winner: "ponder", scored, fusion });
-    expect(line).not.toContain("script");
-    expect(line).toMatch(/left out \(could not apply\)\.$/);
   });
 });
 

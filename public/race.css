@@ -106,7 +106,11 @@ h1.prompt { font-weight: 400; }
   opacity: 0; animation: mem-glow 3.2s ease-in-out infinite;
 }
 @keyframes mem-glow { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
-.mem-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.mem-head { display: flex; align-items: center; gap: 12px; padding-right: 20px; cursor: pointer; list-style: none; }
+.mem-head::-webkit-details-marker { display: none; }
+.mem-head::after { content: "▸"; position: absolute; top: 14px; right: 16px; color: var(--dim); }
+.memory[open] .mem-head { margin-bottom: 12px; }
+.memory[open] .mem-head::after { content: "▾"; }
 .mem-chip {
   flex: none; font-size: 11.5px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
   color: #07080d; padding: 6px 11px; border-radius: 999px;
@@ -115,7 +119,7 @@ h1.prompt { font-weight: 400; }
 .mem-title { display: grid; gap: 2px; min-width: 0; }
 .mem-title strong { font-size: 16px; color: var(--text); }
 .mem-note { font-size: 12.5px; color: var(--dim); }
-@media (max-width: 560px) { .mem-head { flex-direction: column; align-items: flex-start; gap: 8px; } }
+@media (max-width: 560px) { .mem-head { flex-direction: column; align-items: flex-start; gap: 8px; } .memory:not([open]) .mem-note { display: none; } }
 .mem-cards { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
 .mem-card {
   --color: var(--text);
@@ -379,11 +383,6 @@ h1.prompt { font-weight: 400; }
   border: 1px solid color-mix(in srgb, var(--color) 55%, transparent);
 }
 .banner em { max-width: min(560px, 80vw); white-space: normal; font: 600 12.5px/1.4 var(--sans); font-style: normal; color: #d5d9e6; margin-top: 4px; }
-.decided {
-  width: fit-content; max-width: 100%; margin: 0 auto 48px; padding: 8px 16px; border-radius: 12px;
-  text-align: center; font-size: 15px; font-weight: 600; color: #e6e9f2;
-  background: var(--panel-2); border: 1px solid var(--line);
-}
 .stage[data-state="ended"] .banner { top: auto; bottom: auto; top: 14px; }
 
 /* ---------- claims ---------- */
@@ -475,28 +474,7 @@ h1.prompt { font-weight: 400; }
 .preview.winner .frame, .preview.winner .chrome { border-color: var(--color); box-shadow: 0 0 24px color-mix(in srgb, var(--color) 35%, transparent); }
 
 /* ---------- result ---------- */
-.podium { display: flex; justify-content: center; align-items: flex-end; gap: 14px; margin: 6px 0 18px; }
-.step { display: flex; flex-direction: column; align-items: center; width: 150px; }
-.podium-bot { position: relative; width: 64px; height: 64px; animation: hover 2.6s ease-in-out infinite; }
-.podium-bot .robot-svg { width: 100%; height: 100%; }
-.podium-crown { position: absolute; left: 25%; top: -30%; width: 50%; animation: crown 1.8s ease-in-out infinite; }
-.podium-crown svg { width: 100%; display: block; }
-.block {
-  width: 100%; margin-top: 8px; border-radius: 12px 12px 4px 4px;
-  display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 2px;
-  padding-top: 10px;
-  background: linear-gradient(180deg, color-mix(in srgb, var(--color) 35%, #141826), #0f121b);
-  border: 1px solid color-mix(in srgb, var(--color) 55%, transparent);
-  animation: grow .8s var(--ease) both;
-  transform-origin: bottom;
-}
-.place-1 .block { height: 132px; box-shadow: 0 0 30px color-mix(in srgb, var(--color) 35%, transparent); }
-.place-2 .block { height: 108px; animation-delay: .15s; }
-.place-3 .block { height: 92px; animation-delay: .3s; }
-.place { font: 900 22px var(--mono); color: #fff; }
-.pname { font-weight: 800; }
 .total { font: 600 12px var(--mono); color: var(--dim); }
-.place-2 .podium-bot, .place-3 .podium-bot { filter: saturate(.7); }
 
 .scoreboard { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
 .score-row { display: grid; grid-template-columns: 110px 1fr 58px 64px auto auto; align-items: center; gap: 12px; }
@@ -614,7 +592,6 @@ h1.prompt { font-weight: 400; }
   .score-row .fit-spark { display: none; }
   .stage .judge-steps { top: 74px; width: calc(100% - 32px); } /* the ticker is hidden here */
   .score-row .tag { grid-column: 1 / -1; justify-self: start; }
-  .podium .step { width: 96px; }
   .banner strong { font-size: 15px; }
 }
 
@@ -787,12 +764,19 @@ h1.prompt { font-weight: 400; }
 /* ---------- before / after ---------- */
 .compare-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .compare-head h2 { margin: 0; }
-.compare-head .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); }
-.compare-head .seg button {
+.compare-head .seg, .pick { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); }
+.compare-head .seg button, .pick button {
   padding: 4px 12px; border: 0; border-radius: 999px; background: none; color: var(--dim);
   font: 700 11.5px var(--sans); cursor: pointer; transition: background .25s, color .25s;
 }
-.compare-head .seg button.on { background: var(--color, var(--accent)); color: #0b0d14; }
+.compare-head .seg button.on, .pick button.on { background: var(--color, var(--accent)); color: #0b0d14; }
+/* The robot picker is for phones, where every robot's preview and shots would stack 4,000 px tall. */
+.pick { display: none; }
+@media (max-width: 640px) {
+  .pick { display: flex; max-width: 100%; overflow-x: auto; margin-bottom: 12px; }
+  .pick button { padding: 4px 7px; white-space: nowrap; }
+  .unpicked { display: none; }
+}
 .compare { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: center; gap: 10px; }
 .cmp { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .cmp figcaption { display: flex; align-items: baseline; gap: 10px; min-height: 22px; }
@@ -1120,7 +1104,7 @@ h1.prompt { font-weight: 400; }
 .fuse-row.added { background: linear-gradient(90deg, color-mix(in srgb, var(--fuse) 14%, var(--panel-2)), var(--panel-2) 70%); }
 .fuse-who { display: flex; align-items: center; gap: 8px; }
 .fuse-who .mini { width: 30px; }
-.fuse-who b { color: var(--color); }
+.fuse-who b { color: color-mix(in srgb, var(--color) 70%, white); }
 .fuse-files { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 .fuse-files code { font: 600 12px var(--mono); color: var(--text); background: #0b0e17; border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; overflow-wrap: anywhere; }
 .fuse-gates { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font: 700 12px var(--mono); }
@@ -1360,12 +1344,6 @@ h1.prompt { font-weight: 400; }
 }
 @media (prefers-reduced-motion: reduce) { .phase[data-state="current"] { animation: none; } }
 
-/* ---------- the verdict line ---------- */
-.verdict {
-  margin: -4px 0 18px; font-size: 17px; line-height: 1.45; font-weight: 600; color: var(--text);
-  text-wrap: balance;
-}
-
 /* ---------- guess the winner ---------- */
 .guess { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
 .guess h2 { margin: 0; }
@@ -1466,7 +1444,7 @@ body.explaining .caption { display: block; }
 .look-shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; }
 .look-fork { margin: 0; padding: 10px; border-radius: 12px; background: var(--panel); border: 1px solid color-mix(in srgb, var(--color) 40%, transparent); }
 .look-fork figcaption { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.look-fork figcaption b { color: var(--color); }
+.look-fork figcaption b { color: color-mix(in srgb, var(--color) 70%, white); }
 .look-fork figcaption span { font: 600 11px var(--mono); color: var(--dim); }
 .look-answers { margin: 4px 0 8px; font: 600 12px var(--mono); color: #d5d9e6; }
 .look-fork.failed .look-answers { color: #ff9a9c; font-family: var(--sans); font-weight: 500; }
@@ -1499,11 +1477,15 @@ body.explaining .caption { display: block; }
 .map-panel .hint { margin-top: 12px; }
 
 /* ---- timeline: a Gantt of what ran, one color per product ---- */
-.gantt-panel summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
-.gantt-panel summary::-webkit-details-marker { display: none; }
-.gantt-panel summary h2 { color: #f6821f; margin-bottom: 12px; }
-.gantt-panel summary h2::before { content: "▸ "; }
-.gantt-panel[open] summary h2::before { content: "▾ "; }
+/* Under the hood: each card folds to its title line. */
+.hood-title { margin: 12px 0 0; font-size: 13px; color: var(--text); }
+details.card > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
+details.card > summary::-webkit-details-marker { display: none; }
+details.card > summary h2 { margin-bottom: 0; }
+details.card[open] > summary { margin-bottom: 12px; }
+details.card > summary h2::before { content: "▸ "; }
+details.card[open] > summary h2::before { content: "▾ "; }
+.gantt-panel summary h2 { color: #f6821f; }
 .gantt { --label-w: 180px; }
 [data-product="containers"] { --product: var(--cyan); }
 [data-product="previews"] { --product: var(--green); }

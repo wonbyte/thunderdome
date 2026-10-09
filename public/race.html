@@ -52,16 +52,16 @@
     <section class="task card">
       <h2>Task</h2>
       <h1 id="prompt" class="prompt">Loading the race…</h1>
-      <div id="memory" class="memory" hidden>
-        <div class="mem-head">
+      <details id="memory" class="memory" hidden>
+        <summary class="mem-head">
           <span class="mem-chip">◆ Memory</span>
           <div class="mem-title">
             <strong id="memory-count"></strong>
             <span class="mem-note">Each robot was told who won and why, so it starts the race knowing what the judge rewards.</span>
           </div>
-        </div>
+        </summary>
         <ul id="memory-list" class="mem-cards"></ul>
-      </div>
+      </details>
     </section>
 
     <p class="caption">The stage: each robot in its own sandbox on its own fork. It scans, swings a hammer to edit, charges up to run the tests and fires a bolt to push.</p>
@@ -92,55 +92,33 @@
       <p id="guess-note" class="guess-note" aria-live="polite"></p>
     </section>
 
-    <section class="card pipe" aria-labelledby="pipe-title">
-      <h2 id="pipe-title">Under the hood · Cloudflare</h2>
-      <p id="bill" class="bill" title="Cloudflare at list price, estimated from this race's record; agents from their meters, or Claude Code's own cost once each ends" hidden></p>
-      <ol id="pipeline" class="pipeline"></ol>
+    <section id="result-panel" class="card result" aria-labelledby="result-title" hidden>
+      <p class="caption">The result: every fork ran the shared tests, Clef rated how well the code fits the task and how clear it is, and the highest score shipped.</p>
+      <h2 id="result-title">Result</h2>
+      <div id="photo-finish" class="photo-finish" hidden></div>
+      <ol id="scoreboard" class="scoreboard"></ol>
+      <ul class="legend" aria-hidden="true">
+        <li><span class="swatch part-tests"></span>tests</li>
+        <li><span class="swatch part-taskFit"></span>task fit</li>
+        <li><span class="swatch part-clarity"></span>clarity</li>
+        <li id="legend-look" hidden><span class="swatch part-look"></span>look</li>
+        <li><span class="swatch part-claim"></span>claims</li>
+      </ul>
+      <details class="why-box">
+        <summary>Why the judge picked <span id="winner"></span></summary>
+        <pre id="why" class="why" tabindex="0"></pre>
+      </details>
+      <p class="result-actions"><a id="run-again" class="cta-btn run-again" hidden>↻ Run it again</a><span id="run-again-note" class="hint" hidden>Same demo app and task, five fresh robots.</span></p>
     </section>
 
-    <details id="gantt-panel" class="card gantt-panel" open hidden>
-      <summary><h2>Timeline · what ran when</h2><span id="gantt-stat" class="count-pill"></span></summary>
-      <div id="gantt" class="gantt"></div>
-      <p class="hint">Every bar is something that ran, from the race's record: a robot's sandbox, a preview build per push, the judge's steps. Hover a bar for how long it took. A dashed bar's end is estimated: the record does not show that build finishing.</p>
-    </details>
-
-    <section id="map-panel" class="card map-panel" aria-labelledby="map-title" hidden>
-      <h2 id="map-title">Where the robots ran</h2>
-      <div id="map" class="map"></div>
-      <p class="hint">Each robot's sandbox asked for its own region with a Durable Object location hint. The code is the Cloudflare data center the hint put it in.</p>
-    </section>
-
-    <section id="graph-panel" class="card graph-panel" aria-labelledby="graph-title" hidden>
-      <p class="caption">The git graph: every dot is a push to a fork. The winner merges into main; arrows into its lane are the losers' pieces that fused in.</p>
-      <div class="graph-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></div>
-      <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Arrows into the winner's lane are the fusion round: a loser's files or hunks, kept (solid) or left out (✗). Click a lane or a robot to see its code, or the fusion commit to see it as git stores it.</p>
-      <div id="graph" class="graph"></div>
-      <figure id="gitlog" class="gitlog" hidden>
-        <figcaption><span class="gitlog-prompt" aria-hidden="true">$</span> git log --graph main</figcaption>
-        <ol id="gitlog-lines" class="gitlog-lines"></ol>
-      </figure>
-    </section>
-
-    <div class="cols">
-      <section class="card" aria-labelledby="claims-title">
-        <h2 id="claims-title">Claims</h2>
-        <p class="hint">Agents claim files before editing. <b>Clash</b>: two or more claimed the same file; the first claim keeps full claim points.</p>
-        <ul class="key" aria-label="Chip key">
-          <li><span class="chip own held">first</span>claimed first</li>
-          <li><span class="chip shared held">shared</span>claimed after another agent</li>
-          <li><span class="chip own">dim</span>released</li>
-        </ul>
-        <div id="claims" class="claims"></div>
-      </section>
-      <section class="card" aria-labelledby="log-title">
-        <h2 id="log-title">Live feed</h2>
-        <ol id="log" class="log" tabindex="0" aria-label="Live feed" aria-live="polite" aria-relevant="additions"></ol>
-      </section>
-    </div>
-
-    <section class="card" aria-labelledby="previews-title">
+    <section id="previews-card" class="card" aria-labelledby="previews-title">
       <h2 id="previews-title">Previews</h2>
+      <div id="pick" class="pick" role="group" aria-label="Show one robot"></div>
       <div id="previews" class="previews"></div>
+      <section id="look-panel" class="look-panel" aria-labelledby="look-title" hidden>
+        <div class="look-head"><h3 id="look-title">What Clef saw</h3><span class="hint">The look step shot each fork's preview at desktop and phone width with Browser Rendering; Clef rated how completely the page shows what the task asks (fit) and how clean it is (quality). Click a shot to see it in full.</span></div>
+        <div id="look-shots" class="look-shots"></div>
+      </section>
     </section>
 
     <section id="wipe-panel" class="card compare-panel" aria-labelledby="wipe-title" hidden>
@@ -164,57 +142,70 @@
       </div>
     </section>
 
-    <section id="result-panel" class="card result" aria-labelledby="result-title" hidden>
-      <p class="caption">The result: every fork ran the shared tests, Clef rated how well the code fits the task and how clear it is, and the highest score shipped.</p>
-      <h2 id="result-title">Result</h2>
-      <p id="verdict" class="verdict" hidden></p>
-      <p id="decided" class="decided" hidden></p>
-      <div id="photo-finish" class="photo-finish" hidden></div>
-      <div id="podium" class="podium"></div>
-      <ol id="scoreboard" class="scoreboard"></ol>
-      <section id="look-panel" class="look-panel" aria-labelledby="look-title" hidden>
-        <div class="look-head"><h3 id="look-title">What Clef saw</h3><span class="hint">The look step shot each fork's preview at desktop and phone width with Browser Rendering; Clef rated how completely the page shows what the task asks (fit) and how clean it is (quality). Click a shot to see it in full.</span></div>
-        <div id="look-shots" class="look-shots"></div>
-      </section>
-      <ul class="legend" aria-hidden="true">
-        <li><span class="swatch part-tests"></span>tests</li>
-        <li><span class="swatch part-taskFit"></span>task fit</li>
-        <li><span class="swatch part-clarity"></span>clarity</li>
-        <li id="legend-look" hidden><span class="swatch part-look"></span>look</li>
-        <li><span class="swatch part-claim"></span>claims</li>
-      </ul>
-      <details class="why-box" open>
-        <summary>Why the judge picked <span id="winner"></span></summary>
-        <pre id="why" class="why" tabindex="0"></pre>
-      </details>
-      <p class="result-actions"><a id="run-again" class="cta-btn run-again" hidden>↻ Run it again</a><span id="run-again-note" class="hint" hidden>Same demo app and task, five fresh robots.</span></p>
-    </section>
+    <h2 class="hood-title">Under the hood</h2>
 
-    <section id="cross-panel" class="card cross-panel" aria-labelledby="cross-title" hidden>
-      <div class="fusion-head">
-        <h2 id="cross-title">Who passes whose tests</h2>
-        <span id="cross-stat" class="count-pill"></span>
-      </div>
+    <details class="card pipe">
+      <summary><h2>Cloudflare pipeline</h2></summary>
+      <p id="bill" class="bill" title="Cloudflare at list price, estimated from this race's record; agents from their meters, or Claude Code's own cost once each ends" hidden></p>
+      <ol id="pipeline" class="pipeline"></ol>
+    </details>
+
+    <details id="gantt-panel" class="card gantt-panel" hidden>
+      <summary><h2>Timeline · what ran when</h2><span id="gantt-stat" class="count-pill"></span></summary>
+      <div id="gantt" class="gantt"></div>
+      <p class="hint">Every bar is something that ran, from the race's record: a robot's sandbox, a preview build per push, the judge's steps. Hover a bar for how long it took. A dashed bar's end is estimated: the record does not show that build finishing.</p>
+    </details>
+
+    <details id="map-panel" class="card map-panel" hidden>
+      <summary><h2>Where the robots ran</h2></summary>
+      <div id="map" class="map"></div>
+      <p class="hint">Each robot's sandbox asked for its own region with a Durable Object location hint. The code is the Cloudflare data center the hint put it in.</p>
+    </details>
+
+    <details id="graph-panel" class="card graph-panel" hidden>
+      <summary class="graph-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></summary>
+      <p class="caption">The git graph: every dot is a push to a fork. The winner merges into main; arrows into its lane are the losers' pieces that fused in.</p>
+      <p class="hint">Each robot works on its own fork of the repo. Every dot is a push; the winner merges back into main. Arrows into the winner's lane are the fusion round: a loser's files or hunks, kept (solid) or left out (✗). Click a lane or a robot to see its code, or the fusion commit to see it as git stores it.</p>
+      <div id="graph" class="graph"></div>
+      <figure id="gitlog" class="gitlog" hidden>
+        <figcaption><span class="gitlog-prompt" aria-hidden="true">$</span> git log --graph main</figcaption>
+        <ol id="gitlog-lines" class="gitlog-lines"></ol>
+      </figure>
+    </details>
+
+    <div class="cols">
+      <details class="card">
+        <summary><h2>Claims</h2></summary>
+        <p class="hint">Agents claim files before editing. <b>Clash</b>: two or more claimed the same file; the first claim keeps full claim points.</p>
+        <ul class="key" aria-label="Chip key">
+          <li><span class="chip own held">first</span>claimed first</li>
+          <li><span class="chip shared held">shared</span>claimed after another agent</li>
+          <li><span class="chip own">dim</span>released</li>
+        </ul>
+        <div id="claims" class="claims"></div>
+      </details>
+      <details class="card">
+        <summary><h2>Live feed</h2></summary>
+        <ol id="log" class="log" tabindex="0" aria-label="Live feed" aria-live="polite" aria-relevant="additions"></ol>
+      </details>
+    </div>
+
+    <details id="cross-panel" class="card cross-panel" hidden>
+      <summary class="fusion-head"><h2>Who passes whose tests</h2><span id="cross-stat" class="count-pill"></span></summary>
       <p class="hint">Every fork ran the repo's tests and every robot's new test files, one file at a time, in its own judge sandbox. A robot's file counts in the shared suite when it passes in full on at least two forks; greyed columns did not count. The tests part of the score is the shared suite, so no robot is graded only on tests it wrote itself.</p>
       <p id="cross-split" class="hint" hidden>Clef found that the task gives robots different parts, so each robot's tests check its own part: only the repo's tests counted.</p>
       <div class="cross-scroll" tabindex="0" aria-label="Who passes whose tests"><table id="cross-grid" class="cross-grid"></table></div>
-    </section>
+    </details>
 
-    <section id="blame-panel" class="card blame-panel" aria-labelledby="blame-title" hidden>
-      <div class="fusion-head">
-        <h2 id="blame-title">Who wrote main</h2>
-        <span id="blame-stat" class="count-pill"></span>
-      </div>
+    <details id="blame-panel" class="card blame-panel" hidden>
+      <summary class="fusion-head"><h2>Who wrote main</h2><span id="blame-stat" class="count-pill"></span></summary>
       <p class="hint">The shipped change's lines by the robot that wrote them: <code>git blame -w</code> over the merge, run by the ship's git-only sandbox. Lines from losing robots got in through the fusion round. Races shipped before this was added show no bar.</p>
       <div id="blame-bar" class="blame-bar" role="img"></div>
       <ul id="blame-legend" class="blame-legend"></ul>
-    </section>
+    </details>
 
-    <section id="fusion-panel" class="card fusion-panel" aria-labelledby="fusion-title" hidden>
-      <div class="fusion-head">
-        <h2 id="fusion-title"><span class="fuse-bolt" aria-hidden="true">⚡</span> Fusion round</h2>
-        <span id="fusion-stat" class="count-pill"></span>
-      </div>
+    <details id="fusion-panel" class="card fusion-panel" hidden>
+      <summary class="fusion-head"><h2><span class="fuse-bolt" aria-hidden="true">⚡</span> Fusion round</h2><span id="fusion-stat" class="count-pill"></span></summary>
       <p class="hint">The losers' work is not thrown away. Each loser's files the winner never touched, and up to 3 of its hunks in files the winner did change, are tried on top of the winning fix. A hunk must apply cleanly (no conflicts), every test must pass, then Clef must say it makes the change better. Last, the fused code is scored the same way as the forks and kept only if it scores at least the winner alone. Races judged before the score was added show no score. The tests run in a sandbox with read-only tokens; a second sandbox pushes only what passed.</p>
       <div id="fusion-score" class="fusion-score" hidden></div>
       <p id="fusion-result" class="fusion-result"></p>
@@ -225,7 +216,7 @@
       </ol>
       <p class="handoff-why">Why two sandboxes: tests an agent wrote never run next to a write token. Only a git bundle crosses over, and the second sandbox runs nothing but git.</p>
       <ol id="fusion-rows" class="fusion-rows"></ol>
-    </section>
+    </details>
   </main>
 </body>
 </html>
