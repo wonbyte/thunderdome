@@ -98,6 +98,12 @@
       <ol id="pipeline" class="pipeline"></ol>
     </section>
 
+    <details id="gantt-panel" class="card gantt-panel" open hidden>
+      <summary><h2>Timeline · what ran when</h2><span id="gantt-stat" class="count-pill"></span></summary>
+      <div id="gantt" class="gantt"></div>
+      <p class="hint">Every bar is something that ran, from the race's record: a robot's sandbox, a preview build per push, the judge's steps. Hover a bar for how long it took. A dashed bar's end is estimated: the record does not show that build finishing.</p>
+    </details>
+
     <section id="map-panel" class="card map-panel" aria-labelledby="map-title" hidden>
       <h2 id="map-title">Where the robots ran</h2>
       <div id="map" class="map"></div>

@@ -15,6 +15,7 @@ import { assistsOf, FUSE_BAR, fusionView, scoreBars, type FuseOutcome, type Fuse
 import { fusionOf, gitGraph, mergeOf, pushDots, type PushDot } from "./gitgraph";
 import { gitLog, type LogLine } from "./gitlog";
 import { drawGraph } from "./graphview";
+import { ganttOf } from "./gantt";
 import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type JudgeView, type LookView, type TieView } from "./judgeview";
 import { closeButton, modal } from "./dialog";
 import { boardAt, buildTimeline, stepsAt } from "./timeline";
@@ -147,6 +148,7 @@ let revealFrame: number | undefined;
 let revealArmed = false;
 let botsKey = "";
 let mapKey = "";
+let ganttKey = "";
 let claimsKey = "";
 let previewsKey = "";
 let resultKey = "";
@@ -261,8 +263,13 @@ function main(): void {
   pick = readGuess();
   setInterval(() => {
     renderTimer();
-    if (replay === undefined && board !== undefined) renderGraph(board);
+    if (replay === undefined && board !== undefined) {
+      renderGraph(board);
+      renderGantt(board);
+    }
   }, 250);
+  // The timeline starts collapsed on a phone, where it is long and narrow.
+  if (window.matchMedia("(max-width: 640px)").matches) byId("gantt-panel").removeAttribute("open");
   window.addEventListener("resize", () => {
     if (board !== undefined) drawBeams(board);
   });
@@ -825,6 +832,7 @@ function render(b: Board): void {
   renderRail(b);
   renderGuess(b);
   renderBill(b);
+  renderGantt(b);
   renderMap(b);
   // Cheering is for a race in progress: live only, and gone once it has ended.
   byId("cheer").hidden = replay !== undefined || b.ended;
@@ -1422,9 +1430,77 @@ function renderBill(b: Board): void {
   const task = b.task;
   line.hidden = task?.startedAt === undefined;
   if (task === undefined || line.hidden) return;
-  // An ended race is billed up to its verdict: a judge step that never reported its end must not run on.
-  const end = b.ended ? Date.parse(task.verdict?.judgedAt ?? task.finishedAt ?? "") : Number.NaN;
-  line.textContent = billLine(billOf(task, Number.isNaN(end) ? Date.now() : end));
+  line.textContent = billLine(billOf(task, recordEnd(task, b.ended)));
+}
+
+/** What a race's record runs to: its verdict once ended (a judge step that never reported its end must not run on), else now. */
+function recordEnd(task: WireTask, ended: boolean): number {
+  const end = ended ? Date.parse(task.verdict?.judgedAt ?? task.finishedAt ?? "") : Number.NaN;
+  return Number.isNaN(end) ? Date.now() : end;
+}
+
+/**
+ * The timeline card: a bar per thing that ran, on an axis from the race's start. A replay draws the
+ * whole record and moves a cursor with the scrub; live, the bars grow once a second.
+ */
+function renderGantt(b: Board): void {
+  const task = replay !== undefined && recorded !== undefined ? recorded : b.task;
+  const ended = replay !== undefined || b.ended;
+  const gantt = task === undefined ? undefined : ganttOf(task, ended ? recordEnd(task, true) : Math.floor(Date.now() / 1_000) * 1_000);
+  const panel = byId("gantt-panel");
+  panel.hidden = gantt === undefined;
+  if (gantt === undefined) return;
+  const share = (ms: number): string => `${((ms / (gantt.end - gantt.start)) * 100).toFixed(2)}%`;
+  const pct = (at: number): string => share(at - gantt.start);
+  const box = byId("gantt");
+  if (replay !== undefined) box.style.setProperty("--cursor", pct(Math.min(Math.max(replay.t, gantt.start), gantt.end)));
+  const key = JSON.stringify(gantt);
+  if (key === ganttKey) return;
+  ganttKey = key;
+  const layer = el("div", "gantt-layer");
+  layer.setAttribute("aria-hidden", "true");
+  for (let i = 0; i <= 4; i++) {
+    const label = el("span", "gantt-tick", mmss(((gantt.end - gantt.start) * i) / 4));
+    label.style.left = `${i * 25}%`;
+    layer.append(label);
+  }
+  for (const mark of gantt.marks) {
+    const line = el("span", "gantt-mark");
+    line.dataset.product = mark.product;
+    line.dataset.mark = mark.key;
+    line.style.left = pct(mark.at);
+    layer.append(line);
+  }
+  if (replay !== undefined) layer.append(el("span", "gantt-cursor"));
+  const list = el("ol", "gantt-rows");
+  for (const row of gantt.rows) {
+    const item = el("li", "gantt-row");
+    const bar = el("span", "gantt-bar");
+    bar.dataset.product = row.product;
+    bar.classList.toggle("running", row.running);
+    bar.classList.toggle("approx", row.approx);
+    bar.classList.toggle("failed", row.failed);
+    bar.style.left = pct(row.from);
+    bar.style.width = `max(2px, ${share(row.to - row.from)})`;
+    bar.title = `${row.title} · ${STAGE_INFO[row.product].product}`;
+    bar.setAttribute("role", "img");
+    bar.setAttribute("aria-label", bar.title);
+    const track = el("span", "gantt-track");
+    track.append(bar);
+    item.append(el("span", "gantt-label", row.label), track);
+    list.append(item);
+  }
+  const legend = el("ul", "gantt-legend");
+  for (const product of new Set([...gantt.rows.map((r) => r.product), ...gantt.marks.map((m) => m.product)])) {
+    const chip = el("li", undefined, STAGE_INFO[product].product);
+    chip.dataset.product = product;
+    legend.append(chip);
+  }
+  const body = el("div", "gantt-body");
+  body.append(list, layer);
+  const marks = el("p", "gantt-marks", gantt.marks.map((m) => `${m.label} at ${mmss(m.at - gantt.start)}`).join(" · "));
+  box.replaceChildren(legend, body, marks);
+  byId("gantt-stat").textContent = `${gantt.rows.length} runs · ${mmss(gantt.end - gantt.start)}`;
 }
 
 /** "Where the robots ran": a pin per robot at the region it asked for, labeled with where it ran. */

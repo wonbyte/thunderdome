@@ -478,6 +478,17 @@ Durable Object, but Cloudflare does not promise it, and the container's own requ
 location (a probe from inside the container came back empty). The race page draws a world map with
 a pin per robot at its region, labeled with its colo.
 
+## The timeline
+
+The race page's "Timeline · what ran when" card is a Gantt built from the race record
+(`src/ui/gantt.ts`), on an axis from the race's start: the base preview build (from the start to
+`basePreview.at`), each robot's sandbox (`startedAt` to `endedAt`), each push's preview build, each
+judge step, and the merge (or the verdict when nothing merged). A build ends at its preview's time
+when the preview shows that push's commit; otherwise the record has no end, and the bar is dashed
+up to the build's 80 s limit or the race's end, the same rule as the bill. A retried judge step is
+one bar: the record keeps only its latest attempt. Colors are products: Containers, Workers
+Previews, Workers AI, Artifacts, Workflows. In a replay a cursor follows the scrub.
+
 ## What Clef saw
 
 On a visual task the look step keeps its screenshots: each fork's preview at desktop (1280×800)

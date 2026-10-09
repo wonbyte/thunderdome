@@ -1,7 +1,7 @@
 // What one race cost: Cloudflare's part estimated from the race record at list price, and the
 // agents' part from their meters. Pure; app.ts shows it in the pipeline header.
 
-import type { WireAgent, WireTask } from "./board";
+import type { WireAgent, WirePreview, WireTask } from "./board";
 
 /** Containers billed per second of a `standard-1` (1/2 vCPU, 4 GiB, 8 GB disk), as if busy throughout. */
 const CONTAINER_USD_PER_S = 0.5 * 0.00002 + 4 * 0.0000025 + 8 * 0.00000007;
@@ -31,6 +31,11 @@ export function usd(v: number): string {
   return `$${v < 0.1 && v > 0 ? v.toFixed(3) : v.toFixed(2)}`;
 }
 
+/** When a push's preview build ended (ms): the preview's time when it shows that commit, else the build's time limit. */
+export function buildEnd(at: number, commit: string | undefined, preview: WirePreview | undefined): number {
+  return commit !== undefined && preview?.commit === commit ? Date.parse(preview.at) : at + BUILD_S * 1000;
+}
+
 /** The bill so far. `now` (ms) ends whatever is still running. */
 /**
  * What one agent's model calls cost: the meter's figure when it priced every call, else Claude
@@ -57,9 +62,8 @@ export function billOf(task: WireTask, now: number): Bill {
     }
     // Each push builds a preview; a build later superseded may have been skipped, so this is an upper bound.
     for (const push of slot.push?.log ?? []) {
-      const preview = slot.push?.preview;
       containers++;
-      containerSeconds += preview?.commit === push.commit ? seconds(push.at, preview.at) : BUILD_S;
+      containerSeconds += seconds(push.at, buildEnd(Date.parse(push.at), push.commit, slot.push?.preview));
     }
   }
   if (task.basePreview !== undefined) {

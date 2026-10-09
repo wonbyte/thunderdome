@@ -1490,3 +1490,37 @@ body.explaining .caption { display: block; }
   .map { grid-template-columns: 1fr; }
 }
 .map-panel .hint { margin-top: 12px; }
+
+/* ---- timeline: a Gantt of what ran, one color per product ---- */
+.gantt-panel summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
+.gantt-panel summary::-webkit-details-marker { display: none; }
+.gantt-panel summary h2 { color: #f6821f; margin-bottom: 12px; }
+.gantt-panel summary h2::before { content: "▸ "; }
+.gantt-panel[open] summary h2::before { content: "▾ "; }
+.gantt { --label-w: 180px; }
+[data-product="containers"] { --product: var(--cyan); }
+[data-product="previews"] { --product: var(--green); }
+[data-product="ai"] { --product: #b69cff; }
+[data-product="workflows"] { --product: var(--accent); }
+[data-product="merge"] { --product: #f6821f; }
+.gantt-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 10px; padding: 0; list-style: none; font-size: 12px; color: var(--dim); }
+.gantt-legend li::before { content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; border-radius: 2px; background: var(--product); vertical-align: -1px; }
+.gantt-body { position: relative; padding-top: 20px; }
+.gantt-rows { margin: 0; padding: 0; list-style: none; }
+.gantt-row { display: grid; grid-template-columns: var(--label-w) minmax(0, 1fr); align-items: center; height: 20px; }
+.gantt-label { font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 8px; }
+.gantt-track { position: relative; height: 100%; border-left: 1px solid var(--line); }
+.gantt-bar { position: absolute; top: 4px; bottom: 4px; border-radius: 3px; background: var(--product); }
+.gantt-bar.running { background: linear-gradient(90deg, var(--product) 70%, transparent); }
+.gantt-bar.approx { background: transparent; border: 1px dashed var(--product); }
+.gantt-bar.failed { background: var(--red); }
+.gantt-layer { position: absolute; top: 0; bottom: 0; left: var(--label-w); right: 0; pointer-events: none; }
+.gantt-tick { position: absolute; top: 0; transform: translateX(-50%); font: 700 11px var(--mono); color: var(--faint); }
+.gantt-tick:first-child { transform: none; }
+.gantt-tick:nth-child(5) { transform: translateX(-100%); }
+.gantt-mark { position: absolute; top: 16px; bottom: 0; border-left: 2px dotted var(--product); }
+.gantt-marks { margin: 8px 0 0; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.gantt-marks:empty { display: none; }
+.gantt-cursor { position: absolute; top: 16px; bottom: 0; left: var(--cursor); border-left: 2px solid var(--text); }
+@media (max-width: 640px) { .gantt { --label-w: 96px; } .gantt-tick:nth-child(2), .gantt-tick:nth-child(4) { display: none; } }
+.gantt-panel summary .count-pill { white-space: nowrap; }
