@@ -87,6 +87,7 @@ h2 {
 }
 .task { padding: 14px 18px; }
 .task h2 { margin-bottom: 6px; }
+h1.prompt { font-weight: 400; }
 .prompt {
   margin: 0; font-size: 15px; line-height: 1.55; color: #cfd4e4;
   display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
@@ -397,7 +398,7 @@ h2 {
 .file { color: var(--text); font-weight: 600; }
 .tag {
   font: 700 10px var(--sans); letter-spacing: .08em; text-transform: uppercase;
-  padding: 2px 7px; border-radius: 999px; background: var(--red); color: #fff;
+  padding: 2px 7px; border-radius: 999px; background: var(--red); color: #0b0d14; /* white on red is 3:1 */
 }
 .holders { margin-left: auto; display: flex; gap: 6px; }
 .chip {
@@ -449,7 +450,7 @@ h2 {
 }
 .dots { display: flex; gap: 4px; }
 .dots i { width: 7px; height: 7px; border-radius: 50%; background: #39405a; }
-.host { flex: 1; min-width: 0; font: 11px var(--mono); color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.host { flex: 1; min-width: 0; font: 11px var(--mono); color: var(--dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .commit { font: 700 10px var(--mono); padding: 1px 6px; border-radius: 6px; background: color-mix(in srgb, var(--color, #8a90a6) 25%, transparent); color: var(--text); }
 .commit:empty { display: none; }
 .frame {
@@ -603,6 +604,11 @@ h2 {
   .bot { width: 120px; margin-left: -60px; }
   .bubble { max-width: 110px; font-size: 11px; }
   .style { display: none; }
+  /* Plates must fit side by side under five robots; the memory card already says how many races. */
+  .plate { padding: 2px 6px; font-size: 12px; }
+  .plate .mem-tag { display: none; }
+  /* The why's score table only reads with its columns unwrapped; it scrolls instead. */
+  .why { white-space: pre; }
   .timer { font-size: 20px; }
   .score-row { grid-template-columns: 80px 1fr 52px auto; }
   .score-row .fit-spark { display: none; }
@@ -893,10 +899,11 @@ h2 {
 .mini .robot-svg { width: 100%; height: 100%; }
 .mini-crown { position: absolute; left: 25%; top: -34%; width: 50%; }
 .mini-crown svg { width: 100%; display: block; }
-.fighter.lost { opacity: .55; filter: grayscale(.6); }
+/* Dim the loser's robot, not its name: dimmed text fails contrast. */
+.fighter.lost .mini { opacity: .55; filter: grayscale(.6); }
 /* A loser whose tests shipped stays lit: it lost the race, but its work is in main. */
 .fighter { position: relative; }
-.fighter.lost.assisted { opacity: .9; filter: none; }
+.fighter.lost.assisted .mini { opacity: .9; filter: none; }
 .fighter .assist-tag { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 2px; white-space: nowrap; }
 .lineup:has(.assisted) { padding-bottom: 24px; }
 .race-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--dim); }
@@ -1024,7 +1031,7 @@ h2 {
 .standing .rank { font: 800 14px var(--mono); color: var(--dim); }
 .standing .mini { position: relative; width: 36px; }
 .standing .who { display: flex; flex-direction: column; line-height: 1.2; }
-.standing .who b { color: var(--color); }
+.standing .who b { color: color-mix(in srgb, var(--color) 70%, white); } /* Sparkle's purple is 3.4:1 as text */
 .standing .style { color: var(--faint); font: 600 11px var(--mono); }
 .wins-bar { height: 8px; border-radius: 99px; background: #1b2031; overflow: hidden; }
 .wins-bar i { display: block; height: 100%; border-radius: 99px; background: var(--color); box-shadow: 0 0 10px var(--color); animation: grow-x 1s .3s var(--ease) both; transform-origin: left; }

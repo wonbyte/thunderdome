@@ -51,7 +51,7 @@
   <main id="thunderdome" class="thunderdome">
     <section class="task card">
       <h2>Task</h2>
-      <p id="prompt" class="prompt">Loading the race…</p>
+      <h1 id="prompt" class="prompt">Loading the race…</h1>
       <div id="memory" class="memory" hidden>
         <div class="mem-head">
           <span class="mem-chip">◆ Memory</span>
@@ -134,7 +134,7 @@
       </section>
       <section class="card" aria-labelledby="log-title">
         <h2 id="log-title">Live feed</h2>
-        <ol id="log" class="log" aria-live="polite" aria-relevant="additions"></ol>
+        <ol id="log" class="log" tabindex="0" aria-label="Live feed" aria-live="polite" aria-relevant="additions"></ol>
       </section>
     </div>
 
@@ -185,7 +185,7 @@
       </ul>
       <details class="why-box" open>
         <summary>Why the judge picked <span id="winner"></span></summary>
-        <pre id="why" class="why"></pre>
+        <pre id="why" class="why" tabindex="0"></pre>
       </details>
       <p class="result-actions"><a id="run-again" class="cta-btn run-again" hidden>↻ Run it again</a><span id="run-again-note" class="hint" hidden>Same demo app and task, five fresh robots.</span></p>
     </section>
@@ -197,7 +197,7 @@
       </div>
       <p class="hint">Every fork ran the repo's tests and every robot's new test files, one file at a time, in its own judge sandbox. A robot's file counts in the shared suite when it passes in full on at least two forks; greyed columns did not count. The tests part of the score is the shared suite, so no robot is graded only on tests it wrote itself.</p>
       <p id="cross-split" class="hint" hidden>Clef found that the task gives robots different parts, so each robot's tests check its own part: only the repo's tests counted.</p>
-      <div class="cross-scroll"><table id="cross-grid" class="cross-grid"></table></div>
+      <div class="cross-scroll" tabindex="0" aria-label="Who passes whose tests"><table id="cross-grid" class="cross-grid"></table></div>
     </section>
 
     <section id="blame-panel" class="card blame-panel" aria-labelledby="blame-title" hidden>

@@ -64,7 +64,7 @@ let shown = new Set<string>();
  */
 export function drawGraph(host: Element, graph: GitGraph, live: boolean, onLane: (agent: string) => void, onCommit?: (hash: string) => void): void {
   const height = TOP + (graph.lanes.length + 1) * LANE_H - 8;
-  const root = svg("svg", { viewBox: `0 0 ${W} ${height}`, role: "img", "aria-label": "Git graph of the race" }, "graph-svg");
+  const root = svg("svg", { viewBox: `0 0 ${W} ${height}`, role: "group", "aria-label": "Git graph of the race" }, "graph-svg");
   const mainY = TOP;
   const next = new Set<string>();
   const isNew = (key: string): boolean => {
