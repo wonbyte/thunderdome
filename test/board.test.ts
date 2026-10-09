@@ -268,6 +268,8 @@ describe("board", () => {
     for (const event of rest) board = applyEvent(board, event, later);
     expect(fighter(board, "testy")).toMatchObject({ lastStep: "Bash npm test", action: "lost" });
     expect(fighter(board, "zippy")).toMatchObject({ commits: 2, preview, status: "done", action: "won", files: [] });
+    // The task keeps up too: the timeline and the git graph read it (a page opened mid-race showed stale pushes).
+    expect(board.task?.agents.find((slot) => slot.name === "zippy")?.push).toMatchObject({ commits: 2, head: "c1", preview });
     expect(board.grid.clashes).toEqual([]);
     expect(board.basePreview?.commit).toBe("b0");
     expect(board).toMatchObject({ winner: "zippy", why: "Best fix.", ended: true, lastSeq: 4 });

@@ -109,7 +109,7 @@ export type BoardEvent =
   | { kind: "steps"; taskId: string; agent: string; steps: WireStep[] }
   | { kind: "claim"; taskId: string; agent: string; result: WireClaimResult }
   | { kind: "release"; taskId: string; agent: string; released: string[] }
-  | { kind: "push"; taskId: string; agent: string; push: { commits: number; pushes?: number; lastPushAt?: string } }
+  | { kind: "push"; taskId: string; agent: string; push: Omit<NonNullable<WireAgent["push"]>, "seen" | "preview"> }
   | { kind: "preview"; taskId: string; agent: string; preview: WirePreview }
   | { kind: "agent-end"; taskId: string; agent: string; outcome: { end: "done" | "failed" | "timeout"; costUsd?: number }; status: WireTaskStatus }
   | { kind: "verdict"; taskId: string; verdict: WireVerdict }
@@ -395,11 +395,14 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
       return releaseCells(board, event.agent, event.released);
     case "push": {
       const commits = event.push.commits;
-      return withFighter(board, event.agent, (f) => ({ ...(isActive(board, f) ? act(f, "push", now) : f), commits }));
+      const next = withFighter(board, event.agent, (f) => ({ ...(isActive(board, f) ? act(f, "push", now) : f), commits }));
+      // The event carries no preview: the one already saved stays.
+      return withSlot(next, event.agent, (slot) => ({ ...slot, push: { ...slot.push, ...event.push } }));
     }
     case "preview": {
       const preview = { ...event.preview };
-      return withFighter(board, event.agent, (f) => ({ ...f, preview }));
+      const next = withFighter(board, event.agent, (f) => ({ ...f, preview }));
+      return withSlot(next, event.agent, (slot) => ({ ...slot, push: { commits: 0, ...slot.push, preview } }));
     }
     case "agent-end":
       return applyAgentEnd(board, event.agent, event.outcome.end, event.status, now, event.outcome.costUsd);
@@ -426,12 +429,8 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
       return { ...board, basePreview: { ...event.preview } };
     case "judge":
       return board.task === undefined ? board : { ...board, task: { ...board.task, judging: withJudgeStep(board.task.judging ?? [], event.step) } };
-    case "usage": {
-      const task = board.task;
-      if (task === undefined) return board;
-      const usage = event.usage;
-      return { ...board, task: { ...task, agents: task.agents.map((slot) => (slot.name === event.agent ? { ...slot, usage } : slot)) } };
-    }
+    case "usage":
+      return withSlot(board, event.agent, (slot) => ({ ...slot, usage: event.usage }));
     case "watchers":
     case "reaction":
       // Spectators: the page shows them, the race does not change.
@@ -487,6 +486,13 @@ function settle(f: Fighter, action: Action, now: number): Fighter {
 function withFighter(board: Board, agent: string, change: (f: Fighter) => Fighter): Board {
   if (!board.fighters.some((f) => f.agent === agent)) return board;
   return { ...board, fighters: board.fighters.map((f) => (f.agent === agent ? change(f) : f)) };
+}
+
+/** The task with one agent's slot changed, so what reads the task (the timeline, the git graph, the meter) stays live. */
+function withSlot(board: Board, agent: string, change: (slot: WireAgent) => WireAgent): Board {
+  const task = board.task;
+  if (task === undefined) return board;
+  return { ...board, task: { ...task, agents: task.agents.map((slot) => (slot.name === agent ? change(slot) : slot)) } };
 }
 
 function syncTask(board: Board, task: WireTask, now: number): Board {

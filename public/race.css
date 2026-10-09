@@ -57,7 +57,8 @@ h2 {
   animation: spin 6s linear infinite;
   box-shadow: 0 0 18px #7fe3ff55;
 }
-.pills { display: flex; gap: 8px; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pills .pill { white-space: nowrap; }
 .pill {
   padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
   border: 1px solid var(--line); background: var(--panel); color: var(--dim);
@@ -244,17 +245,13 @@ h1.prompt { font-weight: 400; }
 .bubble.pop { animation: pop .45s var(--ease); }
 
 .plate {
-  margin-top: 8px; display: flex; align-items: baseline; gap: 6px;
+  margin-top: 8px; display: flex; align-items: baseline; gap: 6px; white-space: nowrap;
   padding: 3px 12px; border-radius: 8px;
   background: color-mix(in srgb, var(--color) 18%, #0c0f1c);
   border: 1px solid color-mix(in srgb, var(--color) 60%, transparent);
 }
 .name { font-weight: 800; color: color-mix(in srgb, var(--color) 70%, white); letter-spacing: .02em; }
 .style { font: 600 10px var(--mono); color: var(--dim); text-transform: uppercase; letter-spacing: .08em; }
-.mem-tag {
-  align-self: center; font: 800 10px var(--mono); color: #07080d; background: var(--cyan);
-  padding: 1px 6px; border-radius: 999px; box-shadow: 0 0 10px #7fe3ff99; cursor: help;
-}
 @media (prefers-reduced-motion: reduce) { .memory::after, .act-flag .fx-mascot, .act-push .fx-mascot { animation: none; } }
 .meta { margin-top: 6px; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--dim); }
 .pips { display: inline-flex; gap: 3px; align-items: center; }
@@ -437,7 +434,8 @@ h1.prompt { font-weight: 400; }
 .log .kind-claim .what { color: var(--accent); }
 
 /* ---------- previews ---------- */
-.previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr)); gap: 14px; }
+/* Three across on desktop: each page renders at 1280 px, so a smaller frame is unreadable. */
+.previews { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: 14px; }
 .preview { margin: 0; display: flex; flex-direction: column; gap: 6px; transition: transform .4s var(--ease); }
 .preview figcaption { display: flex; align-items: center; justify-content: space-between; font-weight: 700; font-size: 13px; }
 .preview .who { color: color-mix(in srgb, var(--color, #8a90a6) 75%, white); }
@@ -583,13 +581,16 @@ h1.prompt { font-weight: 400; }
   .bot { width: 120px; margin-left: -60px; }
   .bubble { max-width: 110px; font-size: 11px; }
   .style { display: none; }
-  /* Plates must fit side by side under five robots; the memory card already says how many races. */
-  .plate { padding: 2px 6px; font-size: 12px; }
-  .plate .mem-tag { display: none; }
+  /* Plates must fit side by side under five robots. */
+  .plate { padding: 2px 5px; font-size: 12px; }
   /* The why's score table only reads with its columns unwrapped; it scrolls instead. */
   .why { white-space: pre; }
   .timer { font-size: 20px; }
-  .score-row { grid-template-columns: 80px 1fr 52px auto; }
+  .score-row { grid-template-columns: 104px 1fr 52px auto; gap: 8px; }
+  .score-name { white-space: nowrap; }
+  /* Five bubbles do not fit side by side; once the race ends the banner says it all. */
+  .stage[data-state="ended"] .bubble { display: none; }
+  details.card > summary { flex-direction: column; }
   .score-row .fit-spark { display: none; }
   .stage .judge-steps { top: 74px; width: calc(100% - 32px); } /* the ticker is hidden here */
   .score-row .tag { grid-column: 1 / -1; justify-self: start; }
@@ -676,7 +677,7 @@ h1.prompt { font-weight: 400; }
 .unit.used .product { color: #fff; }
 .lcd {
   margin-left: auto; flex: none; padding: 1px 4px; border-radius: 3px; background: #0b0d0a; border: 1px solid #262b1e;
-  font: 700 11px var(--mono); letter-spacing: .08em; color: #3a3324;
+  font: 700 11px var(--mono); letter-spacing: .08em; color: #8a7a55; /* unlit, still 4.5:1 */
 }
 .unit.used .lcd { color: #ffae4a; text-shadow: 0 0 6px #f6821f; }
 .unit-face { display: flex; align-items: center; gap: 6px; padding: 0 4px; height: 18px; }
@@ -769,19 +770,20 @@ h1.prompt { font-weight: 400; }
   padding: 4px 12px; border: 0; border-radius: 999px; background: none; color: var(--dim);
   font: 700 11.5px var(--sans); cursor: pointer; transition: background .25s, color .25s;
 }
-.compare-head .seg button.on, .pick button.on { background: var(--color, var(--accent)); color: #0b0d14; }
+/* A robot color behind dark text is lightened: Sparkle's purple alone is 3.7:1. */
+.compare-head .seg button.on, .pick button.on { background: color-mix(in srgb, var(--color, var(--accent)) 70%, white); color: #0b0d14; }
 /* The robot picker is for phones, where every robot's preview and shots would stack 4,000 px tall. */
 .pick { display: none; }
 @media (max-width: 640px) {
   .pick { display: flex; max-width: 100%; overflow-x: auto; margin-bottom: 12px; }
-  .pick button { padding: 4px 7px; white-space: nowrap; }
+  .pick button { padding: 4px 5px; white-space: nowrap; }
   .unpicked { display: none; }
 }
 .compare { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 44px minmax(0, 1fr); align-items: center; gap: 10px; }
 .cmp { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .cmp figcaption { display: flex; align-items: baseline; gap: 10px; min-height: 22px; }
 .cmp-tag { padding: 2px 10px; border-radius: 999px; font: 800 11px var(--sans); letter-spacing: .08em; text-transform: uppercase; background: #2a3046; color: var(--text); }
-.cmp.after .cmp-tag { background: var(--color); color: #0b0d14; }
+.cmp.after .cmp-tag { background: color-mix(in srgb, var(--color) 70%, white); color: #0b0d14; }
 .cmp-sub { color: var(--faint); font: 600 11.5px var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmp-frame {
   --s: .45;
@@ -833,6 +835,8 @@ h1.prompt { font-weight: 400; }
 @keyframes laser { from { left: -140px; } to { left: 100%; } }
 
 @media (max-width: 1100px) {
+  /* Five plates overlap below 1100 px with these; the banner names the fused robot. */
+  .plate .style, .plate .assist-tag { display: none; }
   .pipeline { grid-template-columns: repeat(3, minmax(0, 1fr)); padding-bottom: 0; }
   .pipeline::after { display: none; }
   .unit::after { display: none; }
@@ -1487,7 +1491,7 @@ details.card > summary h2::before { content: "▸ "; }
 details.card[open] > summary h2::before { content: "▾ "; }
 /* Title colors: orange for the Cloudflare machinery under the hood, grey for the race's story. */
 details.card > summary h2 { color: #f6821f; }
-.gantt { --label-w: 180px; }
+.gantt { --label-w: 180px; margin-bottom: 14px; }
 [data-product="containers"] { --product: var(--cyan); }
 [data-product="previews"] { --product: var(--green); }
 [data-product="ai"] { --product: #b69cff; }

@@ -88,7 +88,9 @@ export function ganttOf(task: WireTask, now: number): Gantt | undefined {
       const shown = i === latest;
       const label = `${name}'s preview${d.commit === undefined ? "" : ` ${d.commit.slice(0, 7)}`}`;
       const end = buildEnd(d.at, d.commit, preview);
-      add({ key: `build:${slot.name}:${i}`, label, product: "previews", from: d.at }, shown ? end : Math.min(now, end), { approx: !shown });
+      // Before the verdict and its time limit, a build with no preview yet is still running.
+      const building = !shown && task.verdict === undefined && now < end;
+      add({ key: `build:${slot.name}:${i}`, label, product: "previews", from: d.at }, shown ? end : building ? undefined : Math.min(now, end), { approx: !shown && !building });
     });
   }
   // One segment per step: the record keeps only a step's latest attempt.

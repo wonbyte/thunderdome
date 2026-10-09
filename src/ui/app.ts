@@ -1166,14 +1166,6 @@ function renderGitLog(lines: LogLine[] | undefined): void {
 
 /** What the robots were told about earlier races on this app. Rebuilt only when it changes. */
 let memoryKey = "";
-/** Earlier races in this race's memory, for the tag on each robot's nameplate. */
-let memoryCount = 0;
-
-function setMemoryTag(tag: HTMLElement, agent: string): void {
-  tag.hidden = memoryCount === 0;
-  tag.textContent = `◆ ${memoryCount}`;
-  tag.title = `${displayName(agent)} remembers ${memoryCount} earlier race${memoryCount === 1 ? "" : "s"} on this app`;
-}
 function renderMemory(memory: WireMemory[] | undefined): void {
   const list = memory ?? [];
   const key = JSON.stringify(list);
@@ -1181,11 +1173,6 @@ function renderMemory(memory: WireMemory[] | undefined): void {
   memoryKey = key;
   const box = byId("memory");
   box.hidden = list.length === 0;
-  memoryCount = list.length;
-  for (const [agent, view] of bots) {
-    const tag = view.root.querySelector<HTMLElement>(".mem-tag");
-    if (tag !== null) setMemoryTag(tag, agent);
-  }
   const races = list.length === 1 ? "1 earlier race" : `${list.length} earlier races`;
   byId("memory-count").textContent = `The robots remember ${races} on this app`;
   byId("memory-list").replaceChildren(
@@ -1319,12 +1306,10 @@ function botView(f: Fighter, index: number): BotView {
   plate.append(el("span", "name", displayName(f.agent)));
   const style = styleLabel(f.agent);
   if (style !== undefined) plate.append(el("span", "style", style));
-  const tag = el("span", "mem-tag");
-  setMemoryTag(tag, f.agent);
   const assist = el("span", "assist-tag", "⚡ assist");
   assist.title = `${displayName(f.agent)}'s tests were fused into the winning change`;
   assist.hidden = true;
-  plate.append(tag, assist);
+  plate.append(assist);
   const pips = el("span", "pips");
   const state = el("span", "state");
   const meta = el("div", "meta");

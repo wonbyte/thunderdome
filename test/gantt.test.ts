@@ -63,7 +63,10 @@ describe("ganttOf", () => {
     delete task.agents[0]!.endedAt;
     task.judging = [{ name: "fork zippy", state: "running", startedAt: iso(50) }];
     delete task.verdict;
+    // c3 was pushed at 52 s and has no preview yet: it is building, not an estimate.
+    task.agents[0]!.push!.log!.push({ at: iso(52), commit: "c3", commits: 1 });
     const gantt = ganttOf(task, at(55));
+    expect(gantt?.rows.find((r) => r.key === "build:ponder:2")).toMatchObject({ to: at(55), running: true, approx: false });
     expect(gantt?.rows.find((r) => r.key === "agent:ponder")).toMatchObject({ to: at(55), running: true, title: "Ponder · 55.0 s so far" });
     expect(gantt?.rows.find((r) => r.key === "judge:fork zippy")).toMatchObject({ to: at(55), running: true });
     expect(gantt?.marks).toEqual([]);
