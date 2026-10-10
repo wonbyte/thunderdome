@@ -180,25 +180,56 @@ function renderBoard(races: RaceSummary[]): void {
   panel.hidden = false;
 }
 
-async function main(): Promise<void> {
-  const core = document.getElementById("hero-core");
-  if (core !== null) core.innerHTML = coreSvg();
-  const list = document.getElementById("races");
-  if (list === null) return;
-  let races: RaceSummary[] = [];
+/** The race list, or undefined when it could not be read (then the page keeps what it shows). */
+async function loadRaces(): Promise<RaceSummary[] | undefined> {
   try {
     const res = await fetch("/tasks", { headers: { accept: "application/json" } });
     const body: unknown = res.ok ? await res.json() : undefined;
     const raw = typeof body === "object" && body !== null ? (body as { races?: unknown }).races : undefined;
-    races = Array.isArray(raw) ? raw.filter(isRace) : [];
-  } catch {
-    races = [];
+    return Array.isArray(raw) ? raw.filter(isRace) : undefined;
+  } catch (error) {
+    console.warn("GET /tasks failed", error);
+    return undefined;
   }
+}
+
+/** How often the gallery rereads the list while a race may still change; the list is edge-cached 10 s. */
+const REFRESH_MS = 15_000;
+/** A race not judged this long after it was made has failed or stalled: it no longer keeps the page polling. */
+const LIVE_FOR_MS = 30 * 60_000;
+
+/** True while some race may still change: not judged, not failed, and made in the last half hour. */
+function anyLive(races: RaceSummary[], now: number): boolean {
+  return races.some((r) => r.winner === undefined && r.status !== "failed" && now - Date.parse(r.createdAt) < LIVE_FOR_MS);
+}
+
+let shownKey = "";
+
+function draw(list: HTMLElement, races: RaceSummary[]): void {
+  // A refresh that changed nothing leaves the cards (and their entrance animation) alone.
+  const key = JSON.stringify(races);
+  if (key === shownKey) return;
+  shownKey = key;
   const count = document.getElementById("count");
   renderBoard(races);
   if (count !== null) count.textContent = races.length === 1 ? "1 race" : `${races.length} races`;
   cards = 0;
   list.replaceChildren(...(races.length === 0 ? [el("p", "empty", "No races yet.")] : races.map(card)));
+}
+
+async function main(): Promise<void> {
+  const core = document.getElementById("hero-core");
+  if (core !== null) core.innerHTML = coreSvg();
+  const list = document.getElementById("races");
+  if (list === null) return;
+  let races = (await loadRaces()) ?? [];
+  draw(list, races);
+  // A race running when the page opened turns finished here, without a reload.
+  while (anyLive(races, Date.now())) {
+    await new Promise((resolve) => setTimeout(resolve, REFRESH_MS));
+    races = (await loadRaces()) ?? races;
+    draw(list, races);
+  }
 }
 
 void main();

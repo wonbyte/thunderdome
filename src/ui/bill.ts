@@ -81,10 +81,14 @@ export function billOf(task: WireTask, now: number): Bill {
     if (step.name.startsWith("fork ")) {
       containers++;
       containerSeconds += took;
-      clefCalls += CLEF_PER_FORK;
+      // A fork that never pushed changed no files, and the judge asks Clef nothing about it.
+      if (task.agents.find((slot) => slot.name === step.name.slice("fork ".length))?.push !== undefined) clefCalls += CLEF_PER_FORK;
     } else if (step.name === "fuse" || step.name === "ship") {
       containers++;
       containerSeconds += took;
+      // The fusion asks Clef once per try that reached its question, and scores a kept fusion like a fork.
+      const fusion = step.name === "fuse" ? task.verdict?.fusion : undefined;
+      if (fusion !== undefined) clefCalls += fusion.tried.filter((t) => typeof t.better === "number").length + (fusion.score === undefined ? 0 : CLEF_PER_FORK);
     } else if (step.name === "look") {
       browserSeconds += took;
       // "Is it visual?", then one look per fork: an upper bound, as a non-visual task stops at the first.

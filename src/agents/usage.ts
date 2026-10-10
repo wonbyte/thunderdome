@@ -72,6 +72,19 @@ export function addUsage(a: Usage | undefined, b: Usage): Usage {
   };
 }
 
+
+/**
+ * One robot's spend cap on the Worker's key. A normal robot makes 8 to 17 calls for about $0.01 to
+ * $0.02 (the meter, Oct 8), so this only stops a run that loops or fans out calls. The call count
+ * also covers a model with no known price.
+ */
+export const AGENT_BUDGET = { usd: 1, calls: 300 } as const;
+
+/** True while the robot may make another model call. In-flight calls can pass the cap by a little. */
+export function withinBudget(usage: Usage | undefined): boolean {
+  return usage === undefined || (usage.usd < AGENT_BUDGET.usd && usage.calls < AGENT_BUDGET.calls);
+}
+
 /** One call's usage from a JSON Messages reply. */
 export function usageOfJson(body: unknown): Usage {
   if (typeof body !== "object" || body === null) return callUsage(undefined, {});

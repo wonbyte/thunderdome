@@ -89,6 +89,14 @@ describe("xray", () => {
     const done: WireTask = { ...judging, judging: judging.judging!.map((s) => ({ ...s, state: "done", endedAt: iso(80) })), verdict: { winner: "ponder", why: "w", judgedAt: iso(90) } };
     expect([...busyNodes(done, T0 + 65_000)].toSorted()).toEqual(["browser", "clef", "judge", "tests"]);
     expect(busyNodes(done, T0 + 95_000).size).toBe(0);
+    // A step with no saved end (a running row) lights nothing before it starts, in a replay too.
+    expect(busyNodes(judging, T0 + 55_000).has("judge")).toBe(false);
+  });
+
+  it("X10: steps under a millisecond give no slow-step note, not an infinite ratio", () => {
+    const instant = measured();
+    instant.judging = [0, 0, 0, 5].map((s, i) => ({ name: `fork f${i}`, state: "done", startedAt: iso(120), endedAt: iso(120 + s) }));
+    expect(xrayStats(instant, T0 + 300_000).notes.join(" ")).not.toContain("Infinity");
   });
 
   // Four builds (one slow, one with no saved preview), five fork checks (one slow), a robot out of time.

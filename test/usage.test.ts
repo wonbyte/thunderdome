@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addUsage, callUsage, usageOfJson, usageTap, type Usage } from "../src/agents/usage";
+import { addUsage, AGENT_BUDGET, callUsage, usageOfJson, usageTap, withinBudget, type Usage } from "../src/agents/usage";
 import { isMessageCall, messageUpstream } from "../src/sandbox/policy";
 import { agentUsd, billLine, billOf } from "../src/ui/bill";
 import { applyEvent, emptyBoard, type WireTask } from "../src/ui/board";
@@ -108,6 +108,48 @@ describe("the meter", () => {
     expect(bill.browserSeconds).toBeCloseTo(7.589, 6);
     expect(bill.agentsUsd).toBeCloseTo(0.75, 9);
     expect(billLine(bill)).toMatch(/^7 containers · 6 container-min · 10 Clef calls · Cloudflare ≈ \$0\.0\d\d · agents \$0\.75$/);
+  });
+
+  it("M8: Clef calls follow what the judge asked: none for a fork that never pushed, one per fusion question, a scored fusion like a fork", () => {
+    const at = "2026-10-08T04:29:30.000Z";
+    const end = "2026-10-08T04:29:40.000Z";
+    const task: WireTask = {
+      id: "t",
+      prompt: "x",
+      status: "finished",
+      agents: [
+        { name: "ponder", status: "done", push: { commits: 1 } },
+        { name: "zippy", status: "done" },
+      ],
+      judging: [
+        { name: "fork ponder", state: "done", startedAt: at, endedAt: end },
+        { name: "fork zippy", state: "done", startedAt: at, endedAt: end },
+        { name: "fuse", state: "done", startedAt: at, endedAt: end },
+      ],
+      verdict: {
+        winner: "ponder",
+        why: "",
+        fusion: {
+          tried: [
+            { agent: "zippy", files: ["a.ts"], status: "added", better: 0.7 },
+            { agent: "zippy", files: ["b.ts"], status: "failed" },
+          ],
+          score: { before: { total: 80, tests: { passed: 1, total: 1 } }, after: { total: 81, tests: { passed: 1, total: 1 } } },
+        },
+      },
+    };
+    // ponder 6, zippy 0, the fusion's one question 1, its score 6.
+    expect(billOf(task, Date.parse(end)).clefCalls).toBe(6 + 0 + 1 + 6);
+  });
+
+  it("M9: a robot may call the model until its spend or its call count reaches the cap; a normal run is far below it", () => {
+    const used = (usd: number, calls: number): Usage => ({ calls, input: 0, output: 0, cacheRead: 0, cacheWrite: 0, usd });
+    expect(withinBudget(undefined)).toBe(true);
+    // The heaviest robot on Oct 8's meter: 17 calls, $0.016.
+    expect(withinBudget(used(0.016, 17))).toBe(true);
+    expect(withinBudget(used(AGENT_BUDGET.usd, 20))).toBe(false);
+    // Unpriced calls cost $0 on the meter, so the call count stops them.
+    expect(withinBudget({ ...used(0, AGENT_BUDGET.calls), unpriced: AGENT_BUDGET.calls })).toBe(false);
   });
 
   it("M7: an agent's cost is the meter's when it priced every call, else Claude Code's", () => {

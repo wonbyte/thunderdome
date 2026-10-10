@@ -283,6 +283,9 @@ describe("the shared suite", () => {
     expect(argv[2]).toContain(`setpriv --reuid=${TESTER}`);
     expect(argv[2]).toContain("kill -KILL -1");
     expect(argv[2]).toContain("/dev/shm");
+    // A robot's own node_modules/.bin never comes first on PATH: a fake `node` there could print any summary.
+    expect(argv[2]).not.toContain("node_modules");
+    expect(argv[2]).not.toContain("PATH=");
     expect(packageJsonAt("abc123")).toEqual(["git", "show", "abc123:package.json"]);
     expect(testScriptOf('{"scripts":{"test":"node --test"}}')).toBe("node --test");
     expect(testScriptOf('{"scripts":{"test":""}}')).toBeUndefined();

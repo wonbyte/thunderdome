@@ -149,8 +149,8 @@ const JUDGE_BUSY: Record<string, string[]> = { look: ["browser", "clef"], split:
 export function busyNodes(task: WireTask, now: number): Set<string> {
   const busy = new Set<string>();
   for (const row of ganttOf(task, now)?.rows ?? []) {
-    // Running live, or (a replay of the whole record) spanning the replay's time.
-    if (!row.running && !(row.from <= now && now < row.to)) continue;
+    // Started, and running live or (a replay of the whole record) spanning the replay's time.
+    if (row.from > now || (!row.running && now >= row.to)) continue;
     if (row.key.startsWith("agent:")) busy.add(sandboxId(row.key.slice(6)));
     else if (row.key.startsWith("build:")) for (const id of ["pushwf", "build"]) busy.add(id);
     else if (row.key.startsWith("judge:")) {
@@ -205,8 +205,9 @@ export function xrayStats(task: WireTask, now: number): { stats: Map<string, Nod
 
   const notes: string[] = [];
   const slow = (what: string, picked: GanttRow[], name: (r: GanttRow) => string): void => {
-    if (picked.length < 3) return;
     const mid = median(picked.map((r) => r.to - r.from));
+    // A zero median (steps under a millisecond) would make every ratio infinite.
+    if (picked.length < 3 || mid <= 0) return;
     for (const r of picked) {
       const ms = r.to - r.from;
       if (ms > 2 * mid) notes.push(`${name(r)} took ${formatMs(ms)}, ${(ms / mid).toFixed(1)}× this race's median ${what} (${formatMs(mid)}).`);

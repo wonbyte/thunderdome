@@ -268,7 +268,7 @@ describe("board", () => {
       {
         kind: "verdict",
         taskId: id,
-        verdict: { winner: "zippy", why: "Best fix.", judgedAt: at, ship: { status: "merged", winner: "zippy", commit: "m1", locks: [] } },
+        verdict: { winner: "zippy", why: "Best fix.", judgedAt: at, ship: { status: "merged", winner: "zippy", commit: "m1", locks: [], blame: { zippy: 12, testy: 3 } } },
       },
     ];
     let board = built;
@@ -278,6 +278,8 @@ describe("board", () => {
     // The task keeps up too: the timeline and the git graph read it (a page opened mid-race showed stale pushes).
     expect(board.task?.agents.find((slot) => slot.name === "zippy")?.push).toMatchObject({ commits: 2, head: "c1", preview });
     expect(board.grid.clashes).toEqual([]);
+    // The live verdict keeps the blame, so "Who wrote main" shows without a reload.
+    expect(board.task?.verdict?.ship?.blame).toEqual({ zippy: 12, testy: 3 });
     expect(board.basePreview?.commit).toBe("b0");
     expect(board.task?.basePreview?.commit).toBe("b0");
     expect(board).toMatchObject({ winner: "zippy", why: "Best fix.", ended: true, lastSeq: 4 });

@@ -4,7 +4,7 @@
 import { DurableObject } from "cloudflare:workers";
 
 import type { Step } from "../agents/events";
-import { addUsage, type Usage } from "../agents/usage";
+import { addUsage, withinBudget, type Usage } from "../agents/usage";
 import { AGENT_TIME_LIMIT_MS, type AgentOutcome } from "../agents/runner";
 import type { SavedDiff } from "../judge/diffs";
 import { judgeInstanceId } from "../judge/judge";
@@ -65,6 +65,8 @@ const CLAIMS_KEY = "claims";
 /** kv key `diff:<agent>`: the diff the judge scored for that agent's fork. */
 const DIFF_KEY_PREFIX = "diff:";
 const MAX_STEPS_PER_PAGE = 500;
+/** Live sockets one race accepts; past it GET /tasks/:id/live answers 503. */
+export const MAX_WATCHERS = 200;
 /** Close code for a socket whose send failed. */
 const CLOSE_SEND_FAILED = 1011;
 
@@ -130,6 +132,10 @@ export class TaskRoom extends DurableObject<Env> {
   override fetch(request: Request): Response {
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return Response.json({ error: "Expected Upgrade: websocket" }, { status: 426, headers: { upgrade: "websocket" } });
+    }
+    // Every open and close messages every viewer, so sockets cost n²: one client must not open thousands.
+    if (this.ctx.getWebSockets().length >= MAX_WATCHERS) {
+      return Response.json({ error: "This race has too many viewers; try again soon" }, { status: 503, headers: { "retry-after": "30" } });
     }
     const { 0: client, 1: server } = new WebSocketPair();
     this.ctx.acceptWebSocket(server);
@@ -323,6 +329,12 @@ export class TaskRoom extends DurableObject<Env> {
     if (taskId !== undefined && logged.length > 0) this.#broadcast({ kind: "steps", taskId, agent, steps: logged });
   }
 
+  /** Called by the Outbound Worker before an agent's model call: false once the robot used its budget. */
+  modelCallAllowed(agent: string): boolean {
+    const slot = this.#task()?.agents.find((candidate) => candidate.name === agent);
+    return slot !== undefined && withinBudget(slot.usage);
+  }
+
   /** Called by the Outbound Worker after each of an agent's model calls, with that call's usage. */
   usage(agent: string, call: Usage): void {
     const task = this.#task();
@@ -507,7 +519,8 @@ export class TaskRoom extends DurableObject<Env> {
     if (failed.length > 0) return { ok: false, error: `Deleting ${failed.join(", ")} failed` };
     const next: Task = { ...task, reposDeletedAt: new Date().toISOString() };
     this.#save(next);
-    await this.env.RACE_INDEX.getByName(RACE_INDEX_NAME).record(summaryOf(next, this.claimBoard().history));
+    // #index logs a failed record: a throw here would leave the gallery stale, since a rerun returns early.
+    await this.#index(next);
     return { ok: true, deleted: repos };
   }
 

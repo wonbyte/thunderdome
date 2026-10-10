@@ -423,6 +423,8 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
                 status: ship.status,
                 ...(ship.commit === undefined ? {} : { commit: ship.commit }),
                 ...(ship.resolve?.chosen === undefined ? {} : { resolve: { chosen: ship.resolve.chosen } }),
+                // "Who wrote main" reads it: without it the live page showed the bar only after a reload.
+                ...(ship.blame === undefined ? {} : { blame: ship.blame }),
               },
             }),
         // The fusion round rides along, so the live page and a replay draw it without a reload.

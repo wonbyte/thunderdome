@@ -28,10 +28,11 @@ export const CROSS_TEST_STEP_MARGIN_S = 60;
 export const TESTER = "tester";
 const AS_TESTER = `setpriv --reuid=${TESTER} --regid=${TESTER} --clear-groups --no-new-privs`;
 // Runs "$@" as the tester under a hard timeout, then ends whatever it left running and removes what
-// it wrote, so nothing carries over to the next run in the same sandbox. Arguments stay argv. The
-// repo's own binaries are on PATH, as npm would put them, since the test script runs without npm.
+// it wrote, so nothing carries over to the next run in the same sandbox. Arguments stay argv. PATH
+// stays the image's: the fork's own node_modules/.bin is robot-written, and a `node` there could
+// print any test summary.
 const TESTER_SCRIPT =
-  `t="$1"; k="$2"; shift 2; timeout --kill-after="$k" "$t" ${AS_TESTER} env HOME=/home/${TESTER} PATH="$PWD/node_modules/.bin:$PATH" "$@"; s=$?; ` +
+  `t="$1"; k="$2"; shift 2; timeout --kill-after="$k" "$t" ${AS_TESTER} env HOME=/home/${TESTER} "$@"; s=$?; ` +
   `${AS_TESTER} /bin/bash -c 'kill -KILL -1' 2>/dev/null; find /tmp /var/tmp /dev/shm /home/${TESTER} -mindepth 1 -user ${TESTER} -delete 2>/dev/null; exit $s`;
 
 /** argv that runs `argv` as the tester, cut off after `timeoutS` (killed `killAfterS` later), then cleans up after it. */
@@ -237,7 +238,14 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
   const cross =
     filesChanged.length === 0 || deps.crossTests === undefined
       ? undefined
-      : await deps.crossTests(fork).catch(() => deps.crossTests?.(fork)).catch(() => undefined);
+      : await deps
+          .crossTests(fork)
+          .catch(() => deps.crossTests?.(fork))
+          .catch((cause: unknown) => {
+            // The shared suite turns off for every fork; the log says why.
+            console.error({ event: "judge.cross_tests_failed", agent: fork.agent, error: String(cause).slice(0, 300) });
+            return undefined;
+          });
   const judged: JudgedFork = {
     agent: fork.agent,
     fork: fork.fork,

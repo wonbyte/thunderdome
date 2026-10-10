@@ -226,7 +226,8 @@ async function getJson(path: string): Promise<unknown> {
   try {
     const res = await fetch(path, { headers: { accept: "application/json" } });
     return res.ok ? ((await res.json()) as unknown) : undefined;
-  } catch {
+  } catch (error) {
+    console.warn("GET failed", path, error);
     return undefined;
   }
 }
@@ -266,7 +267,12 @@ function main(): void {
     if (replay === undefined && board !== undefined) {
       renderGraph(board);
       renderGantt(board);
-      if (xrayOn) renderXrayBusy(board);
+      // The bill and X-ray's times count on between events: a judge step can run a minute without one.
+      renderBill(board);
+      if (xrayOn) {
+        renderXrayBusy(board);
+        renderXrayInfo(board);
+      }
     }
   }, 250);
   setupTabs();
@@ -1182,7 +1188,9 @@ function renderGraph(b: Board): void {
     for (const slot of recorded.agents) ends[slot.name] = msOf(slot.endedAt);
     const merge = mergeOf(recorded);
     const fusion = fusionOf(recorded);
-    input = { agents, start, ends, dots: pushDots(recorded), t: replay.t, domainEnd: Math.max(replay.timeline.end, merge?.at ?? 0), ...(merge ? { merge } : {}), ...(fusion ? { fusion } : {}) };
+    // Whole seconds, as live: the graph is redrawn when its key changes, not on every replay frame.
+    const t = Math.floor(replay.t / 1_000) * 1_000;
+    input = { agents, start, ends, dots: pushDots(recorded), t, domainEnd: Math.max(replay.timeline.end, merge?.at ?? 0), ...(merge ? { merge } : {}), ...(fusion ? { fusion } : {}) };
   } else {
     const now = Date.now();
     for (const f of b.fighters) {
@@ -1769,7 +1777,8 @@ function renderBanner(b: Board, final: boolean): void {
   }
   if (toastTimer !== undefined) clearTimeout(toastTimer);
   if (!final) {
-    toast("The judge's scores", "tests · task fit · clarity · claims", "judge");
+    // The parts in reveal order: a race judged on look has five.
+    toast("The judge's scores", revealParts(b).map((part) => PART_LABEL[part]).join(" · "), "judge");
     return;
   }
   const winner = b.fighters.find((f) => f.agent === b.winner);
@@ -1828,6 +1837,8 @@ const xrayNodes = new Map<string, SVGGElement>();
 const xrayStatText = new Map<string, SVGTextElement>();
 const xrayWires = new Map<string, SVGPolylineElement>();
 let xrayTraced: string | undefined;
+/** What renderXrayInfo last wrote; see there. */
+let xrayInfoKey = "";
 const pongs: number[] = [];
 let pingAt: number | undefined;
 let reconnects = 0;
@@ -1954,19 +1965,26 @@ function renderXrayInfo(b: Board): void {
   if (task === undefined || xrayCircuit === undefined) return;
   const now = clock();
   const { stats, notes } = xrayStats(task, now);
-  for (const [id, text] of xrayStatText) {
+  const texts = [...xrayStatText.keys()].map((id) => {
     const s = stats.get(id);
-    text.textContent = s === undefined ? "" : `${formatMs(s.last)}${s.n > 1 ? ` · avg ${formatMs(s.avg)} ×${s.n}` : ""}`;
-  }
+    return s === undefined ? "" : `${formatMs(s.last)}${s.n > 1 ? ` · avg ${formatMs(s.avg)} ×${s.n}` : ""}`;
+  });
   const trace = xrayTraced === undefined ? undefined : traceOf(task, xrayTraced, now);
-  const lit = new Set<string>();
-  if (trace !== undefined) for (let i = 1; i < trace.path.length; i++) lit.add(`${trace.path[i - 1]}>${trace.path[i]}`);
-  for (const [key, wire] of xrayWires) wire.classList.toggle("traced", lit.has(key));
-  for (const [id, g] of xrayNodes) g.classList.toggle("traced", trace?.path.includes(id) === true);
-  for (const button of byId("xray-trace-buttons").querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.agent === xrayTraced));
   const start = Date.parse(task.startedAt ?? task.createdAt ?? "") || now;
-  byId("xray-trace").textContent = xrayTraced === undefined ? "Pick a robot to trace its newest push." : trace === undefined ? `${displayName(xrayTraced)} has not pushed yet.` : traceLine(trace, start);
-  byId("xray-notes").replaceChildren(...(notes.length === 0 ? ["Nothing slow so far: no build or fork check over twice this race's median."] : notes).map((n) => el("li", undefined, n)));
+  const line = xrayTraced === undefined ? "Pick a robot to trace its newest push." : trace === undefined ? `${displayName(xrayTraced)} has not pushed yet.` : traceLine(trace, start);
+  // This runs on every frame of a replay: the DOM is written only when what it shows changed.
+  const key = JSON.stringify([texts, notes, line, xrayTraced, trace?.path]);
+  if (key !== xrayInfoKey) {
+    xrayInfoKey = key;
+    [...xrayStatText.values()].forEach((text, i) => (text.textContent = texts[i] ?? ""));
+    const lit = new Set<string>();
+    if (trace !== undefined) for (let i = 1; i < trace.path.length; i++) lit.add(`${trace.path[i - 1]}>${trace.path[i]}`);
+    for (const [wireKey, wire] of xrayWires) wire.classList.toggle("traced", lit.has(wireKey));
+    for (const [id, g] of xrayNodes) g.classList.toggle("traced", trace?.path.includes(id) === true);
+    for (const button of byId("xray-trace-buttons").querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.agent === xrayTraced));
+    byId("xray-trace").textContent = line;
+    byId("xray-notes").replaceChildren(...(notes.length === 0 ? ["Nothing slow so far: no build or fork check over twice this race's median."] : notes).map((n) => el("li", undefined, n)));
+  }
   renderConnection();
 }
 
@@ -2233,7 +2251,8 @@ function httpsUrl(url: string): string | undefined {
 const FLIP_MS = 2000;
 const PAGE_WIDTH = 1280; // the width each page is laid out at (the look step's desktop shot), then scaled to fit its frame
 let flipTimer: ReturnType<typeof setInterval> | undefined;
-let flipPaused = false;
+let flipPaused = false; // hovered
+let flipStopped = false; // the pause button
 const frameSizer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(fitFrames);
 
 /**
@@ -2253,20 +2272,25 @@ function fitFrames(entries: ResizeObserverEntry[]): void {
 
 function setupWipe(): void {
   const modes = byId("compare-modes");
-  for (const button of Array.from(modes.querySelectorAll("button"))) {
+  for (const button of Array.from(modes.querySelectorAll<HTMLButtonElement>("button[data-mode]"))) {
     button.addEventListener("click", () => setCompareMode(button.dataset.mode === "flip" ? "flip" : "side"));
   }
+  // Moving content needs a pause anyone can reach (WCAG 2.2.2), not only a mouse hover.
+  byId("flip-pause").addEventListener("click", () => setFlipStopped(!flipStopped));
   const compare = byId("compare");
   compare.addEventListener("mouseenter", () => (flipPaused = true));
   compare.addEventListener("mouseleave", () => (flipPaused = false));
   for (const id of ["cmp-before", "cmp-after"]) frameSizer?.observe(byId(id));
 }
 
-/** Side by side shows both; flip stacks them and swaps every FLIP_MS (paused while hovered). */
+/**
+ * Side by side shows both; flip stacks them and swaps every FLIP_MS, paused while hovered or by the
+ * pause button. With reduced motion it starts paused, until the viewer presses Play.
+ */
 function setCompareMode(mode: "side" | "flip"): void {
   const compare = byId("compare");
   compare.dataset.mode = mode;
-  for (const button of Array.from(byId("compare-modes").querySelectorAll("button"))) {
+  for (const button of Array.from(byId("compare-modes").querySelectorAll<HTMLButtonElement>("button[data-mode]"))) {
     const on = button.dataset.mode === mode;
     button.classList.toggle("on", on);
     button.setAttribute("aria-pressed", String(on));
@@ -2274,11 +2298,20 @@ function setCompareMode(mode: "side" | "flip"): void {
   if (flipTimer !== undefined) clearInterval(flipTimer);
   flipTimer = undefined;
   compare.classList.remove("show-before");
+  byId("flip-pause").hidden = mode !== "flip";
   if (mode !== "flip") return;
   compare.classList.add("show-before");
+  setFlipStopped(reducedMotion());
   flipTimer = setInterval(() => {
-    if (!flipPaused) compare.classList.toggle("show-before");
+    if (!flipPaused && !flipStopped) compare.classList.toggle("show-before");
   }, FLIP_MS);
+}
+
+/** The pause button's state: "Pause" while flipping, "Play" while stopped. */
+function setFlipStopped(stop: boolean): void {
+  flipStopped = stop;
+  // The label says what a press does, so it carries no aria-pressed (a toggle's name must not change).
+  byId("flip-pause").textContent = stop ? "Play" : "Pause";
 }
 
 /** The base preview next to the winner's. */

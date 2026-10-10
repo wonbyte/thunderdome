@@ -237,7 +237,8 @@ async function submit(event: SubmitEvent): Promise<void> {
     } else {
       showError(typeof body.error === "string" ? body.error : `The race did not start (HTTP ${res.status}).`);
     }
-  } catch {
+  } catch (error) {
+    console.warn("POST /play failed", error);
     showError("The race did not start. Try again in a moment.");
   }
   stopSetup(false);

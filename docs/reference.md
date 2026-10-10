@@ -42,6 +42,7 @@ public demo costs about $0.70 a day in agent spend.
 |---|---|---|
 | Agents per race | 3 to 5 (`/play` always uses 5) | `src/room/task.ts` |
 | Agent run time | 8 minutes each; what it pushed by then still counts | `src/agents/runner.ts` |
+| Agent model budget | $1 or 300 model calls per robot, by the meter (a real robot uses about $0.01–0.02 in 9–16 calls); past it the proxy refuses its calls and the robot ends | `src/agents/usage.ts`, `src/sandbox/outbound.ts` |
 | Race watchdog | 12 minutes after the start, any agent that never reported back (its sandbox lost track, e.g. a deploy reset it) is ended as failed, so the judge still runs on what the forks hold | `src/room/task.ts`, `src/room/TaskRoom.ts` |
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
 | Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
@@ -180,7 +181,8 @@ time, so the page does not scroll through every panel:
 - **Result:** score bars, an expandable why, Run it again.
 - **Previews:** the base "before" next to each robot's newest preview (on phones one robot at a time,
   picked from a row of robot buttons; once judged, each tile adds what Clef saw: its answers and its
-  two shots), and Before → after.
+  two shots), and Before → after (side by side, or a flip every 2 s with a Pause button; with
+  reduced motion the flip starts paused).
 - **Timeline:** what ran when, and where the robots ran.
 - **Git:** the git graph.
 - **Claims & feed:** the claim board (clashes in red) and the live feed.
@@ -211,7 +213,7 @@ current task. Then every change comes as one JSON message with a `kind` and the 
 | `usage` | An agent's model calls so far (`agent`, `usage`: `calls`, `input`, `output`, `cacheRead`, `cacheWrite` tokens and `usd` at list price; `unpriced` counts calls whose model has no price). Sent after each call the Outbound Worker passes; the same total is saved on the agent as `usage`. |
 | `judge` | A judge step started or ended (`step`: `name` such as `fork ponder`, `look`, `split`, `compare`, `fuse` or `ship`; `state` `running`, `done` or `failed`; `startedAt`, `endedAt`). They are also saved as `judging` on the task, so replays play them. |
 | `verdict` | The judge saved its verdict |
-| `watchers` | A viewer connected or left (`n`: sockets open). Not recorded; replays have none. |
+| `watchers` | A viewer connected or left (`n`: sockets open, at most 200 a race; past that `/live` answers 503). Not recorded; replays have none. |
 | `reaction` | A viewer cheered (`emoji`, one of 🔥 👏 😂 😮 💪 ⚡; `agent`: their pick, when it races here). The one message a client may send is `{ "kind": "react", "emoji", "agent"? }`; one per socket per second and ten per race per second are relayed, the rest dropped (`src/room/reactions.ts`). Not recorded. |
 
 A request without `Upgrade: websocket` gets `426`. The server ignores every message you send except a reaction (`react`, above) and the text `ping`, which the runtime answers with `pong`.

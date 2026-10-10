@@ -113,6 +113,8 @@ async function seed(request: Request, env: Env): Promise<Response> {
 }
 
 async function authorized(request: Request, env: Env): Promise<boolean> {
+  // Unset, the wanted header would be "Bearer undefined", which anyone can send.
+  if ((env.ADMIN_TOKEN ?? "").trim() === "") return false;
   const header = request.headers.get("authorization") ?? "";
   const encoder = new TextEncoder();
   const [given, wanted] = await Promise.all([

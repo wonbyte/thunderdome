@@ -39,6 +39,11 @@ export class Outbound extends WorkerEntrypoint<Env, OutboundProps> {
       console.error({ event: "outbound.model_refused", taskId: this.ctx.props.taskId, agent: this.ctx.props.agent });
       return new Response(`Only ${this.env.AGENT_MODEL} may be called from this sandbox\n`, { status: 403 });
     }
+    if (message && !(await this.#budgetLeft())) {
+      console.error({ event: "outbound.budget_used", taskId: this.ctx.props.taskId, agent: this.ctx.props.agent });
+      // A permission error, not a rate limit: Claude Code ends instead of backing off until its deadline.
+      return Response.json({ type: "error", error: { type: "permission_error", message: "This robot has used its model budget for the race" } }, { status: 403 });
+    }
     const upstream = message ? messageUpstream(url, this.env.CF_ACCOUNT_ID, this.env.MODEL_GATEWAY) : url;
     // The gateway's log filters by race and robot.
     if (upstream !== url) headers.set("cf-aig-metadata", JSON.stringify({ task: this.ctx.props.taskId, agent: this.ctx.props.agent }));
@@ -51,6 +56,21 @@ export class Outbound extends WorkerEntrypoint<Env, OutboundProps> {
       console.error({ event: "outbound.refused", host: url.hostname, path: url.pathname, status: response.status });
     }
     return message && response.ok ? this.#meter(response) : response;
+  }
+
+  /**
+   * Whether the robot is under its spend cap (AGENT_BUDGET). A sandbox that runs no robot has no
+   * meter to check; a room that cannot answer lets the call go, as the meter is not worth a failed race.
+   */
+  async #budgetLeft(): Promise<boolean> {
+    const { taskId, agent } = this.ctx.props;
+    if (taskId === undefined || agent === undefined) return true;
+    try {
+      return await this.env.TASK_ROOM.getByName(taskId).modelCallAllowed(agent);
+    } catch (error) {
+      console.error({ event: "outbound.budget_check_failed", error: String(error) });
+      return true;
+    }
   }
 
   /** Counts a message call's tokens for the robot's meter, without holding the reply back. */

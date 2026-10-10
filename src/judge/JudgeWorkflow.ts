@@ -340,7 +340,8 @@ async function judgeInSandbox(env: Env, input: JudgeInput, fork: JudgeFork): Pro
     const sources: CrossSource[] = others.map((o) => ({ agent: o.agent, remote: o.remote, branch: o.defaultBranch }));
     return await judgeFork(sandboxDeps(env, sandbox, base, input.taskId, sources, stepEnd), input, fork);
   } finally {
-    await sandbox.stop();
+    // Best effort: a failed stop must not throw away a fork that was judged.
+    await sandbox.stop().catch((cause: unknown) => console.error({ event: "judge.stop_failed", taskId: input.taskId, agent: fork.agent, error: String(cause) }));
   }
 }
 
