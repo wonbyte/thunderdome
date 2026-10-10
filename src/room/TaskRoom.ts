@@ -77,7 +77,7 @@ export type LiveEvent =
   | { kind: "release"; taskId: string; agent: string; released: string[] }
   | { kind: "push"; taskId: string; agent: string; push: Omit<PushState, "seen" | "preview"> }
   | { kind: "preview"; taskId: string; agent: string; preview: Preview }
-  | { kind: "agent-end"; taskId: string; agent: string; outcome: AgentOutcome; status: TaskStatus }
+  | { kind: "agent-end"; taskId: string; agent: string; outcome: AgentOutcome; status: TaskStatus; endedAt?: string; finishedAt?: string }
   | { kind: "usage"; taskId: string; agent: string; usage: Usage } // the agent's running total
   | { kind: "verdict"; taskId: string; verdict: Verdict }
   | { kind: "judge"; taskId: string; step: JudgeStep }
@@ -92,6 +92,8 @@ export type LiveEvent =
 export class TaskRoom extends DurableObject<Env> {
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env);
+    // X-ray's connection line: the runtime answers without waking the object, so pings cost nothing.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair("ping", "pong"));
     ctx.storage.sql.exec(
       "CREATE TABLE IF NOT EXISTS steps (seq INTEGER PRIMARY KEY AUTOINCREMENT, agent TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL, text TEXT NOT NULL)",
     );
@@ -340,7 +342,9 @@ export class TaskRoom extends DurableObject<Env> {
     if (!applyOutcome(task, agent, outcome, new Date().toISOString())) return;
     this.agentSteps(agent, [{ kind: outcome.end === "done" ? "result" : "error", text: `DONE (${outcome.end})${outcome.pushed ? ` pushed ${outcome.commit}` : ", nothing pushed"}` }]);
     this.#save(task);
-    this.#broadcast({ kind: "agent-end", taskId: task.id, agent, outcome, status: task.status });
+    // The saved times, so a watching page's timeline matches a fresh load.
+    const endedAt = task.agents.find((slot) => slot.name === agent)?.endedAt;
+    this.#broadcast({ kind: "agent-end", taskId: task.id, agent, outcome, status: task.status, ...(endedAt === undefined ? {} : { endedAt }), ...(task.finishedAt === undefined ? {} : { finishedAt: task.finishedAt }) });
     // An agent that ended frees its files. The history keeps its claims for the judge.
     const board = this.#board();
     if (releaseFiles(board, agent).length > 0) this.ctx.storage.kv.put(CLAIMS_KEY, board);

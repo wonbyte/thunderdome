@@ -111,7 +111,7 @@ export type BoardEvent =
   | { kind: "release"; taskId: string; agent: string; released: string[] }
   | { kind: "push"; taskId: string; agent: string; push: Omit<NonNullable<WireAgent["push"]>, "seen" | "preview"> }
   | { kind: "preview"; taskId: string; agent: string; preview: WirePreview }
-  | { kind: "agent-end"; taskId: string; agent: string; outcome: { end: "done" | "failed" | "timeout"; costUsd?: number }; status: WireTaskStatus }
+  | { kind: "agent-end"; taskId: string; agent: string; outcome: { end: "done" | "failed" | "timeout"; costUsd?: number }; status: WireTaskStatus; endedAt?: string; finishedAt?: string }
   | { kind: "verdict"; taskId: string; verdict: WireVerdict }
   | { kind: "judge"; taskId: string; step: WireJudgeStep }
   | { kind: "base-preview"; taskId: string; preview: WirePreview }
@@ -411,7 +411,7 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
       });
     }
     case "agent-end":
-      return applyAgentEnd(board, event.agent, event.outcome.end, event.status, now, event.outcome.costUsd);
+      return applyAgentEnd(board, event, now);
     case "verdict": {
       const { winner, why, judgedAt, ship, fusion } = event.verdict;
       const verdict: WireVerdict = {
@@ -611,15 +611,18 @@ function gridOf(cells: Grid["cells"]): Grid {
 }
 
 /** The server frees an ended agent's files without a release event, so the board does too. */
-function applyAgentEnd(board: Board, agent: string, end: "done" | "failed" | "timeout", status: WireTaskStatus, now: number, costUsd?: number): Board {
-  const at = new Date(now).toISOString();
+function applyAgentEnd(board: Board, event: Extract<BoardEvent, { kind: "agent-end" }>, now: number): Board {
+  const { agent, status } = event;
+  const { end, costUsd } = event.outcome;
+  // The server's saved times when the event has them (since Oct 10), else the time it arrived.
+  const at = event.endedAt ?? new Date(now).toISOString();
   let next = board;
   if (board.task !== undefined) {
     const task = board.task;
     // Claude Code's own cost, for a page that watched the race; the meter's figure still comes first (bill.ts agentUsd).
     const cost = costUsd === undefined ? {} : { costUsd };
     const agents = task.agents.map((slot) => (slot.name === agent ? { ...slot, status: end, endedAt: slot.endedAt ?? at, ...cost } : slot));
-    const finishedAt = task.finishedAt ?? (status === "finished" ? at : undefined);
+    const finishedAt = task.finishedAt ?? (status === "finished" ? (event.finishedAt ?? at) : undefined);
     next = { ...board, task: { ...task, agents, status, ...(finishedAt === undefined ? {} : { finishedAt }) } };
   }
   next = withFighter(next, agent, (f) => {

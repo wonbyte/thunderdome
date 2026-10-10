@@ -129,10 +129,14 @@ describe("board", () => {
     expect(fighter(next, "ponder")).toMatchObject({ status: "done", action: "finished", actionAt: 4_000 });
     next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "zippy", outcome: { end: "timeout" }, status: "running" }, 4_000);
     expect(fighter(next, "zippy")).toMatchObject({ status: "timeout", action: "down" });
-    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "testy", outcome: { end: "failed" }, status: "finished" }, 5_000);
+    // The server's saved times win over the time the event arrived.
+    const saved = new Date(4_500).toISOString();
+    next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "testy", outcome: { end: "failed" }, status: "finished", endedAt: saved, finishedAt: saved }, 5_000);
     expect(fighter(next, "testy")).toMatchObject({ status: "failed", action: "down" });
     expect(next.task?.status).toBe("finished");
-    expect(next.task?.finishedAt).toBe(new Date(5_000).toISOString());
+    expect(next.task?.finishedAt).toBe(saved);
+    expect(next.task?.agents.find((a) => a.name === "testy")?.endedAt).toBe(saved);
+    expect(next.task?.agents.find((a) => a.name === "ponder")?.endedAt).toBe(new Date(4_000).toISOString());
     expect(next.task?.agents.map((slot) => slot.status)).toEqual(["done", "timeout", "failed"]);
     expect(task.agents.map((slot) => slot.status)).toEqual(["running", "running", "running"]);
 

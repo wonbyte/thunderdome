@@ -211,7 +211,8 @@ on a scrub.
 pretty one.
 
 **Status (Oct 10).** The boxes-and-lines version is built (X1–X4, axe clean, replay at 8× in
-order, nothing on a scrub); desktop only. Not yet deployed or seen in a live race.
+order, nothing on a scrub); desktop only. Live in c83e28d (race t-fdcd263c). Since then: busy boxes,
+measured times, a push trace, slow-step notes and the viewer's round trip (X5–X8).
 
 ---
 

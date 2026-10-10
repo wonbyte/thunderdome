@@ -150,7 +150,24 @@ Workflow, the build container, Workers Previews, the Judge Workflow, judge conta
 Browser Rendering, the fusion round and the ship, each with its binding name. Every pipeline
 event sends a packet along its wires (`src/ui/xray.ts`), live and in replays alike; a scrub sends
 none, and with reduced motion only the node lights. The stage's banner and judge steps step aside
-(the Result card and the pipeline panel carry them). The choice is remembered. Desktop only: on a
+(the Result card and the pipeline panel carry them). The choice is remembered.
+
+While a step runs, its box has a moving dashed border: exactly what the timeline shows running
+(a robot's sandbox, a preview build, each judge step's parts). Each box shows its measured time,
+the latest and the average, from the timeline's finished bars. The panel under the stage
+(`src/ui/xray.ts` `xrayStats`, `traceOf`):
+
+- **Trace:** pick a robot to light its newest push's path, sandbox to Workers Preview, with how long
+  after the recorded push its preview went live. Only those two times exist, so the hops between
+  are named, not timed.
+- **Slow or failed steps:** at most three facts: a build or fork check over twice the race's median
+  (with three or more to compare), a build with no saved preview, a robot out of time, a failed step.
+- **Your connection:** the round trip from your browser to the race's Durable Object, the median of
+  the last five pings, and reconnects. The room answers `ping` with `pong` through
+  `setWebSocketAutoResponse`, so a ping never wakes it. Replays have none.
+
+There is no packet loss or DNS data: everything runs inside Cloudflare through bindings, and the
+platform does not expose either. Desktop only: on a
 phone the labels would be too small to read.
 
 The page reads top to bottom: the task (its race memory folded), the stage with a verdict banner
@@ -177,14 +194,14 @@ current task. Then every change comes as one JSON message with a `kind` and the 
 | `push` | A push to an agent's fork was recorded (`push`: `commits`, `pushes`, `head`, `headMessage`, `lastPushAt`, `log`) |
 | `preview` | A preview of the agent's newest push is live (`preview`: `url`, `commit`, `at`) |
 | `base-preview` | The base preview of the source is live (`preview`: `url`, `commit`, `at`) |
-| `agent-end` | An agent ended (`outcome`, and the task `status`) |
+| `agent-end` | An agent ended (`outcome`, the task `status`, and the saved `endedAt` and `finishedAt`) |
 | `usage` | An agent's model calls so far (`agent`, `usage`: `calls`, `input`, `output`, `cacheRead`, `cacheWrite` tokens and `usd` at list price; `unpriced` counts calls whose model has no price). Sent after each call the Outbound Worker passes; the same total is saved on the agent as `usage`. |
 | `judge` | A judge step started or ended (`step`: `name` such as `fork ponder`, `look`, `split`, `compare`, `fuse` or `ship`; `state` `running`, `done` or `failed`; `startedAt`, `endedAt`). They are also saved as `judging` on the task, so replays play them. |
 | `verdict` | The judge saved its verdict |
 | `watchers` | A viewer connected or left (`n`: sockets open). Not recorded; replays have none. |
 | `reaction` | A viewer cheered (`emoji`, one of 🔥 👏 😂 😮 💪 ⚡; `agent`: their pick, when it races here). The one message a client may send is `{ "kind": "react", "emoji", "agent"? }`; one per socket per second and ten per race per second are relayed, the rest dropped (`src/room/reactions.ts`). Not recorded. |
 
-A request without `Upgrade: websocket` gets `426`. The server ignores every message you send except a reaction (`react`, above).
+A request without `Upgrade: websocket` gets `426`. The server ignores every message you send except a reaction (`react`, above) and the text `ping`, which the runtime answers with `pong`.
 
 ## Race gallery
 

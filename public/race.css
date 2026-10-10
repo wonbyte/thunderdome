@@ -590,6 +590,7 @@ h1.prompt { font-weight: 400; }
   .style { display: none; }
   /* Plates must fit side by side under five robots. */
   .plate { padding: 2px 5px; font-size: 12px; }
+  .state { font-size: 9px; letter-spacing: .02em; }
   /* The why's score table only reads with its columns unwrapped; it scrolls instead. */
   .why { white-space: pre; }
   .timer { font-size: 20px; }
@@ -1544,9 +1545,26 @@ details.card > summary h2 { color: #f6821f; }
 .xsandbox .xlabel { font-size: 12px; transform: translateY(-1px); }
 .xbinding { fill: var(--dim); font: 11px var(--mono); text-anchor: middle; }
 .xpacket { fill: #f6821f; filter: drop-shadow(0 0 6px #f6821f); }
+/* Working: a bright border that runs around the box for as long as the step runs. */
+.xnode.busy rect { stroke: #f6821f; stroke-width: 2.5; stroke-dasharray: 10 6; animation: xmarch .9s linear infinite; }
+.xsandbox.busy rect { stroke: var(--color); }
+@keyframes xmarch { to { stroke-dashoffset: -32; } }
+@media (prefers-reduced-motion: reduce) { .xnode.busy rect { animation: none; stroke-dasharray: none; } }
+.xstat { fill: var(--cyan); font: 600 10.5px var(--mono); text-anchor: middle; }
+/* A traced push: its wires and boxes in the accent, the rest dimmed. */
+.xray:has(.traced) :is(.xwire, .xnode):not(.traced) { opacity: .35; }
+.xwire.traced { stroke: var(--accent); stroke-width: 3; }
+.xnode.traced rect { stroke: var(--accent); }
+.xray-panel h2 { margin-bottom: 10px; }
+.xray-trace-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.xray-trace-buttons .pill { cursor: pointer; font-family: inherit; }
+.xray-trace-buttons .pill[aria-pressed="true"] { color: var(--text); border-color: var(--color); background: var(--panel-2); }
+.xray-line { margin: 6px 0; color: var(--dim); font-size: 13px; }
+.xray-sub { margin: 12px 0 4px; font-size: 13px; color: var(--text); }
+.xray-notes { margin: 0; padding-left: 18px; color: var(--dim); font-size: 13px; }
 /* shortcut: on a phone the circuit's labels would be 5 px, so X-ray is desktop only; a phone layout of the circuit would lift this. */
 @media (max-width: 640px) {
-  .xray-toggle { display: none; }
+  .xray-toggle, .xray-panel { display: none; }
   .stage[data-xray="on"] .xray { display: none; }
   .stage[data-xray="on"] :is(.bots, .beams, .core, .floor) { visibility: visible; }
   .stage[data-xray="on"] :is(.banner, .judge-steps) { display: flex; }

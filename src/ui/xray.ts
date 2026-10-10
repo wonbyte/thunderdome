@@ -1,7 +1,8 @@
 // X-ray mode: the race's Cloudflare architecture as a circuit, and which wires each platform hit
 // lights. Pure, like platform.ts; the page draws it (app.ts).
-import { displayName } from "./board";
-import type { PlatformHit } from "./platform";
+import { displayName, type WireTask } from "./board";
+import { ganttOf, type GanttRow } from "./gantt";
+import { formatMs, type PlatformHit } from "./platform";
 
 /** A box on the circuit, in viewBox units. `binding` is its name in wrangler.jsonc. */
 export interface XrayNode {
@@ -32,7 +33,7 @@ export interface XrayCircuit {
 }
 
 const W = 160;
-const H = 52;
+const H = 64; // label, binding, and the node's measured time
 const node = (id: string, label: string, x: number, y: number, binding?: string): XrayNode => ({ id, label, x, y, w: W, h: H, ...(binding === undefined ? {} : { binding }) });
 const left = (n: XrayNode): [number, number] => [n.x, n.y + n.h / 2];
 const right = (n: XrayNode): [number, number] => [n.x + n.w, n.y + n.h / 2];
@@ -132,4 +133,118 @@ export function route(c: XrayCircuit, path: readonly string[]): [number, number]
     points.push(...(points.length === 0 ? leg : leg.slice(1)));
   }
   return points.length === 0 ? undefined : points;
+}
+
+/** The judge step a running timeline bar belongs to, and the nodes it keeps busy. */
+const JUDGE_BUSY: Record<string, string[]> = { look: ["browser", "clef"], split: ["clef"], compare: ["clef"], fuse: ["fusion"], ship: ["ship"] };
+
+/**
+ * The nodes working at `now`: whatever the timeline shows running then (ganttOf), so X-ray and
+ * the timeline never disagree. A robot's sandbox while its agent runs, the push workflow and build
+ * container while a preview builds, the judge and the parts its running steps use.
+ */
+export function busyNodes(task: WireTask, now: number): Set<string> {
+  const busy = new Set<string>();
+  for (const row of ganttOf(task, now)?.rows ?? []) {
+    // Running live, or (a replay of the whole record) spanning the replay's time.
+    if (!row.running && !(row.from <= now && now < row.to)) continue;
+    if (row.key.startsWith("agent:")) busy.add(sandboxId(row.key.slice(6)));
+    else if (row.key.startsWith("build:")) for (const id of ["pushwf", "build"]) busy.add(id);
+    else if (row.key.startsWith("judge:")) {
+      const step = row.key.slice(6);
+      // A fork step runs that fork's tests, then Clef scores its diff.
+      for (const id of ["judge", ...(step.startsWith("fork ") ? ["tests", "clef"] : (JUDGE_BUSY[step] ?? []))]) busy.add(id);
+    }
+  }
+  return busy;
+}
+
+/** A node's measured times over its `n` finished runs (ms). */
+export interface NodeStat {
+  last: number;
+  avg: number;
+  n: number;
+}
+
+/** The node a finished timeline bar measures: preview builds and each judge step's part. */
+function statNode(key: string): string | undefined {
+  if (key === "base" || key.startsWith("build:")) return "build";
+  if (key.startsWith("judge:fork ")) return "tests";
+  // A step's first busy node is the one it is timed on (look: Browser Rendering, split: Clef, ...).
+  return key.startsWith("judge:") ? JUDGE_BUSY[key.slice(6)]?.[0] : undefined;
+}
+
+function median(values: number[]): number {
+  const sorted = values.toSorted((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? (sorted[mid] ?? 0) : ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2;
+}
+
+/**
+ * What the circuit measured by `now`, from the timeline's finished bars: each node's times, and at
+ * most three plain facts. A build or fork step over twice this race's median (with three or more to
+ * compare), a build with no saved preview, a robot out of time, a failed sandbox or judge step.
+ */
+export function xrayStats(task: WireTask, now: number): { stats: Map<string, NodeStat>; notes: string[] } {
+  const rows = ganttOf(task, now)?.rows ?? [];
+  const done = rows.filter((r) => !r.running && !r.approx && r.to <= now).toSorted((a, b) => a.to - b.to);
+  const stats = new Map<string, NodeStat>();
+  const record = (id: string, ms: number): void => {
+    const s = stats.get(id);
+    stats.set(id, s === undefined ? { last: ms, avg: ms, n: 1 } : { last: ms, avg: (s.avg * s.n + ms) / (s.n + 1), n: s.n + 1 });
+  };
+  for (const r of done) {
+    const id = statNode(r.key);
+    if (id !== undefined) record(id, r.to - r.from);
+  }
+  const judged = done.filter((r) => r.key.startsWith("judge:"));
+  if (judged.length > 0) record("judge", Math.max(...judged.map((r) => r.to)) - Math.min(...judged.map((r) => r.from)));
+
+  const notes: string[] = [];
+  const slow = (what: string, picked: GanttRow[], name: (r: GanttRow) => string): void => {
+    if (picked.length < 3) return;
+    const mid = median(picked.map((r) => r.to - r.from));
+    for (const r of picked) {
+      const ms = r.to - r.from;
+      if (ms > 2 * mid) notes.push(`${name(r)} took ${formatMs(ms)}, ${(ms / mid).toFixed(1)}× this race's median ${what} (${formatMs(mid)}).`);
+    }
+  };
+  slow("build", done.filter((r) => r.key.startsWith("build:")), (r) => r.label);
+  slow("fork check", done.filter((r) => r.key.startsWith("judge:fork ")), (r) => `${displayName(r.key.slice(11))}'s tests and Clef scoring`);
+  // Only once it is true: the build's 80 s limit has passed, or the verdict came first.
+  const judgedAt = Date.parse(task.verdict?.judgedAt ?? "");
+  for (const r of rows) {
+    if (r.approx && (r.to < now || judgedAt <= now)) notes.push(`${r.label} has no saved preview: it did not finish within 80 s, or before the verdict.`);
+    if (r.failed && r.to <= now) notes.push(r.key.startsWith("agent:") ? `${r.label}'s sandbox failed.` : `The judge's ${r.key.slice(6)} step failed.`);
+  }
+  for (const slot of task.agents) {
+    const ended = slot.endedAt === undefined ? undefined : Date.parse(slot.endedAt);
+    if (slot.status === "timeout" && ended !== undefined && ended <= now) notes.push(`${displayName(slot.name)} ran out of time.`);
+  }
+  return { stats, notes: notes.slice(0, 3) };
+}
+
+/** One robot's newest push by `now`, and the path it took to its preview. */
+export interface Trace {
+  agent: string;
+  commit: string;
+  at: number; // ms, when the push was recorded
+  previewAt?: number; // ms, when its preview was saved, if by `now`
+  path: string[];
+}
+
+/** The newest push of `agent` recorded by `now`; undefined before its first. */
+export function traceOf(task: WireTask, agent: string, now: number): Trace | undefined {
+  const entry = task.agents.find((a) => a.name === agent)?.push?.log?.findLast((e) => Date.parse(e.at) <= now);
+  if (entry === undefined) return undefined;
+  const previewAt = entry.previewAt === undefined ? undefined : Date.parse(entry.previewAt);
+  const path = [sandboxId(agent), "artifacts", "events", "pushwf", "build", "previews"];
+  return { agent, commit: entry.commit, at: Date.parse(entry.at), path, ...(previewAt !== undefined && previewAt <= now ? { previewAt } : {}) };
+}
+
+/** The trace in words. Only two times exist, so the hops between are named, not timed. */
+export function traceLine(trace: Trace, raceStart: number): string {
+  const head = `${displayName(trace.agent)}'s push ${trace.commit.slice(0, 7)}, recorded ${formatMs(Math.max(0, trace.at - raceStart))} into the race: sandbox → Artifacts → Event Subscriptions → Push Workflow → build container → Workers Preview`;
+  if (trace.previewAt === undefined) return `${head}. No preview saved for it yet: still building, or it never finished.`;
+  return `${head}, live ${formatMs(trace.previewAt - trace.at)} after the push was recorded. The hops between are not timed one by one.`;
 }

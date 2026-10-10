@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { BoardEvent, WireTask } from "../src/ui/board";
 import { applyPlatform, emptyPlatform, type PlatformHit } from "../src/ui/platform";
-import { circuit, edgeFor, route } from "../src/ui/xray";
+import { busyNodes, circuit, edgeFor, route, traceLine, traceOf, xrayStats } from "../src/ui/xray";
 
 const taskId = "t-0123abcd";
 const agents = ["ponder", "zippy"];
@@ -78,6 +78,67 @@ describe("xray", () => {
     expect(edgeFor({ stage: "claims", text: "Snip claimed 1 file", agent: "snip" }, agents)).toEqual([]);
     expect(edgeFor({ stage: "workflows", text: "something new" }, agents)).toEqual([]);
     expect(route(circuit(agents), ["room", "clef"])).toBeUndefined();
+  });
+
+  it("X5: busy nodes are what the timeline shows running: robots, a build in progress, the judge's parts", () => {
+    const racing: WireTask = { ...task, agents: [{ name: "ponder", status: "running", startedAt: iso(0), push: { commits: 1, log: [{ at: iso(30), commit: "c1", commits: 1 }] } }, { name: "zippy", status: "done", startedAt: iso(0), endedAt: iso(20) }] };
+    expect([...busyNodes(racing, T0 + 40_000)].toSorted()).toEqual(["build", "pushwf", "sandbox:ponder"]);
+    const judging: WireTask = { ...racing, status: "finished", agents: racing.agents.map((a) => ({ ...a, status: "done", endedAt: iso(50), push: undefined })), judging: [{ name: "fork ponder", state: "done", startedAt: iso(60), endedAt: iso(70) }, { name: "look", state: "running", startedAt: iso(60) }] };
+    expect([...busyNodes(judging, T0 + 75_000)].toSorted()).toEqual(["browser", "clef", "judge"]);
+    // A replay reads the finished record at the scrub's time: the fork step ran from 60 s to 70 s.
+    const done: WireTask = { ...judging, judging: judging.judging!.map((s) => ({ ...s, state: "done", endedAt: iso(80) })), verdict: { winner: "ponder", why: "w", judgedAt: iso(90) } };
+    expect([...busyNodes(done, T0 + 65_000)].toSorted()).toEqual(["browser", "clef", "judge", "tests"]);
+    expect(busyNodes(done, T0 + 95_000).size).toBe(0);
+  });
+
+  // Four builds (one slow, one with no saved preview), five fork checks (one slow), a robot out of time.
+  function measured(): WireTask {
+    const build = (name: string, at: number, previewAt?: number) => ({ at: iso(at), commit: `${name}${at}`, commits: 1, ...(previewAt === undefined ? {} : { previewAt: iso(previewAt) }) });
+    return {
+      ...task,
+      status: "finished",
+      agents: [
+        { name: "ponder", status: "done", startedAt: iso(0), endedAt: iso(100), push: { commits: 2, log: [build("p", 10, 20), build("p", 30, 40)], preview: { url: "u", commit: "p30", at: iso(40) } } },
+        { name: "zippy", status: "timeout", startedAt: iso(0), endedAt: iso(110), push: { commits: 2, log: [build("z", 10, 21), build("z", 50, 80), build("z", 90)], preview: { url: "u", commit: "z50", at: iso(80) } } },
+      ],
+      judging: [10, 11, 12, 30, 10].map((s, i) => ({ name: `fork f${i}`, state: "done", startedAt: iso(120), endedAt: iso(120 + s) })),
+      verdict: { winner: "ponder", why: "w", judgedAt: iso(200) },
+    };
+  }
+
+  it("X6: boxes show each node's latest and average time from the timeline's finished bars", () => {
+    const { stats } = xrayStats(measured(), T0 + 300_000);
+    expect(stats.get("build")).toEqual({ last: 30_000, avg: (10_000 + 10_000 + 11_000 + 30_000) / 4, n: 4 });
+    expect(stats.get("tests")).toMatchObject({ n: 5 });
+    expect(stats.get("judge")).toEqual({ last: 30_000, avg: 30_000, n: 1 });
+    // Before the judge ran, nothing judge-side is measured yet.
+    expect(xrayStats(measured(), T0 + 115_000).stats.has("tests")).toBe(false);
+  });
+
+  it("X7: notes are facts: over twice the median with three or more to compare, no saved end, out of time", () => {
+    expect(xrayStats(measured(), T0 + 300_000).notes).toEqual([
+      "Zippy's preview z50 took 30.0 s, 2.9× this race's median build (10.5 s).",
+      "f3's tests and Clef scoring took 30.0 s, 2.7× this race's median fork check (11.0 s).",
+      "Zippy's preview z90 has no saved preview: it did not finish within 80 s, or before the verdict.",
+    ]);
+    // 5 s after that push, in a replay of the full record, it may still be building: no note yet.
+    expect(xrayStats(measured(), T0 + 95_000).notes.some((n) => n.includes("z90"))).toBe(false);
+    // The cap keeps three; the fourth fact is there underneath.
+    const early = measured();
+    early.judging = [];
+    expect(xrayStats(early, T0 + 300_000).notes).toContain("Zippy ran out of time.");
+  });
+
+  it("X8: a trace is the newest push by the scrub's time, its preview only once saved", () => {
+    const t = measured();
+    expect(traceOf(t, "ponder", T0 + 5_000)).toBeUndefined();
+    const mid = traceOf(t, "ponder", T0 + 35_000)!;
+    expect(mid).toMatchObject({ commit: "p30", at: T0 + 30_000 });
+    expect(mid.previewAt).toBeUndefined();
+    expect(traceLine(mid, T0)).toContain("No preview saved for it yet");
+    const end = traceOf(t, "ponder", T0 + 300_000)!;
+    expect(end.path).toEqual(["sandbox:ponder", "artifacts", "events", "pushwf", "build", "previews"]);
+    expect(traceLine(end, T0)).toBe("Ponder's push p30, recorded 30.0 s into the race: sandbox → Artifacts → Event Subscriptions → Push Workflow → build container → Workers Preview, live 10.0 s after the push was recorded. The hops between are not timed one by one.");
   });
 
   it("X4: a wire walked backwards is the same polyline reversed", () => {

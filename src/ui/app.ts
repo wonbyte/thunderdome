@@ -6,7 +6,7 @@ import type { Action, Board, BoardEvent, Fighter, WireAgent, WireClaimBoard, Wir
 import { agentUsd, billLine, billOf, usd } from "./bill";
 import { LAND_PATH, MAP_H, MAP_W, mapPins, project, REGION_INFO } from "./map";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
-import { circuit, edgeFor, route, type XrayCircuit } from "./xray";
+import { busyNodes, circuit, edgeFor, route, traceLine, traceOf, xrayStats, type XrayCircuit } from "./xray";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
 import { openCommit } from "./commitdialog";
@@ -267,6 +267,7 @@ function main(): void {
     if (replay === undefined && board !== undefined) {
       renderGraph(board);
       renderGantt(board);
+      if (xrayOn) renderXrayBusy(board);
     }
   }, 250);
   // A closed panel has no width, so the graph scrolls to its newest pushes when opened.
@@ -434,7 +435,11 @@ function connect(id: string, attempt: number): void {
   ws.addEventListener("open", () => {
     opened = true;
     setLive("live");
-    if (attempt > 0) void load(id);
+    if (attempt > 0) {
+      reconnects++;
+      void load(id);
+    }
+    pingRoom();
   });
   ws.addEventListener("message", (message: MessageEvent) => onMessage(message.data));
   ws.addEventListener("close", () => {
@@ -463,6 +468,7 @@ function parseEvent(data: unknown): BoardEvent | undefined {
 }
 
 function onMessage(data: unknown): void {
+  if (data === "pong") return onPong();
   const event = parseEvent(data);
   if (event === undefined) return;
   if (event.kind === "steps" && Array.isArray(event.steps)) addLog(event.steps);
@@ -840,6 +846,10 @@ function render(b: Board): void {
   renderGantt(b);
   renderMap(b);
   renderXray(b);
+  if (xrayOn) {
+    renderXrayBusy(b);
+    renderXrayInfo(b);
+  }
   // Cheering is for a race in progress: live only, and gone once it has ended.
   byId("cheer").hidden = replay !== undefined || b.ended;
   flushScroll();
@@ -1887,6 +1897,12 @@ const XRAY_KEY = "thunderdome:xray";
 let xrayOn = false;
 let xrayCircuit: XrayCircuit | undefined;
 const xrayNodes = new Map<string, SVGGElement>();
+const xrayStatText = new Map<string, SVGTextElement>();
+const xrayWires = new Map<string, SVGPolylineElement>();
+let xrayTraced: string | undefined;
+const pongs: number[] = [];
+let pingAt: number | undefined;
+let reconnects = 0;
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, className: string | undefined, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
   const node = document.createElementNS(svgNs, tag);
@@ -1911,11 +1927,17 @@ function setupXray(): void {
     showXray();
   });
   showXray();
+  setInterval(pingRoom, 5_000);
 }
 
 function showXray(): void {
   byId("xray-toggle").setAttribute("aria-pressed", String(xrayOn));
   byId("stage").dataset.xray = xrayOn ? "on" : "off";
+  byId("xray-panel").hidden = !xrayOn;
+  if (xrayOn && board !== undefined) {
+    renderXrayBusy(board);
+    renderXrayInfo(board);
+  }
 }
 
 /** Draws the circuit once the race's robots are known; they never change in a race. */
@@ -1930,22 +1952,110 @@ function renderXray(b: Board): void {
     svgEl("rect", "xbox", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 14 }),
     Object.assign(svgEl("text", "xbox-label", { x: box.x + 12, y: box.y + 18 }), { textContent: box.label }),
   );
-  for (const e of c.edges) svg.append(svgEl("polyline", "xwire", { points: e.points.map((p) => p.join(",")).join(" ") }));
+  for (const e of c.edges) {
+    const wire = svgEl("polyline", "xwire", { points: e.points.map((p) => p.join(",")).join(" ") });
+    xrayWires.set(`${e.from}>${e.to}`, wire);
+    svg.append(wire);
+  }
+  const buttons = byId("xray-trace-buttons");
+  buttons.replaceChildren(
+    ...b.fighters.map((f) => {
+      const button = el("button", "pill", displayName(f.agent));
+      button.type = "button";
+      button.dataset.agent = f.agent;
+      button.setAttribute("aria-pressed", "false");
+      button.style.setProperty("--color", colorFor(f.agent));
+      button.addEventListener("click", () => {
+        xrayTraced = xrayTraced === f.agent ? undefined : f.agent;
+        if (board !== undefined) renderXrayInfo(board);
+      });
+      return button;
+    }),
+  );
   for (const n of c.nodes) {
     const g = svgEl("g", n.agent === undefined ? "xnode" : "xnode xsandbox", {});
     if (n.agent !== undefined) g.style.setProperty("--color", colorFor(n.agent));
     g.append(svgEl("rect", undefined, { x: n.x, y: n.y, width: n.w, height: n.h, rx: 8 }));
-    const label = svgEl("text", "xlabel", { x: n.x + n.w / 2, y: n.y + (n.binding === undefined ? n.h / 2 + 5 : n.h / 2 - 2) });
+    const x = n.x + n.w / 2;
+    // Sandboxes are one line; a product box has its label, binding and measured time.
+    const label = svgEl("text", "xlabel", { x, y: n.agent !== undefined ? n.y + n.h / 2 + 5 : n.y + (n.binding === undefined ? 28 : 22) });
     label.textContent = n.label;
     g.append(label);
     if (n.binding !== undefined) {
-      const binding = svgEl("text", "xbinding", { x: n.x + n.w / 2, y: n.y + n.h / 2 + 14 });
+      const binding = svgEl("text", "xbinding", { x, y: n.y + 38 });
       binding.textContent = n.binding;
       g.append(binding);
+    }
+    if (n.agent === undefined) {
+      const stat = svgEl("text", "xstat", { x, y: n.y + 55 });
+      xrayStatText.set(n.id, stat);
+      g.append(stat);
     }
     xrayNodes.set(n.id, g);
     svg.append(g);
   }
+}
+
+/** The task X-ray reads: a replay reads the whole record at the scrub's time, as the timeline does; replayed events carry less. */
+function xrayTask(b: Board): WireTask | undefined {
+  return replay !== undefined && recorded !== undefined ? recorded : b.task;
+}
+
+/** Marks the nodes working right now, so a step that sends no packet for a while still shows it runs. */
+function renderXrayBusy(b: Board): void {
+  const task = xrayTask(b);
+  // The verdict ends it all (the ship step's record can end a few ms after it).
+  const busy = task === undefined || b.ended ? new Set<string>() : busyNodes(task, clock());
+  for (const [id, g] of xrayNodes) g.classList.toggle("busy", busy.has(id));
+}
+
+/** The measured times in the boxes, the traced push, the notes and the viewer's connection. */
+function renderXrayInfo(b: Board): void {
+  const task = xrayTask(b);
+  if (task === undefined || xrayCircuit === undefined) return;
+  const now = clock();
+  const { stats, notes } = xrayStats(task, now);
+  for (const [id, text] of xrayStatText) {
+    const s = stats.get(id);
+    text.textContent = s === undefined ? "" : `${formatMs(s.last)}${s.n > 1 ? ` · avg ${formatMs(s.avg)} ×${s.n}` : ""}`;
+  }
+  const trace = xrayTraced === undefined ? undefined : traceOf(task, xrayTraced, now);
+  const lit = new Set<string>();
+  if (trace !== undefined) for (let i = 1; i < trace.path.length; i++) lit.add(`${trace.path[i - 1]}>${trace.path[i]}`);
+  for (const [key, wire] of xrayWires) wire.classList.toggle("traced", lit.has(key));
+  for (const [id, g] of xrayNodes) g.classList.toggle("traced", trace?.path.includes(id) === true);
+  for (const button of byId("xray-trace-buttons").querySelectorAll("button")) button.setAttribute("aria-pressed", String(button.dataset.agent === xrayTraced));
+  const start = Date.parse(task.startedAt ?? task.createdAt ?? "") || now;
+  byId("xray-trace").textContent = xrayTraced === undefined ? "Pick a robot to trace its newest push." : trace === undefined ? `${displayName(xrayTraced)} has not pushed yet.` : traceLine(trace, start);
+  byId("xray-notes").replaceChildren(...(notes.length === 0 ? ["Nothing slow so far: no build or fork check over twice this race's median."] : notes).map((n) => el("li", undefined, n)));
+  renderConnection();
+}
+
+/** The viewer's own round trip to this race's Durable Object, from "ping"s it answers without waking. */
+function renderConnection(): void {
+  const line = byId("xray-conn");
+  if (replay !== undefined) {
+    line.textContent = "Your connection: a replay has no live connection.";
+    return;
+  }
+  const rtt = pongs.length === 0 ? "measuring…" : `${formatMs(pongs.toSorted((a, b) => a - b)[Math.floor(pongs.length / 2)] ?? 0)} round trip (median of ${pongs.length})`;
+  line.textContent = `Your connection to this race's Durable Object: ${rtt} · ${reconnects} reconnect${reconnects === 1 ? "" : "s"}.`;
+}
+
+/** Sends a ping while X-ray shows the connection; the runtime answers "pong" (TaskRoom's constructor). */
+function pingRoom(): void {
+  if (!xrayOn || replay !== undefined || socket?.readyState !== WebSocket.OPEN) return;
+  pingAt = performance.now();
+  socket.send("ping");
+}
+
+/** A pong: one round trip, keeping the newest five. */
+function onPong(): void {
+  if (pingAt === undefined) return;
+  pongs.push(performance.now() - pingAt);
+  pingAt = undefined;
+  if (pongs.length > 5) pongs.shift();
+  if (xrayOn) renderConnection();
 }
 
 /** A packet along a path of the circuit; its last node flashes as it lands. Reduced motion: the flash only. */
