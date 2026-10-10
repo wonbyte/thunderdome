@@ -149,7 +149,7 @@ The **X-ray** button on the stage swaps the robots for the architecture: TaskRoo
 Object box with each robot's sandbox in its color, Artifacts, Event Subscriptions, the Push
 Workflow, the build container, Workers Previews, the Judge Workflow, judge containers, Clef,
 Browser Rendering, the fusion round and the ship, each with its binding name, on a blueprint
-grid. Switching it on fades the boxes in and draws the wires. Every platform event sends a packet,
+grid. Switching it on or off cross-fades the robots and the circuit in 0.3 s; nothing is redrawn. Every platform event sends a packet,
 in the robot's color when one is involved (its sandbox, claims, pushes and previews, the winner's merge) and
 Cloudflare orange otherwise, with a short tail, along its
 wires, and the wires it rides glow (`src/ui/xray.ts`); live and in replays alike, a scrub sends

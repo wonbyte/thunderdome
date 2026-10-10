@@ -1857,8 +1857,8 @@ function setupXray(): void {
     // No storage: X-ray starts off.
   }
   byId("xray-toggle").addEventListener("click", () => {
+    // The switch is a cross-fade in race.css: nothing is redrawn, so the circuit looks the same each time.
     xrayOn = !xrayOn;
-    if (xrayOn) powerUp();
     try {
       localStorage.setItem(XRAY_KEY, xrayOn ? "1" : "0");
     } catch {
@@ -1893,8 +1893,7 @@ function renderXray(b: Board): void {
     Object.assign(svgEl("text", "xbox-label", { x: box.x + 12, y: box.y + 18 }), { textContent: box.label }),
   );
   for (const e of c.edges) {
-    // pathLength 1: the power-up draws every wire in with the same dash numbers.
-    const wire = svgEl("polyline", "xwire", { points: e.points.map((p) => p.join(",")).join(" "), pathLength: 1 });
+    const wire = svgEl("polyline", "xwire", { points: e.points.map((p) => p.join(",")).join(" ") });
     xrayWires.set(`${e.from}>${e.to}`, wire);
     svg.append(wire);
   }
@@ -1935,17 +1934,6 @@ function renderXray(b: Board): void {
     xrayNodes.set(n.id, g);
     svg.append(g);
   }
-  if (xrayOn) powerUp();
-}
-
-/** X-ray switching on: the boxes fade in one after another, then the wires draw themselves in. */
-function powerUp(): void {
-  if (reducedMotion()) return;
-  // The layer itself cross-fades in (race.css): the boxes only settle into place, never starting
-  // from nothing, so the stage is never empty while the wires draw.
-  [...xrayNodes.values()].forEach((g, i) => g.animate([{ transform: "translateY(4px)" }, {}], { duration: 300, delay: i * 12, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" }));
-  // The dash pattern lives only in the animation, so the resting wire is untouched when it ends.
-  [...xrayWires.values()].forEach((wire, i) => wire.animate([{ strokeDasharray: "1 1", strokeDashoffset: 1 }, { strokeDasharray: "1 1", strokeDashoffset: 0 }], { duration: 500, delay: 120 + i * 10, easing: "ease-out", fill: "backwards" }));
 }
 
 /** The task X-ray reads: a replay reads the whole record at the scrub's time, as the timeline does; replayed events carry less. */

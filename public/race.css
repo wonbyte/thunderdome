@@ -1475,8 +1475,9 @@ body.explaining .caption { display: block; }
   opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s;
 }
 .stage[data-xray="on"] .xray { opacity: 1; visibility: visible; transition: opacity .3s ease; }
-.stage :is(.bots, .beams, .core, .floor) { transition: opacity .3s ease; }
-.stage[data-xray="on"] :is(.bots, .beams, .core, .floor) { opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s; }
+.stage :is(.bots, .beams, .core, .floor, .banner, .judge-steps) { transition: opacity .3s ease; }
+/* The banner and the judge's steps would cover the push column; the Result card and the ticker say the same. */
+.stage[data-xray="on"] :is(.bots, .beams, .core, .floor, .banner, .judge-steps) { opacity: 0; visibility: hidden; transition: opacity .3s ease, visibility 0s linear .3s; }
 /* A blueprint: a fine grid with a heavier line every fifth, under the circuit (desktop: X-ray's widths). */
 @media (min-width: 641px) {
   .stage::before {
@@ -1491,10 +1492,8 @@ body.explaining .caption { display: block; }
   .stage[data-xray="on"]::before { opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .xray, .stage::before, .stage :is(.bots, .beams, .core, .floor) { transition: none !important; }
+  .xray, .stage::before, .stage :is(.bots, .beams, .core, .floor, .banner, .judge-steps) { transition: none !important; }
 }
-/* They would cover the push column; the Result card and the ticker say the same. */
-.stage[data-xray="on"] :is(.banner, .judge-steps) { display: none; }
 .xbox { fill: #0b0f1dcc; stroke: #3b5aa5; stroke-dasharray: 6 4; }
 .xbox-label { fill: var(--dim); font: 600 13px var(--sans); }
 .xwire { fill: none; stroke: #3b5aa588; stroke-width: 2; }
@@ -1525,6 +1524,5 @@ body.explaining .caption { display: block; }
 @media (max-width: 640px) {
   .xray-toggle, .xray-diag { display: none; }
   .xray { display: none; }
-  .stage[data-xray="on"] :is(.bots, .beams, .core, .floor) { opacity: 1; visibility: visible; }
-  .stage[data-xray="on"] :is(.banner, .judge-steps) { display: flex; }
+  .stage[data-xray="on"] :is(.bots, .beams, .core, .floor, .banner, .judge-steps) { opacity: 1; visibility: visible; }
 }
