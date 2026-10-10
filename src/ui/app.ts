@@ -1941,9 +1941,11 @@ function renderXray(b: Board): void {
 /** X-ray switching on: the boxes fade in one after another, then the wires draw themselves in. */
 function powerUp(): void {
   if (reducedMotion()) return;
-  [...xrayNodes.values()].forEach((g, i) => g.animate([{ opacity: 0, transform: "translateY(6px)" }, {}], { duration: 380, delay: i * 35, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" }));
+  // The layer itself cross-fades in (race.css): the boxes only settle into place, never starting
+  // from nothing, so the stage is never empty while the wires draw.
+  [...xrayNodes.values()].forEach((g, i) => g.animate([{ transform: "translateY(4px)" }, {}], { duration: 300, delay: i * 12, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" }));
   // The dash pattern lives only in the animation, so the resting wire is untouched when it ends.
-  [...xrayWires.values()].forEach((wire, i) => wire.animate([{ strokeDasharray: "1 1", strokeDashoffset: 1 }, { strokeDasharray: "1 1", strokeDashoffset: 0 }], { duration: 650, delay: 250 + i * 25, easing: "ease-out", fill: "backwards" }));
+  [...xrayWires.values()].forEach((wire, i) => wire.animate([{ strokeDasharray: "1 1", strokeDashoffset: 1 }, { strokeDasharray: "1 1", strokeDashoffset: 0 }], { duration: 500, delay: 120 + i * 10, easing: "ease-out", fill: "backwards" }));
 }
 
 /** The task X-ray reads: a replay reads the whole record at the scrub's time, as the timeline does; replayed events carry less. */
