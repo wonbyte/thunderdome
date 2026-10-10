@@ -425,8 +425,11 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
       const next = board.task === undefined ? board : { ...board, task: { ...board.task, verdict } };
       return applyVerdict(next, verdict, now);
     }
-    case "base-preview":
-      return { ...board, basePreview: { ...event.preview } };
+    case "base-preview": {
+      const basePreview = { ...event.preview };
+      // The timeline reads the task's copy.
+      return { ...board, basePreview, ...(board.task === undefined ? {} : { task: { ...board.task, basePreview } }) };
+    }
     case "judge":
       return board.task === undefined ? board : { ...board, task: { ...board.task, judging: withJudgeStep(board.task.judging ?? [], event.step) } };
     case "usage":

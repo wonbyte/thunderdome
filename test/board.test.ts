@@ -272,6 +272,7 @@ describe("board", () => {
     expect(board.task?.agents.find((slot) => slot.name === "zippy")?.push).toMatchObject({ commits: 2, head: "c1", preview });
     expect(board.grid.clashes).toEqual([]);
     expect(board.basePreview?.commit).toBe("b0");
+    expect(board.task?.basePreview?.commit).toBe("b0");
     expect(board).toMatchObject({ winner: "zippy", why: "Best fix.", ended: true, lastSeq: 4 });
     expect(task.agents.map((slot) => slot.status)).toEqual(["running", "running", "running"]);
   });
