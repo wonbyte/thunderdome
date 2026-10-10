@@ -834,7 +834,20 @@ h1.prompt { font-weight: 400; }
 .fighter.lost.assisted .mini { opacity: .9; filter: none; }
 .fighter .assist-tag { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); margin-top: 2px; white-space: nowrap; }
 .lineup:has(.assisted) { padding-bottom: 24px; }
-.race-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--dim); }
+/* margin-top: auto pins the foot to the bottom, so cards of one row line up whatever they hold. */
+.race-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--dim); margin-top: auto; }
+/* A live race in the result card's place, the same size: what it is doing and its clock. */
+.race-live {
+  aspect-ratio: 1200 / 630; display: grid; place-content: center; justify-items: center; gap: 4px; text-align: center;
+  border-radius: 10px; border: 1px solid #3ddc9744;
+  background: radial-gradient(60% 80% at 50% 45%, #3ddc971f, transparent 70%), linear-gradient(180deg, #0d1424, #090b14);
+}
+.race-live-dot { font: 800 12px var(--mono); letter-spacing: .14em; color: var(--green); animation: blink 1.6s ease-in-out infinite; }
+.race-live strong { font-size: 30px; line-height: 1.1; color: var(--text); }
+.race-live-time { font: 700 22px var(--mono); color: var(--green); font-variant-numeric: tabular-nums; }
+.race-live-time:empty { display: none; }
+.race-live-note { font-size: 12px; color: var(--dim); }
+@media (prefers-reduced-motion: reduce) { .race-live-dot { animation: none; } }
 .cta { font-weight: 800; color: var(--cyan); }
 .race.running .cta, .race.live .cta { color: var(--green); }
 @media (max-width: 640px) { .gallery .hero { flex-direction: column; align-items: flex-start; } .hero-core { width: 80px; height: 80px; } }

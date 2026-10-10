@@ -97,6 +97,8 @@ function card(r: RaceSummary): HTMLElement {
     image.height = 630;
     image.addEventListener("error", () => image.remove());
   }
+  // A race still going has no result card yet: a live panel of the same size holds its place.
+  const live = ended || r.status === "failed" ? undefined : livePanel(r);
   const why = r.headline === undefined ? undefined : el("p", "race-why", whyWithNames(r.headline, [...r.agents, ...AGENT_IDS]));
   const lineup = el("div", "lineup");
   for (const agent of r.agents) {
@@ -118,8 +120,28 @@ function card(r: RaceSummary): HTMLElement {
   const time = duration(r);
   foot.append(el("span", undefined, ended ? (r.winner ? `${displayName(r.winner)} won${time ? ` in ${time}` : ""}` : "no winner") : "in progress"));
   foot.append(el("span", "cta", ended ? "▶ replay" : "● watch live"));
-  link.append(top, ...(image === undefined ? [] : [image]), prompt, ...(why === undefined ? [] : [why]), lineup, foot);
+  link.append(top, ...(image === undefined ? [] : [image]), ...(live === undefined ? [] : [live]), prompt, ...(why === undefined ? [] : [why]), lineup, foot);
   return link;
+}
+
+/** What a race still going is doing, and for how long (ticked by tickLive). */
+function livePanel(r: RaceSummary): HTMLElement {
+  const panel = el("div", "race-live");
+  const phase = r.status === "running" ? "Racing" : r.status === "finished" ? "Judging" : "Starting";
+  const note = r.status === "running" ? `${r.agents.length} robots, each on its own fork` : r.status === "finished" ? "tests in every fork · Clef scores each diff" : "forking the repo";
+  const clock = el("span", "race-live-time");
+  if (r.startedAt !== undefined) clock.dataset.since = r.startedAt;
+  panel.append(el("span", "race-live-dot", "● LIVE"), el("strong", undefined, phase), clock, el("span", "race-live-note", note));
+  return panel;
+}
+
+/** Each live panel's clock: time since its race started. */
+function tickLive(): void {
+  const now = Date.now();
+  for (const clock of document.querySelectorAll<HTMLElement>(".race-live-time[data-since]")) {
+    const since = Date.parse(clock.dataset.since ?? "");
+    if (!Number.isNaN(since)) clock.textContent = mmss(Math.max(0, Math.floor((now - since) / 1000)));
+  }
 }
 
 function mmss(secs: number): string {
@@ -224,6 +246,8 @@ async function main(): Promise<void> {
   if (list === null) return;
   let races = (await loadRaces()) ?? [];
   draw(list, races);
+  tickLive();
+  setInterval(tickLive, 1_000);
   // A race running when the page opened turns finished here, without a reload.
   while (anyLive(races, Date.now())) {
     await new Promise((resolve) => setTimeout(resolve, REFRESH_MS));
