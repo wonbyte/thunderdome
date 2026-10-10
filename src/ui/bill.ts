@@ -1,5 +1,5 @@
 // What one race cost: Cloudflare's part estimated from the race record at list price, and the
-// agents' part from their meters. Pure; app.ts shows it in the pipeline header.
+// agents' part from their meters. Pure; app.ts shows it at the top of the X-ray panel.
 
 import type { WireAgent, WirePreview, WireTask } from "./board";
 
@@ -67,7 +67,9 @@ export function billOf(task: WireTask, now: number): Bill {
     // Each push builds a preview; a build later superseded may have been skipped, so this is an upper bound.
     for (const push of slot.push?.log ?? []) {
       containers++;
-      containerSeconds += seconds(push.at, buildEnd(Date.parse(push.at), push.commit, slot.push?.preview, push.previewAt === undefined ? undefined : Date.parse(push.previewAt)));
+      // A build still running counts up to now, not its whole 80 s limit, so the bill never shrinks.
+      const end = buildEnd(Date.parse(push.at), push.commit, slot.push?.preview, push.previewAt === undefined ? undefined : Date.parse(push.previewAt));
+      containerSeconds += seconds(push.at, Math.min(end, now));
     }
   }
   if (task.basePreview !== undefined) {

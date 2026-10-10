@@ -221,9 +221,9 @@ measured times, a push trace, slow-step notes and the viewer's round trip (X5–
 1. `/play`: pick "Four parts, one fusion", start.
 2. The stage with the explainer open; the guess; the rail moving to Race.
 3. The meter climbing on a nameplate; the map with five pins (#3, #4).
-4. X-ray mode for one push (#6) — or the pipeline units, if #6 is cut.
+4. X-ray mode for one push (#6): switch it on (the power-up), trace a robot's push.
 5. Judging: the rail at Judge, the steps, Clef's fit histograms.
-6. The reveal; the verdict line; "What Clef saw" (#1); the photo finish if there is one.
+6. The reveal; the verdict line; what Clef saw on each preview tile (#1); the photo finish if there is one.
 7. The fusion round; the git graph with the merge; the fusion commit dialog.
 8. The timeline (#5); the Cloudflare bill line.
 9. The gallery card; a shared link's preview; a `?t=` moment link.

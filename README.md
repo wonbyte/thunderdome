@@ -66,7 +66,8 @@ flowchart LR
    conflict, and the first one whose tests all pass is merged.
 
 The race page shows all of it live: the robots act out each real step, the result and previews
-follow, and "Under the hood" opens the Cloudflare pipeline, a timeline, the git graph and the claim board.
+follow, with the race's Cloudflare bill. The X-ray button swaps the robots for the architecture,
+lit by the same events, and "Under the hood" opens a timeline, the git graph and the claim board.
 
 ## The judge
 

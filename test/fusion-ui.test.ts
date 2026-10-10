@@ -9,7 +9,7 @@ import { fusionOf, gitGraph } from "../src/ui/gitgraph";
 import { gitLog, LOG_PUSHES_MAX, subjectOf } from "../src/ui/gitlog";
 import { raceStats, standings, teamPill, type RaceRow } from "../src/ui/leaderboard";
 import { blameView, wholePercents } from "../src/ui/blame";
-import { applyPlatform, emptyPlatform, STAGES } from "../src/ui/platform";
+import { applyPlatform, emptyPlatform } from "../src/ui/platform";
 
 const JUDGED = "2026-10-06T05:40:00.000Z";
 
@@ -213,27 +213,10 @@ describe("git log --graph", () => {
   });
 });
 
-describe("Clef while the judge runs", () => {
-  it("P1 the Clef unit works from the last robot's end until the verdict, live and in a replay", () => {
-    let p = applyPlatform(emptyPlatform(), { kind: "snapshot", taskId: "t", task: task(undefined) }, 0).state;
-    expect(p.working.ai).toBeUndefined();
-    p = applyPlatform(p, { kind: "agent-end", taskId: "t", agent: "ponder", outcome: { end: "done" }, status: "running" }, 1).state;
-    expect(p.working.ai).toBeUndefined();
-    p = applyPlatform(p, { kind: "agent-end", taskId: "t", agent: "testy", outcome: { end: "done" }, status: "finished" }, 2).state;
-    expect(p.working).toEqual({ ai: "scoring 3 diffs…" });
-    const judged = applyPlatform(p, { kind: "verdict", taskId: "t", verdict: verdict() }, 3);
-    expect(judged.state.working).toEqual({});
-    expect(judged.hits.some((h) => h.stage === "ai")).toBe(true);
-  });
-});
-
 describe("fusion in the pipeline", () => {
-  it("F7 the fusion stage sits between Clef and the merge, and the verdict lights it", () => {
-    expect(STAGES.indexOf("fusion")).toBe(STAGES.indexOf("ai") + 1);
-    expect(STAGES.indexOf("merge")).toBe(STAGES.indexOf("fusion") + 1);
-    const { hits, state } = applyPlatform(emptyPlatform(), { kind: "verdict", taskId: "t-e05150fe", verdict: verdict() }, 0);
+  it("F7 the verdict lights the fusion stage", () => {
+    const { hits } = applyPlatform(emptyPlatform(), { kind: "verdict", taskId: "t-e05150fe", verdict: verdict() }, 0);
     expect(hits.find((h) => h.stage === "fusion")?.text).toBe("fused Ponder's tests into Testy's fix (660ef87)");
-    expect(state.counts.fusion).toBe(1);
     const none = applyPlatform(emptyPlatform(), { kind: "verdict", taskId: "t", verdict: { ...verdict(), fusion: { tried: [verdict().fusion!.tried[1]!] } } }, 0);
     expect(none.hits.find((h) => h.stage === "fusion")?.text).toBe("tried 1 loser's tests, kept none");
     const without = applyPlatform(emptyPlatform(), { kind: "verdict", taskId: "t", verdict: { winner: "testy", why: "" } }, 0);

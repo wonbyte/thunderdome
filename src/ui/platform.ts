@@ -4,25 +4,22 @@ import { displayName } from "./board";
 import type { BoardEvent } from "./board";
 import { fusionView, type FusionView } from "./fusion";
 
-/** The Cloudflare products a race goes through, in pipeline order. */
-export const STAGES = ["fork", "containers", "claims", "events", "workflows", "previews", "ai", "fusion", "merge"] as const;
-/** One stage of the pipeline. */
-export type Stage = (typeof STAGES)[number];
+/** Each stage's Cloudflare product, as the ticker, X-ray and the timeline name it. */
+export const STAGE_INFO = {
+  fork: "Artifacts",
+  containers: "Containers",
+  claims: "Durable Objects",
+  events: "Event Subscriptions",
+  workflows: "Workflows",
+  previews: "Workers Previews",
+  ai: "Workers AI · Clef",
+  fusion: "Containers × 2",
+  merge: "Artifacts",
+} as const;
+/** One stage of a race: a product it uses. */
+export type Stage = keyof typeof STAGE_INFO;
 
-/** Each stage's product name and what it does in a race. */
-export const STAGE_INFO: Record<Stage, { product: string; role: string }> = {
-  fork: { product: "Artifacts", role: "a fork per agent" },
-  containers: { product: "Containers", role: "one sandbox per agent" },
-  claims: { product: "Durable Objects", role: "claim board + live feed" },
-  events: { product: "Event Subscriptions", role: "push events" },
-  workflows: { product: "Workflows", role: "preview builds + judge" },
-  previews: { product: "Workers Previews", role: "a live URL per push" },
-  ai: { product: "Workers AI · Clef", role: "scores each diff" },
-  fusion: { product: "Containers × 2", role: "losers' work: run read-only, push apart" },
-  merge: { product: "Artifacts", role: "the winner merges" },
-};
-
-/** One thing a stage did, for its unit's last line. */
+/** One thing a stage did: a ticker chip and, in X-ray, a packet. */
 export interface PlatformHit {
   stage: Stage;
   text: string; // e.g. "Testy's preview is live"
@@ -30,25 +27,18 @@ export interface PlatformHit {
   agent?: string;
 }
 
-/**
- * The pipeline panel's model: counts and the last hit per stage, and the times latencies are
- * measured from.
- */
+/** What the hits are measured from: when the run started, the judge started and each agent last pushed. */
 export interface PlatformState {
-  counts: Record<Stage, number>;
-  last: Partial<Record<Stage, PlatformHit>>;
   runAt?: number;
   finishedAt?: number;
   pushAt: Record<string, number>;
   forked: boolean;
   agents: number;
-  /** Stages working right now, with what they are doing: they churn until their next hit. */
-  working: Partial<Record<Stage, string>>;
 }
 
-/** A pipeline with nothing done yet. */
+/** A race with nothing done yet. */
 export function emptyPlatform(): PlatformState {
-  return { counts: { fork: 0, containers: 0, claims: 0, events: 0, workflows: 0, previews: 0, ai: 0, fusion: 0, merge: 0 }, last: {}, pushAt: {}, forked: false, agents: 0, working: {} };
+  return { pushAt: {}, forked: false, agents: 0 };
 }
 
 const ms = (iso: string | undefined): number | undefined => {
@@ -67,7 +57,7 @@ function hit(stage: Stage, text: string, extra: { ms?: number | undefined; agent
 /** The hits one event makes, and the state after it. `at` is when the event happened (ms). */
 export function applyPlatform(state: PlatformState, event: BoardEvent, at: number): { state: PlatformState; hits: PlatformHit[] } {
   const hits: PlatformHit[] = [];
-  const next: PlatformState = { ...state, counts: { ...state.counts }, last: { ...state.last }, pushAt: { ...state.pushAt }, working: { ...state.working } };
+  const next: PlatformState = { ...state, pushAt: { ...state.pushAt } };
   switch (event.kind) {
     case "snapshot":
     case "status": {
@@ -117,8 +107,6 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
       if (event.status === "finished" && next.finishedAt === undefined) {
         next.finishedAt = at;
         hits.push(hit("workflows", "judge started: tests in every fork"));
-        // Clef scores every diff while the judge runs; its unit churns until the verdict.
-        next.working.ai = `scoring ${next.agents > 0 ? `${next.agents} ` : ""}diffs…`;
       }
       break;
     case "verdict": {
@@ -155,12 +143,6 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
     default:
       break;
   }
-  for (const h of hits) {
-    next.counts[h.stage] += 1;
-    next.last[h.stage] = h;
-  }
-  // The verdict ends the judging, whatever it holds.
-  if (event.kind === "verdict") next.working = {};
   return { state: next, hits };
 }
 

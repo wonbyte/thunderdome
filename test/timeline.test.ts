@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { WireClaimBoard, WireStep, WireTask } from "../src/ui/board";
 import { applyPlatform, emptyPlatform, formatMs, type PlatformHit } from "../src/ui/platform";
-import { boardAt, buildTimeline, stepsAt } from "../src/ui/timeline";
+import { boardAt, buildTimeline, recordAt, stepsAt } from "../src/ui/timeline";
 
 const id = "t-0123abcd";
 const T0 = Date.parse("2026-10-05T05:00:00.000Z");
@@ -98,13 +98,34 @@ describe("U13 platform: each event names the Cloudflare product and its latency"
     expect(find("judge started: tests in every fork")?.stage).toBe("workflows");
     expect(find("Clef scored 2 diffs")).toMatchObject({ stage: "ai", ms: 15_000 });
     expect(find("merged Ponder's fork (abcdef1)")?.stage).toBe("merge");
-    expect(state.counts.events).toBe(3);
-    expect(state.counts.fork).toBe(1);
+    expect(hits.filter((h) => h.stage === "events")).toHaveLength(3);
+    expect(hits.filter((h) => h.stage === "fork")).toHaveLength(1);
   });
 
   it("U13 formats latencies", () => {
     expect(formatMs(820)).toBe("820 ms");
     expect(formatMs(6100)).toBe("6.1 s");
     expect(formatMs(65_000)).toBe("1 m 05 s");
+  });
+});
+
+describe("U14 recordAt: the record as it stood at a replay's time", () => {
+  it("U14 keeps only what had happened, and an agent's meter once it ended", () => {
+    const task = recordedTask();
+    task.agents[0]!.push!.log = [{ at: iso(30), commit: "c1", commits: 1, previewAt: iso(38) }, { at: iso(50), commit: "c2", commits: 1, previewAt: iso(56) }];
+    task.agents[1]!.usage = { calls: 2, input: 1, output: 1, cacheRead: 0, cacheWrite: 0, usd: 0.01 };
+    task.judging = [{ name: "fork ponder", state: "done", startedAt: iso(61), endedAt: iso(70) }, { name: "ship", state: "done", startedAt: iso(72), endedAt: iso(74) }];
+    const mid = recordAt(task, T0 + 45_000);
+    expect(mid.agents[0]).toMatchObject({ startedAt: iso(5), push: { log: [{ commit: "c1", previewAt: iso(38) }] } });
+    expect(mid.agents[0]!.endedAt).toBeUndefined();
+    expect(mid.agents[0]!.push?.preview).toBeUndefined();
+    expect(mid.agents[1]).toMatchObject({ endedAt: iso(40), usage: { usd: 0.01 } });
+    expect([mid.basePreview?.commit, mid.judging, mid.verdict, mid.finishedAt]).toEqual(["b0", [], undefined, undefined]);
+    const judging = recordAt(task, T0 + 65_000);
+    expect(judging.judging).toEqual([{ name: "fork ponder", state: "running", startedAt: iso(61) }]);
+    // Before the run started there is no start, so the bill card stays hidden as it does live.
+    expect(recordAt(task, T0 + 2_000).startedAt).toBeUndefined();
+    // After the verdict it is the whole record.
+    expect(recordAt(task, T0 + 80_000)).toEqual(task);
   });
 });

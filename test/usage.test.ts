@@ -101,6 +101,9 @@ describe("the meter", () => {
     // A push whose own preview time is recorded ends there: zippy's build is 10 s, not 80 s.
     task.agents[1]!.push!.log![0]!.previewAt = "2026-10-08T04:28:30.451Z";
     expect(billOf(task, now).containerSeconds).toBeCloseTo(bill.containerSeconds - 70, 6);
+    // A build still running 10 s in counts 10 s, not its 80 s limit: a replay's bill never shrinks.
+    const building: WireTask = { id: "t", prompt: "x", status: "running", agents: [{ name: "snip", status: "running", push: { commits: 1, log: [{ at: "2026-10-08T04:28:00.000Z", commit: "s", commits: 1 }] } }] };
+    expect(billOf(building, Date.parse("2026-10-08T04:28:10.000Z")).containerSeconds).toBeCloseTo(10, 6);
     expect(bill.clefCalls).toBe(6 + 1 + 2 + 1);
     expect(bill.browserSeconds).toBeCloseTo(7.589, 6);
     expect(bill.agentsUsd).toBeCloseTo(0.75, 9);

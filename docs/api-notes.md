@@ -203,6 +203,20 @@ once (t-352aa79a), then failed with `INTERNAL_ERROR` on 4 tries in a row, on two
 same probe with the forks one at a time succeeded (201 in 13.9 s). Forks stay sequential
 (`forkAgents` in `src/room/task.ts`).
 
+## Deploying with Podman: "manifest unknown" (Oct 10)
+
+Every `npm run deploy` through `scripts/podman-as-docker.sh` prints `Error: reading image
+"docker://registry.cloudflare.com/.../thunderdome-thunderdomesandbox-sandbox@sha256:92d32a…":
+manifest unknown`, then deploys fine. The digest is Podman's local one: before pushing, wrangler
+asks whether the registry already has the local image, and Podman compresses layers again on push,
+so that digest is never in the registry. Wrangler then pushes the unchanged image under a new
+`wrangler-…` tag (`npx wrangler containers images list` shows one per deploy). The deploy itself
+uses the digest the shim saved from the push, so the right image always ships. Cost: one
+needless push per deploy. Fixed in the shim: a push also saves its digest under the local image
+id, so a new tag of the same image answers with the pushed digest, and `manifest inspect -v`
+answers in Docker's shape (`{"Descriptor":{"digest":…}}`). A failed check still falls back to
+the push.
+
 ## Location hints and where things ran (Oct 8, t-0bf89c65)
 
 - Location hint `apac` put a sandbox Durable Object in HKG. The model API refuses Hong Kong: every

@@ -1,13 +1,13 @@
 // The race page: follows a race live (WebSocket) or replays a recorded one (?replay), and draws
-// the board, the Cloudflare pipeline under it, the judging and the before/after compare.
+// the board, X-ray and the race's bill, the judging and the before/after compare.
 // Server text only ever goes into textContent; innerHTML is only for sprites.ts art.
 import { AGENT_IDS, applyEvent, applyScores, colorFor, styleLabel, bubbleFor, decidedLine, displayName, initBoard, PROGRESS_LABELS, PROGRESS_STEPS, progressOf, whyWithNames } from "./board";
 import type { Action, Board, BoardEvent, Fighter, WireAgent, WireClaimBoard, WirePreview, WireScore, WireStep, WireMemory, WireTask } from "./board";
 import { agentUsd, billLine, billOf, usd } from "./bill";
 import { LAND_PATH, MAP_H, MAP_W, mapPins, project, REGION_INFO } from "./map";
-import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
+import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO } from "./platform";
 import { busyNodes, circuit, edgeFor, route, traceLine, traceOf, xrayStats, type XrayCircuit } from "./xray";
-import type { PlatformHit, PlatformState, Stage } from "./platform";
+import type { PlatformHit, PlatformState } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
 import { openCommit } from "./commitdialog";
 import { openDiff } from "./diffdialog";
@@ -19,7 +19,7 @@ import { drawGraph } from "./graphview";
 import { ganttOf } from "./gantt";
 import { BASE_AUTHOR, JUDGE_TIE, judgeSteps, judgeView, type CrossView, type JudgeView, type LookView, type TieView } from "./judgeview";
 import { closeButton, modal } from "./dialog";
-import { boardAt, buildTimeline, stepsAt } from "./timeline";
+import { boardAt, buildTimeline, recordAt, stepsAt } from "./timeline";
 import { PHASE_LABELS, PHASES, phaseOf, phaseStarts, railStates, type Phase } from "./phases";
 import { guessView } from "./guess";
 import { momentLink, parseMoment } from "./moment";
@@ -109,7 +109,7 @@ interface BotView {
   bubbleKey?: string;
   pipsKey?: string;
 }
-interface PreviewView { root: HTMLElement; frame: HTMLElement; host: HTMLElement; commit: HTMLElement; link: HTMLAnchorElement; iframe?: HTMLIFrameElement; shown?: string; empty?: string }
+interface PreviewView { root: HTMLElement; frame: HTMLElement; host: HTMLElement; commit: HTMLElement; link: HTMLAnchorElement; score: HTMLElement; clef: HTMLElement; iframe?: HTMLIFrameElement; shown?: string; empty?: string }
 interface Slot { key: string; label: string; color?: string; preview?: WirePreview; empty: Empty }
 /** What a tile without a preview says: still coming (shimmer), or never coming once the race is over. */
 interface Empty { text: string; done: boolean }
@@ -254,7 +254,6 @@ const reducedMotion = (): boolean => window.matchMedia("(prefers-reduced-motion:
 function main(): void {
   byId("core-art").innerHTML = coreSvg();
   addMotes();
-  buildPipeline();
   const id = TASK_PATH.exec(location.pathname)?.[1];
   if (id === undefined) {
     showMessage("This is not a race address. Open /race/<task id>.");
@@ -400,7 +399,6 @@ async function load(id: string): Promise<boolean> {
     hideMessage();
     follow = false;
     setBoard(next);
-    renderPipeline([]);
     return true;
   } catch {
     if (board === undefined) showMessage("Could not load the race. Try again in a moment.");
@@ -503,7 +501,7 @@ function happened(before: Board, events: TimedEvent[], animate: boolean): void {
       if (clash !== undefined) toast(`${displayName(event.agent)} vs ${clash.heldBy.map(displayName).join(" & ")}`, `clash on ${clash.file}`, "clash");
     }
   }
-  renderPipeline(animate ? hits : []);
+  renderHits(animate ? hits : []);
 }
 
 /** A replayed claim has no clash list; read it from who held the file before. */
@@ -732,7 +730,6 @@ function seek(t: number, animate: boolean): void {
   if (!next.ended) stopReveal();
   setBoard(next);
   if (forward) happened(before, crossed, true);
-  else renderPipeline([]);
   const range = byId("replay-range") as HTMLInputElement;
   range.value = String(t - r.timeline.start);
   byId("replay-time").textContent = `${mmss(t - r.timeline.start)} / ${mmss(r.timeline.end - r.timeline.start)}`;
@@ -1429,19 +1426,21 @@ function tokens(n: number): string {
   return `${(n / 1_000_000).toFixed(1)}M`;
 }
 
-/** The race's bill in the pipeline header, once the race has started. */
+/** The race's bill, heading the X-ray panel (shown with X-ray off too), once the race has started. */
 function renderBill(b: Board): void {
-  const line = byId("bill");
-  const task = b.task;
-  line.hidden = task?.startedAt === undefined;
-  if (task === undefined || line.hidden) return;
-  line.textContent = billLine(billOf(task, recordEnd(task, b.ended)));
+  const panel = byId("xray-panel");
+  // A replay's board has no push log and no meters: bill the record as it stood at the scrub's time.
+  const task = replay !== undefined && recorded !== undefined ? recordAt(recorded, clock()) : b.task;
+  panel.hidden = task?.startedAt === undefined;
+  if (task === undefined || panel.hidden) return;
+  byId("bill").textContent = billLine(billOf(task, recordEnd(task, b.ended)));
 }
 
 /** What a race's record runs to: its verdict once ended (a judge step that never reported its end must not run on), else now. */
 function recordEnd(task: WireTask, ended: boolean): number {
   const end = ended ? Date.parse(task.verdict?.judgedAt ?? task.finishedAt ?? "") : Number.NaN;
-  return Number.isNaN(end) ? Date.now() : end;
+  // Not ended: the race clock, which in a replay is the scrub's time, not now (a replay billed hours).
+  return Number.isNaN(end) ? clock() : end;
 }
 
 /**
@@ -1494,7 +1493,7 @@ function renderGantt(b: Board): void {
     }
     const legend = el("ul", "gantt-legend");
     for (const product of new Set([...gantt.rows.map((r) => r.product), ...gantt.marks.map((m) => m.product)])) {
-      const chip = el("li", undefined, STAGE_INFO[product].product);
+      const chip = el("li", undefined, STAGE_INFO[product]);
       chip.dataset.product = product;
       legend.append(chip);
     }
@@ -1515,7 +1514,7 @@ function renderGantt(b: Board): void {
     bar.classList.toggle("failed", row.failed);
     bar.style.left = pct(row.from);
     bar.style.width = `max(2px, ${share(row.to - row.from)})`;
-    const title = `${row.title} · ${STAGE_INFO[row.product].product}`;
+    const title = `${row.title} · ${STAGE_INFO[row.product]}`;
     if (bar.title !== title) {
       bar.title = title;
       bar.setAttribute("aria-label", title);
@@ -1716,165 +1715,16 @@ function renderBanner(b: Board, final: boolean): void {
   }
 }
 
-// ---- the Cloudflare pipeline ----
-// Each product is a small server unit: an LCD count, activity LEDs, a fan and a terminal line.
-// A hit sends a packet along the bus from the stage before it, then the unit works for a moment.
+// ---- platform hits ----
+// Each hit is a chip in the stage's ticker and, in X-ray, a packet along its wires. A scrub passes none.
 
-interface StageView { root: HTMLElement; count: HTMLElement; line: HTMLElement; text: string; busy?: ReturnType<typeof setTimeout> }
-const stageViews = new Map<Stage, StageView>();
-const BUSY_MS = 3_200;
 const PACKET_MS = 650;
-const TYPE_MS = 18; // per character
-const LEDS = 4;
-
 const svgNs = "http://www.w3.org/2000/svg";
 
-/** A four-blade fan; CSS spins it. */
-function fanSvg(): SVGSVGElement {
-  const svg = document.createElementNS(svgNs, "svg");
-  svg.setAttribute("viewBox", "-10 -10 20 20");
-  svg.setAttribute("class", "fan");
-  svg.setAttribute("aria-hidden", "true");
-  const ring = document.createElementNS(svgNs, "circle");
-  ring.setAttribute("r", "9");
-  ring.setAttribute("class", "fan-ring");
-  svg.append(ring);
-  const blades = document.createElementNS(svgNs, "g");
-  blades.setAttribute("class", "fan-blades");
-  for (let i = 0; i < 4; i++) {
-    const blade = document.createElementNS(svgNs, "path");
-    blade.setAttribute("d", "M0 0 C2 -3 2 -7 0 -7.5 C-2.5 -7 -2 -3 0 0 Z");
-    blade.setAttribute("transform", `rotate(${i * 90})`);
-    blades.append(blade);
-  }
-  const hub = document.createElementNS(svgNs, "circle");
-  hub.setAttribute("r", "1.8");
-  hub.setAttribute("class", "fan-hub");
-  svg.append(blades, hub);
-  return svg;
-}
-
-function buildPipeline(): void {
-  const list = byId("pipeline");
-  list.replaceChildren(
-    ...STAGES.map((stage, i) => {
-      const item = el("li", "unit");
-      item.dataset.stage = stage;
-      item.style.setProperty("--n", String(i));
-      const info = STAGE_INFO[stage];
-      const top = el("div", "unit-top");
-      const count = el("span", "count lcd", "00");
-      top.append(el("span", "product", info.product), count);
-      const face = el("div", "unit-face");
-      const leds = el("span", "leds");
-      leds.append(el("i", "led power"));
-      for (let k = 1; k < LEDS; k++) {
-        const led = el("i", "led act");
-        led.style.setProperty("--k", String(k));
-        leds.append(led);
-      }
-      face.append(leds, el("span", "vents"), fanSvg());
-      const screen = el("div", "screen");
-      const line = el("span", "line", info.role);
-      screen.append(el("span", "prompt", ">"), line, el("span", "caret"));
-      item.append(top, face, screen);
-      stageViews.set(stage, { root: item, count, line, text: info.role });
-      return item;
-    }),
-  );
-}
-
-/** Types a new terminal line; an older typing is cut short by the newer one. */
-function typeLine(view: StageView, text: string): void {
-  if (text === view.text) return;
-  view.text = text;
-  if (reducedMotion()) {
-    view.line.textContent = text;
-    return;
-  }
-  const start = performance.now();
-  const step = (): void => {
-    if (view.text !== text) return;
-    const n = Math.min(text.length, Math.ceil((performance.now() - start) / TYPE_MS));
-    view.line.textContent = text.slice(0, n);
-    if (n < text.length) requestAnimationFrame(step);
-  };
-  requestAnimationFrame(step);
-}
-
-/** The unit works for a moment: fast fan, flickering LEDs. */
-function setBusy(view: StageView): void {
-  view.root.classList.add("busy");
-  if (view.busy !== undefined) clearTimeout(view.busy);
-  view.busy = setTimeout(() => view.root.classList.remove("busy"), BUSY_MS);
-}
-
-/** The bus y under a unit, and the x of its center, in the pipeline's coordinates. */
-function busY(n: HTMLElement): number {
-  return n.offsetTop + n.offsetHeight + 7;
-}
-
-function busX(n: HTMLElement): number {
-  return n.offsetLeft + n.offsetWidth / 2;
-}
-
-/** A packet along the bus from the stage before (or the bus start) into this unit. */
-function sendPacket(stage: Stage): void {
-  if (reducedMotion()) return;
-  const list = byId("pipeline");
-  const to = stageViews.get(stage)?.root;
-  if (to === undefined || to.offsetParent === null) return;
-  const index = STAGES.indexOf(stage);
-  const before = STAGES[index - 1];
-  const from = before === undefined ? undefined : stageViews.get(before)?.root;
-  const startX = from === undefined ? 0 : busX(from);
-  const startY = from === undefined ? busY(to) : busY(from);
-  const packet = el("i", "packet");
-  list.append(packet);
-  const anim = packet.animate(
-    [
-      { transform: `translate(${startX}px, ${startY}px) scale(.6)`, opacity: 0 },
-      { transform: `translate(${startX}px, ${startY}px) scale(1)`, opacity: 1, offset: 0.1 },
-      { transform: `translate(${busX(to)}px, ${busY(to)}px) scale(1)`, opacity: 1, offset: 0.85 },
-      { transform: `translate(${busX(to)}px, ${busY(to) - 10}px) scale(.4)`, opacity: 0 },
-    ],
-    { duration: PACKET_MS, easing: "cubic-bezier(.5,0,.3,1)" },
-  );
-  anim.onfinish = () => packet.remove();
-}
-
-function renderPipeline(hits: PlatformHit[]): void {
-  for (const stage of STAGES) {
-    const view = stageViews.get(stage);
-    if (view === undefined) continue;
-    const count = platform.counts[stage];
-    const working = platform.working[stage];
-    view.count.textContent = String(Math.min(count, 99)).padStart(2, "0");
-    view.root.classList.toggle("used", count > 0 || working !== undefined);
-    // Working: powered and churning for as long as the work runs (Clef while the judge runs).
-    view.root.classList.toggle("working", working !== undefined);
-    // Seeking back can power a unit down while it still works; it stops at once.
-    if (count === 0 && working === undefined && view.busy !== undefined) {
-      clearTimeout(view.busy);
-      view.busy = undefined;
-      view.root.classList.remove("busy");
-    }
-    const last = platform.last[stage];
-    typeLine(view, working ?? (last === undefined ? STAGE_INFO[stage].role : `${last.text}${last.ms === undefined ? "" : ` · ${formatMs(last.ms)}`}`));
-  }
+function renderHits(hits: PlatformHit[]): void {
   for (const h of hits) {
-    const view = stageViews.get(h.stage);
-    if (view !== undefined) {
-      sendPacket(h.stage);
-      // The unit lights up as the packet lands.
-      setTimeout(() => {
-        if (!view.root.classList.contains("used")) return; // a seek back powered it down meanwhile
-        kick(view.root, "ping");
-        setBusy(view);
-      }, reducedMotion() ? 0 : PACKET_MS * 0.8);
-    }
     addTicker(h);
-    if (xrayOn) for (const path of edgeFor(h, board?.fighters.map((f) => f.agent) ?? [])) xrayPacket(path);
+    if (xrayOn) for (const path of edgeFor(h, board?.fighters.map((f) => f.agent) ?? [])) xrayPacket(path, h.agent);
   }
 }
 
@@ -1883,7 +1733,7 @@ function addTicker(h: PlatformHit): void {
   const ticker = byId("ticker");
   const chip = el("li", "tick");
   chip.dataset.stage = h.stage;
-  chip.append(el("b", undefined, STAGE_INFO[h.stage].product), el("span", undefined, h.text));
+  chip.append(el("b", undefined, STAGE_INFO[h.stage]), el("span", undefined, h.text));
   if (h.ms !== undefined) chip.append(el("em", undefined, formatMs(h.ms)));
   ticker.prepend(chip);
   while (ticker.children.length > TICKER_MAX) ticker.lastElementChild?.remove();
@@ -1919,6 +1769,7 @@ function setupXray(): void {
   }
   byId("xray-toggle").addEventListener("click", () => {
     xrayOn = !xrayOn;
+    if (xrayOn) powerUp();
     try {
       localStorage.setItem(XRAY_KEY, xrayOn ? "1" : "0");
     } catch {
@@ -1933,7 +1784,7 @@ function setupXray(): void {
 function showXray(): void {
   byId("xray-toggle").setAttribute("aria-pressed", String(xrayOn));
   byId("stage").dataset.xray = xrayOn ? "on" : "off";
-  byId("xray-panel").hidden = !xrayOn;
+  byId("xray-diag").hidden = !xrayOn;
   if (xrayOn && board !== undefined) {
     renderXrayBusy(board);
     renderXrayInfo(board);
@@ -1953,7 +1804,8 @@ function renderXray(b: Board): void {
     Object.assign(svgEl("text", "xbox-label", { x: box.x + 12, y: box.y + 18 }), { textContent: box.label }),
   );
   for (const e of c.edges) {
-    const wire = svgEl("polyline", "xwire", { points: e.points.map((p) => p.join(",")).join(" ") });
+    // pathLength 1: the power-up draws every wire in with the same dash numbers.
+    const wire = svgEl("polyline", "xwire", { points: e.points.map((p) => p.join(",")).join(" "), pathLength: 1 });
     xrayWires.set(`${e.from}>${e.to}`, wire);
     svg.append(wire);
   }
@@ -1994,6 +1846,15 @@ function renderXray(b: Board): void {
     xrayNodes.set(n.id, g);
     svg.append(g);
   }
+  if (xrayOn) powerUp();
+}
+
+/** X-ray switching on: the boxes fade in one after another, then the wires draw themselves in. */
+function powerUp(): void {
+  if (reducedMotion()) return;
+  [...xrayNodes.values()].forEach((g, i) => g.animate([{ opacity: 0, transform: "translateY(6px)" }, {}], { duration: 380, delay: i * 35, easing: "cubic-bezier(.22,1,.36,1)", fill: "backwards" }));
+  // The dash pattern lives only in the animation, so the resting wire is untouched when it ends.
+  [...xrayWires.values()].forEach((wire, i) => wire.animate([{ strokeDasharray: "1 1", strokeDashoffset: 1 }, { strokeDasharray: "1 1", strokeDashoffset: 0 }], { duration: 650, delay: 250 + i * 25, easing: "ease-out", fill: "backwards" }));
 }
 
 /** The task X-ray reads: a replay reads the whole record at the scrub's time, as the timeline does; replayed events carry less. */
@@ -2059,15 +1920,23 @@ function onPong(): void {
 }
 
 /** A packet along a path of the circuit; its last node flashes as it lands. Reduced motion: the flash only. */
-function xrayPacket(path: string[]): void {
+function xrayPacket(path: string[], agent?: string): void {
   const points = xrayCircuit === undefined ? undefined : route(xrayCircuit, path);
   if (points === undefined) return;
+  // A robot's packet in its color; the platform's own (judge, merge) in Cloudflare orange.
+  const color = agent === undefined ? "#f6821f" : colorFor(agent);
   const end = xrayNodes.get(path.at(-1) ?? "");
   const land = (): void => {
     // A CSS class animation left SVG rects painted mid-flash in Chrome (Oct 10); a Web Animation ends clean.
-    end?.querySelector("rect")?.animate([{ filter: "brightness(2.4) drop-shadow(0 0 8px #f6821f)" }, { filter: "none" }], { duration: 900, easing: "cubic-bezier(.22,1,.36,1)" });
+    end?.querySelector("rect")?.animate([{ filter: `brightness(2.4) drop-shadow(0 0 8px ${color})` }, { filter: "none" }], { duration: 900, easing: "cubic-bezier(.22,1,.36,1)" });
   };
   if (reducedMotion()) return land();
+  const duration = PACKET_MS * (path.length - 1);
+  // The wires it rides glow for the trip.
+  for (let i = 1; i < path.length; i++) {
+    const wire = xrayWires.get(`${path[i - 1]}>${path[i]}`) ?? xrayWires.get(`${path[i]}>${path[i - 1]}`);
+    wire?.animate([{ stroke: color, strokeWidth: 3.5, opacity: 1 }, { stroke: color, strokeWidth: 3.5, opacity: 1, offset: 0.8 }, {}], { duration: duration + 300 });
+  }
   // Keyframe offsets by distance, so the packet keeps one speed around corners.
   let run = 0;
   let prev = points[0] ?? [0, 0];
@@ -2078,13 +1947,17 @@ function xrayPacket(path: string[]): void {
   });
   const total = run || 1;
   const frames = points.map((p, i) => ({ transform: `translate(${p[0]}px, ${p[1]}px)`, offset: (runs[i] ?? 0) / total }));
-  const packet = svgEl("circle", "xpacket", { r: 7 });
-  byId("xray").append(packet);
-  const anim = packet.animate(frames, { duration: PACKET_MS * (path.length - 1), easing: "cubic-bezier(.5,0,.3,1)" });
-  anim.onfinish = () => {
-    packet.remove();
-    land();
-  };
+  // A head and a fading comet tail, each a little behind the one before.
+  [7, 5, 3].forEach((r, i) => {
+    const dot = svgEl("circle", "xpacket", { r, "fill-opacity": 1 - i * 0.3 });
+    dot.style.setProperty("--color", color);
+    byId("xray").append(dot);
+    const anim = dot.animate(frames, { duration, delay: i * 45, easing: "cubic-bezier(.5,0,.3,1)", fill: "backwards" });
+    anim.onfinish = () => {
+      dot.remove();
+      if (i === 0) land();
+    };
+  });
 }
 
 // ---- panels ----
@@ -2195,15 +2068,20 @@ function previewView(slot: Slot): PreviewView {
   const frame = el("div", "frame");
   frameSizer?.observe(frame);
   const caption = el("figcaption");
-  caption.append(el("span", "who", slot.label));
+  // Clef's verdict on the page, once the look step judged it (renderLook).
+  const score = el("span", "look-score");
+  caption.append(el("span", "who", slot.label), score);
   const link = el("a", "open");
   link.target = "_blank";
   link.rel = "noopener noreferrer";
   link.textContent = "open ↗";
   link.hidden = true;
   caption.append(link);
-  root.append(caption, bar, frame);
-  const view: PreviewView = { root, frame, host, commit, link };
+  // What Clef saw: Browser Rendering's desktop and phone shots of this page.
+  const clef = el("div", "clef-saw");
+  clef.hidden = true;
+  root.append(caption, bar, frame, clef);
+  const view: PreviewView = { root, frame, host, commit, link, score, clef };
   previews.set(slot.key, view);
   return view;
 }
@@ -2375,48 +2253,33 @@ const shotUrl = (agent: string, kind: "desktop" | "phone"): string => `/tasks/${
 /** Clef's 0..1 answer as a percentage. */
 const pct = (x: number | undefined): string => (x === undefined ? "–" : `${Math.round(x * 100)}%`);
 
-/** "What Clef saw": the before page, then each judged fork's two shots with its look points and Clef's two answers. */
+/** What Clef saw, on each robot's preview tile: Clef's two answers and look points in its caption, the two shots under it. */
 function renderLook(b: Board, look: LookView | undefined): void {
-  const panel = byId("look-panel");
-  // Hidden until the first shot loads: shots are kept per race since Oct 8, so a race without
-  // them (every earlier one) would show captions and no pictures. The first thumbnail is the probe.
-  panel.hidden = true;
-  const box = byId("look-shots");
-  if (look === undefined) return box.replaceChildren();
-  const figures: HTMLElement[] = [];
-  if (look.before) {
-    const fig = el("figure", "look-fork before");
-    fig.dataset.pick = "base";
-    fig.style.setProperty("--color", "#8a90a6");
-    const cap = el("figcaption");
-    cap.append(el("b", undefined, "Before"), el("span", undefined, "the source, before the race"));
-    fig.append(cap, shotThumb("before", "desktop", "the source before the race, desktop"));
-    figures.push(fig);
+  const judgedForks = new Map((look?.forks ?? []).map((f) => [f.agent, f]));
+  for (const [key, view] of previews) {
+    const f = key.startsWith("agent:") ? judgedForks.get(key.slice("agent:".length)) : undefined;
+    const points = f === undefined ? undefined : b.fighters.find((x) => x.agent === f.agent)?.score?.parts.look;
+    view.score.textContent = f === undefined ? "" : f.error ?? `fit ${pct(f.fit)} · quality ${pct(f.quality)}${points === undefined ? "" : ` · ${points.toFixed(2)} look pts`}`;
+    view.score.classList.toggle("failed", f?.error !== undefined);
+    view.clef.hidden = true;
+    if (f === undefined || f.error !== undefined) {
+      view.clef.replaceChildren();
+      continue;
+    }
+    const name = displayName(f.agent);
+    view.clef.replaceChildren(el("span", "clef-label", "Clef saw"), shotThumb(f.agent, "desktop", `${name}'s page, desktop`), shotThumb(f.agent, "phone", `${name}'s page, phone`));
+    // Shown once a shot loads: races before Oct 8 kept none, and a thumbnail that fails removes itself.
+    const probe = view.clef.querySelector("img");
+    // A hidden lazy image never loads, so the probe loads at once.
+    if (probe !== null) probe.loading = "eager";
+    const show = (): void => {
+      view.clef.hidden = false;
+      byId("look-hint").hidden = false;
+    };
+    if (probe?.complete === true && probe.naturalWidth > 0) show();
+    else probe?.addEventListener("load", show, { once: true });
   }
-  for (const f of look.forks) {
-    const fig = el("figure", `look-fork${f.error === undefined ? "" : " failed"}`);
-    fig.dataset.pick = f.agent;
-    fig.style.setProperty("--color", colorFor(f.agent));
-    const points = b.fighters.find((x) => x.agent === f.agent)?.score?.parts.look;
-    const cap = el("figcaption");
-    cap.append(el("b", undefined, displayName(f.agent)), el("span", undefined, points === undefined ? "" : `${points.toFixed(2)} look points`));
-    const answers = el("p", "look-answers");
-    answers.textContent = f.error === undefined ? `fit ${pct(f.fit)} · quality ${pct(f.quality)}` : f.error;
-    const shots = el("div", "look-pair");
-    if (f.error === undefined) shots.append(shotThumb(f.agent, "desktop", `${displayName(f.agent)}'s page, desktop`), shotThumb(f.agent, "phone", `${displayName(f.agent)}'s page, phone`));
-    fig.append(cap, answers, shots);
-    figures.push(fig);
-  }
-  box.replaceChildren(...figures);
-  renderPick(b);
-  const probe = box.querySelector("img");
-  if (probe === null) return;
-  probe.loading = "eager";
-  const show = (): void => {
-    panel.hidden = false;
-  };
-  if (probe.complete && probe.naturalWidth > 0) show();
-  else probe.addEventListener("load", show, { once: true });
+  if (look === undefined) byId("look-hint").hidden = true;
 }
 
 /** A thumbnail that opens the full shot; one the room never kept (older races) removes itself. */

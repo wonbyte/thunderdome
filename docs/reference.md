@@ -21,8 +21,8 @@ Measured on the live deploy with 3 agents. The agents ran `claude-haiku-5-5` (`A
 **The meter.** The Outbound Worker reads the token counts out of each model reply as it streams
 past (`src/agents/usage.ts`) and the race page shows them under each robot, priced at list price.
 The page trusts the meter over Claude Code's `costUsd`, which it shows only for races before the
-meter or a model the meter has no price for (`agentUsd` in `src/ui/bill.ts`). The pipeline header shows the race's
-Cloudflare bill (`src/ui/bill.ts`): container-seconds of the agents, preview builds and judge
+meter or a model the meter has no price for (`agentUsd` in `src/ui/bill.ts`). The card under the stage (the X-ray panel,
+shown with X-ray off too, and on phones) shows the race's Cloudflare bill (`src/ui/bill.ts`): container-seconds of the agents, preview builds and judge
 steps at the `standard-1` list price, Clef calls at $0.24 per million input tokens (one measured
 call read 3,650), and the look step's browser time. It is an estimate, not an invoice.
 
@@ -147,10 +147,13 @@ Testy (tester, blue), and Snip (lean, green) and Sparkle (tidy, purple) in bigge
 The **X-ray** button on the stage swaps the robots for the architecture: TaskRoom, a Durable
 Object box with each robot's sandbox in its color, Artifacts, Event Subscriptions, the Push
 Workflow, the build container, Workers Previews, the Judge Workflow, judge containers, Clef,
-Browser Rendering, the fusion round and the ship, each with its binding name. Every pipeline
-event sends a packet along its wires (`src/ui/xray.ts`), live and in replays alike; a scrub sends
+Browser Rendering, the fusion round and the ship, each with its binding name, on a blueprint
+grid. Switching it on fades the boxes in and draws the wires. Every platform event sends a packet,
+in the robot's color when one is involved (its sandbox, claims, pushes and previews, the winner's merge) and
+Cloudflare orange otherwise, with a short tail, along its
+wires, and the wires it rides glow (`src/ui/xray.ts`); live and in replays alike, a scrub sends
 none, and with reduced motion only the node lights. The stage's banner and judge steps step aside
-(the Result card and the pipeline panel carry them). The choice is remembered.
+(the Result card and the ticker carry them). The choice is remembered.
 
 While a step runs, its box has a moving dashed border: exactly what the timeline shows running
 (a robot's sandbox, a preview build, each judge step's parts). Each box shows its measured time,
@@ -173,8 +176,9 @@ phone the labels would be too small to read.
 The page reads top to bottom: the task (its race memory folded), the stage with a verdict banner
 at the end, Cheer and "Who wins?" while live, then Result (score bars, an expandable why, Run it
 again), Previews (the base "before" next to each robot's newest preview; on phones one robot at a
-time, picked from a row of robot buttons; Clef's screenshots live in this card), and Before → after.
-Below, "Under the hood" has folded panels: Cloudflare pipeline, timeline, map, git graph, claims
+time, picked from a row of robot buttons; once judged, each tile adds what Clef saw: its answers and its two shots), and Before → after.
+Right under the stage, a card holds the race's Cloudflare bill and, with X-ray on, its trace,
+notes and connection. Below, "Under the hood" has folded panels: timeline, map, git graph, claims
 (clashes in red), live feed, who passes whose tests, who wrote main, and the fusion round.
 
 For a raw feed, any WebSocket client works:
@@ -411,7 +415,7 @@ The race page makes the round visible, kept or not (`src/ui/fusion.ts` is the sh
   column in each robot's color.
 - **The sandbox handoff.** The panel shows the round as git: read-only sandbox (runs the tests,
   scores the fused code) → git bundle (`refs/fusion/result`) → write sandbox (checks it, `git push`).
-- **Pipeline.** A "Containers × 2" unit between Clef and the merge, for the two fusion sandboxes.
+- **X-ray.** A "Fusion round" box between Clef and the ship, timed by the fuse step.
 - **Gallery.** A race that shipped a loser's work gets a "⚡ fused" pill, and a scored one a
   "team +2.7" pill (the fused score minus the winner's alone). The leaderboard counts each robot's
   **assists** (races it lost whose work still shipped; the tooltip adds its lines shipped while
@@ -520,8 +524,10 @@ and phone (390×844) width, and the source's before page at desktop width, as th
 shown (`src/judge/look.ts` `keep`, `src/judge/JudgeWorkflow.ts`). `GET /tasks/<id>/shots/<agent>/desktop.jpg`
 and `phone.jpg` are public (`<agent>` is `before` for the source); `404` when the look kept none
 (a race that is not visual, a fork without a preview, a race from before Oct 8, or a shot over
-900 KB). They never change, so they are cached at the edge for a year. The result panel shows
-them under "What Clef saw" with each fork's look points and Clef's fit and quality answers.
+900 KB). They never change, so they are cached at the edge for a year. Each robot's preview tile shows
+them: Clef's fit and quality answers and the look points in its caption, the two shots under the
+live page (click to enlarge). The source's before shot is kept but not shown: the Before tile
+already is that page, live.
 
 ## Verdict commits
 

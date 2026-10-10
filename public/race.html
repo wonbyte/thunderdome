@@ -83,12 +83,15 @@
     </section>
 
     <section id="xray-panel" class="card xray-panel" aria-labelledby="xray-title" hidden>
-      <h2 id="xray-title">X-ray · what the race measured</h2>
-      <div id="xray-trace-buttons" class="xray-trace-buttons" role="group" aria-label="Trace a robot's newest push"></div>
-      <p id="xray-trace" class="xray-line"></p>
-      <h3 class="xray-sub">Slow or failed steps</h3>
-      <ul id="xray-notes" class="xray-notes"></ul>
-      <p id="xray-conn" class="xray-line"></p>
+      <h2 id="xray-title">Cloudflare · what this race used</h2>
+      <p id="bill" class="bill" title="Cloudflare at list price, estimated from this race's record; agents from their meters, or Claude Code's own cost once each ends"></p>
+      <div id="xray-diag" class="xray-diag">
+        <div id="xray-trace-buttons" class="xray-trace-buttons" role="group" aria-label="Trace a robot's newest push"></div>
+        <p id="xray-trace" class="xray-line"></p>
+        <h3 class="xray-sub">Slow or failed steps</h3>
+        <ul id="xray-notes" class="xray-notes"></ul>
+        <p id="xray-conn" class="xray-line"></p>
+      </div>
     </section>
 
     <section id="cheer" class="card cheer" aria-labelledby="cheer-title" hidden>
@@ -125,11 +128,8 @@
     <section id="previews-card" class="card" aria-labelledby="previews-title">
       <h2 id="previews-title">Previews</h2>
       <div id="pick" class="pick" role="group" aria-label="Show one robot"></div>
+      <p id="look-hint" class="hint" hidden>Under each page, what Clef saw: Browser Rendering shot it at desktop and phone width, and Clef rated its fit and quality. Click a shot to enlarge.</p>
       <div id="previews" class="previews"></div>
-      <section id="look-panel" class="look-panel" aria-labelledby="look-title" hidden>
-        <div class="look-head"><h3 id="look-title">What Clef saw</h3><span class="hint">Browser Rendering shot each preview at desktop and phone width; Clef rated fit and quality. Click a shot to enlarge.</span></div>
-        <div id="look-shots" class="look-shots"></div>
-      </section>
     </section>
 
     <section id="wipe-panel" class="card compare-panel" aria-labelledby="wipe-title" hidden>
@@ -155,11 +155,6 @@
 
     <h2 class="hood-title">Under the hood</h2>
 
-    <details class="card pipe">
-      <summary><h2>Cloudflare pipeline</h2></summary>
-      <p id="bill" class="bill" title="Cloudflare at list price, estimated from this race's record; agents from their meters, or Claude Code's own cost once each ends" hidden></p>
-      <ol id="pipeline" class="pipeline"></ol>
-    </details>
 
     <details id="gantt-panel" class="card gantt-panel" hidden>
       <summary><h2>Timeline · what ran when</h2><span id="gantt-stat" class="count-pill"></span></summary>

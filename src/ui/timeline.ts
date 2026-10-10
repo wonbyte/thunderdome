@@ -168,3 +168,35 @@ function withClashes(board: Board, event: BoardEvent): BoardEvent {
 export function stepsAt(steps: WireStep[], t: number): WireStep[] {
   return steps.filter((step) => (ms(step.at) ?? Infinity) <= t);
 }
+
+const by = (iso: string | undefined, t: number): boolean => (ms(iso) ?? Infinity) <= t;
+
+/**
+ * The race record as it stood at `t`: what had started, ended, pushed and been judged by then. A
+ * replay bills from it; its board, rebuilt from events, has no push log and no meters.
+ */
+export function recordAt(task: WireTask, t: number): WireTask {
+  const agents = task.agents.map((slot): WireAgent => {
+    const { startedAt, endedAt, usage, costUsd, push, ...rest } = slot;
+    const ended = by(endedAt, t);
+    const log = push?.log?.filter((e) => by(e.at, t)).map(({ previewAt, ...e }) => (by(previewAt, t) ? { ...e, ...(previewAt === undefined ? {} : { previewAt }) } : e));
+    const preview = by(push?.preview?.at, t) ? push?.preview : undefined;
+    return {
+      ...rest,
+      ...(startedAt !== undefined && by(startedAt, t) ? { startedAt } : {}),
+      // An agent's meter is its final total: counted once it has ended.
+      ...(ended ? { endedAt, ...(usage === undefined ? {} : { usage }), ...(costUsd === undefined ? {} : { costUsd }) } : {}),
+      ...(push === undefined ? {} : { push: { ...push, ...(log === undefined ? {} : { log }), preview } }),
+    };
+  });
+  const { startedAt, basePreview, judging, verdict, finishedAt, ...rest } = task;
+  return {
+    ...rest,
+    agents,
+    ...(startedAt !== undefined && by(startedAt, t) ? { startedAt } : {}),
+    ...(basePreview !== undefined && by(basePreview.at, t) ? { basePreview } : {}),
+    ...(judging === undefined ? {} : { judging: judging.filter((s) => by(s.startedAt, t)).map(({ endedAt, ...s }) => (by(endedAt, t) ? { ...s, ...(endedAt === undefined ? {} : { endedAt }) } : { ...s, state: "running" })) }),
+    ...(verdict !== undefined && by(verdict.judgedAt, t) ? { verdict } : {}),
+    ...(finishedAt !== undefined && by(finishedAt, t) ? { finishedAt } : {}),
+  };
+}
