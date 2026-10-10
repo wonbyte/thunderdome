@@ -27,7 +27,13 @@ const block = md.split(`**${app}**`)[1]?.split("**")[0] ?? "";
 const prompt = block.split("\n").filter((l) => l.startsWith(">")).map((l) => l.replace(/^>\s?/, "").trim()).join(" ");
 if (!prompt) throw new Error(`no prompt for ${app}`);
 const hotfix = process.env.HOTFIX ? HOTFIXES[app.split("-")[0]] : undefined;
+let hotfixFired = false; // up here: the push listener fires it before the script reaches its end
 if (process.env.HOTFIX && !hotfix) throw new Error(`no hotfix for ${app} (have: ${Object.keys(HOTFIXES).join(", ")})`);
+// The line must be there exactly once, or the hotfix edits the wrong spot; check before paying for a race.
+const once = (text) => text.split(hotfix.find).length === 2;
+if (hotfix && !once(readFileSync(new URL(`../demo/${app.split("-")[0]}/${hotfix.file}`, import.meta.url), "utf8"))) {
+  throw new Error(`the hotfix line is not in demo/${app.split("-")[0]}/${hotfix.file} exactly once`);
+}
 
 const auth = { authorization: `Bearer ${process.env.ADMIN_TOKEN}` };
 const t0 = Date.now();
@@ -90,7 +96,6 @@ if (resolve) {
 } else if (hotfix) console.log("no conflict race (ship", task.verdict?.ship?.status, ")");
 process.exit(0);
 
-let hotfixFired = false;
 function fireHotfix() {
   if (hotfixFired) return;
   hotfixFired = true;
@@ -114,7 +119,7 @@ async function pushHotfix(repo) {
     git("clone", "--quiet", remote, ".");
     const path = join(dir, hotfix.file);
     const before = readFileSync(path, "utf8");
-    if (!before.includes(hotfix.find)) throw new Error(`hotfix line not found in ${hotfix.file}`);
+    if (!once(before)) throw new Error(`the hotfix line is not in ${hotfix.file} exactly once`);
     writeFileSync(path, before.replace(hotfix.find, hotfix.replace));
     git("-c", "user.name=Teammate", "-c", "user.email=teammate@thunderdome.invalid", "commit", "--quiet", "-am", hotfix.message);
     git("push", "--quiet", "origin", "HEAD");
