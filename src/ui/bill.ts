@@ -31,8 +31,12 @@ export function usd(v: number): string {
   return `$${v < 0.1 && v > 0 ? v.toFixed(3) : v.toFixed(2)}`;
 }
 
-/** When a push's preview build ended (ms): the preview's time when it shows that commit, else the build's time limit. */
-export function buildEnd(at: number, commit: string | undefined, preview: WirePreview | undefined): number {
+/**
+ * When a push's preview build ended (ms): its own preview time when the record has it, the newest
+ * preview's time when that shows the commit (records before `previewAt`), else the build's time limit.
+ */
+export function buildEnd(at: number, commit: string | undefined, preview: WirePreview | undefined, previewAt?: number): number {
+  if (previewAt !== undefined) return previewAt;
   return commit !== undefined && preview?.commit === commit ? Date.parse(preview.at) : at + BUILD_S * 1000;
 }
 
@@ -63,7 +67,7 @@ export function billOf(task: WireTask, now: number): Bill {
     // Each push builds a preview; a build later superseded may have been skipped, so this is an upper bound.
     for (const push of slot.push?.log ?? []) {
       containers++;
-      containerSeconds += seconds(push.at, buildEnd(Date.parse(push.at), push.commit, slot.push?.preview));
+      containerSeconds += seconds(push.at, buildEnd(Date.parse(push.at), push.commit, slot.push?.preview, push.previewAt === undefined ? undefined : Date.parse(push.previewAt)));
     }
   }
   if (task.basePreview !== undefined) {

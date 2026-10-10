@@ -210,6 +210,9 @@ on a scrub.
 **Risk.** The SVG art is the cost; a one-day version with boxes and lines ships before the
 pretty one.
 
+**Status (Oct 10).** The boxes-and-lines version is built (X1–X4, axe clean, replay at 8× in
+order, nothing on a scrub); desktop only. Not yet deployed or seen in a live race.
+
 ---
 
 ## Video shot list (Oct 12–13)

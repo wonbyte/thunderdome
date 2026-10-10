@@ -6,6 +6,7 @@ import type { Action, Board, BoardEvent, Fighter, WireAgent, WireClaimBoard, Wir
 import { agentUsd, billLine, billOf, usd } from "./bill";
 import { LAND_PATH, MAP_H, MAP_W, mapPins, project, REGION_INFO } from "./map";
 import { applyPlatform, emptyPlatform, formatMs, STAGE_INFO, STAGES } from "./platform";
+import { circuit, edgeFor, route, type XrayCircuit } from "./xray";
 import type { PlatformHit, PlatformState, Stage } from "./platform";
 import { coreSvg, crownSvg, hammerSvg, robotSvg } from "./sprites";
 import { openCommit } from "./commitdialog";
@@ -279,6 +280,7 @@ function main(): void {
   setupWipe();
   setupRail();
   setupExplainer();
+  setupXray();
   document.addEventListener("visibilitychange", onVisibility);
   if (new URLSearchParams(location.search).has("replay")) {
     void startReplay(id);
@@ -837,6 +839,7 @@ function render(b: Board): void {
   renderBill(b);
   renderGantt(b);
   renderMap(b);
+  renderXray(b);
   // Cheering is for a race in progress: live only, and gone once it has ended.
   byId("cheer").hidden = replay !== undefined || b.ended;
   flushScroll();
@@ -1357,6 +1360,9 @@ function updateBot(b: Board, f: Fighter, index: number): void {
     view.bubbleKey = bubble;
     view.bubbleText.textContent = bubble;
     kick(view.bubble, "pop");
+    // Phones with four or more robots show only the newest bubble (race.css).
+    for (const old of document.querySelectorAll(".bubble.newest")) old.classList.remove("newest");
+    view.bubble.classList.add("newest");
   }
   // One square per step of the race; the winner's bar fills completely.
   const reached = progressOf(b, f);
@@ -1858,6 +1864,7 @@ function renderPipeline(hits: PlatformHit[]): void {
       }, reducedMotion() ? 0 : PACKET_MS * 0.8);
     }
     addTicker(h);
+    if (xrayOn) for (const path of edgeFor(h, board?.fighters.map((f) => f.agent) ?? [])) xrayPacket(path);
   }
 }
 
@@ -1872,6 +1879,102 @@ function addTicker(h: PlatformHit): void {
   while (ticker.children.length > TICKER_MAX) ticker.lastElementChild?.remove();
   setTimeout(() => chip.classList.add("gone"), TICKER_MS);
   setTimeout(() => chip.remove(), TICKER_MS + 600);
+}
+
+// ---- X-ray mode ----
+
+const XRAY_KEY = "thunderdome:xray";
+let xrayOn = false;
+let xrayCircuit: XrayCircuit | undefined;
+const xrayNodes = new Map<string, SVGGElement>();
+
+function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, className: string | undefined, attrs: Record<string, string | number>): SVGElementTagNameMap[K] {
+  const node = document.createElementNS(svgNs, tag);
+  if (className !== undefined) node.setAttribute("class", className);
+  for (const [name, value] of Object.entries(attrs)) node.setAttribute(name, String(value));
+  return node;
+}
+
+function setupXray(): void {
+  try {
+    xrayOn = localStorage.getItem(XRAY_KEY) === "1";
+  } catch {
+    // No storage: X-ray starts off.
+  }
+  byId("xray-toggle").addEventListener("click", () => {
+    xrayOn = !xrayOn;
+    try {
+      localStorage.setItem(XRAY_KEY, xrayOn ? "1" : "0");
+    } catch {
+      // No storage: it is forgotten next visit.
+    }
+    showXray();
+  });
+  showXray();
+}
+
+function showXray(): void {
+  byId("xray-toggle").setAttribute("aria-pressed", String(xrayOn));
+  byId("stage").dataset.xray = xrayOn ? "on" : "off";
+}
+
+/** Draws the circuit once the race's robots are known; they never change in a race. */
+function renderXray(b: Board): void {
+  if (xrayCircuit !== undefined || b.fighters.length === 0) return;
+  const c = circuit(b.fighters.map((f) => f.agent));
+  xrayCircuit = c;
+  const svg = byId("xray");
+  svg.setAttribute("viewBox", `0 0 ${c.width} ${c.height}`);
+  const box = c.box;
+  svg.append(
+    svgEl("rect", "xbox", { x: box.x, y: box.y, width: box.w, height: box.h, rx: 14 }),
+    Object.assign(svgEl("text", "xbox-label", { x: box.x + 12, y: box.y + 18 }), { textContent: box.label }),
+  );
+  for (const e of c.edges) svg.append(svgEl("polyline", "xwire", { points: e.points.map((p) => p.join(",")).join(" ") }));
+  for (const n of c.nodes) {
+    const g = svgEl("g", n.agent === undefined ? "xnode" : "xnode xsandbox", {});
+    if (n.agent !== undefined) g.style.setProperty("--color", colorFor(n.agent));
+    g.append(svgEl("rect", undefined, { x: n.x, y: n.y, width: n.w, height: n.h, rx: 8 }));
+    const label = svgEl("text", "xlabel", { x: n.x + n.w / 2, y: n.y + (n.binding === undefined ? n.h / 2 + 5 : n.h / 2 - 2) });
+    label.textContent = n.label;
+    g.append(label);
+    if (n.binding !== undefined) {
+      const binding = svgEl("text", "xbinding", { x: n.x + n.w / 2, y: n.y + n.h / 2 + 14 });
+      binding.textContent = n.binding;
+      g.append(binding);
+    }
+    xrayNodes.set(n.id, g);
+    svg.append(g);
+  }
+}
+
+/** A packet along a path of the circuit; its last node flashes as it lands. Reduced motion: the flash only. */
+function xrayPacket(path: string[]): void {
+  const points = xrayCircuit === undefined ? undefined : route(xrayCircuit, path);
+  if (points === undefined) return;
+  const end = xrayNodes.get(path.at(-1) ?? "");
+  const land = (): void => {
+    // A CSS class animation left SVG rects painted mid-flash in Chrome (Oct 10); a Web Animation ends clean.
+    end?.querySelector("rect")?.animate([{ filter: "brightness(2.4) drop-shadow(0 0 8px #f6821f)" }, { filter: "none" }], { duration: 900, easing: "cubic-bezier(.22,1,.36,1)" });
+  };
+  if (reducedMotion()) return land();
+  // Keyframe offsets by distance, so the packet keeps one speed around corners.
+  let run = 0;
+  let prev = points[0] ?? [0, 0];
+  const runs = points.map((p) => {
+    run += Math.hypot(p[0] - prev[0], p[1] - prev[1]);
+    prev = p;
+    return run;
+  });
+  const total = run || 1;
+  const frames = points.map((p, i) => ({ transform: `translate(${p[0]}px, ${p[1]}px)`, offset: (runs[i] ?? 0) / total }));
+  const packet = svgEl("circle", "xpacket", { r: 7 });
+  byId("xray").append(packet);
+  const anim = packet.animate(frames, { duration: PACKET_MS * (path.length - 1), easing: "cubic-bezier(.5,0,.3,1)" });
+  anim.onfinish = () => {
+    packet.remove();
+    land();
+  };
 }
 
 // ---- panels ----

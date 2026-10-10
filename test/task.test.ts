@@ -463,6 +463,16 @@ describe("applyPreview", () => {
     expect(task.agents[0]!.push?.preview).toEqual({ url: "https://b.example", commit: B, at: "t4" });
     expect(applyPreview(task, "nobody", { url: "https://c.example", commit: C }, "t7")).toBe(false);
   });
+
+  it("R8: a saved preview stamps its push's log entry, so each build keeps its own end", () => {
+    const task = runningTask();
+    applyPush(task, { agent: "ponder", after: A, commits: 1 }, "t1");
+    applyPreview(task, "ponder", { url: "https://a.example", commit: A }, "t2");
+    applyPush(task, { agent: "ponder", after: B, commits: 1 }, "t3");
+    applyPreview(task, "ponder", { url: "https://b.example", commit: B }, "t4");
+    applyPush(task, { agent: "ponder", after: C, commits: 1 }, "t5");
+    expect(task.agents[0]!.push?.log?.map((e) => e.previewAt)).toEqual(["t2", "t4", undefined]);
+  });
 });
 
 describe("applyBasePreview", () => {

@@ -241,6 +241,13 @@ h1.prompt { font-weight: 400; }
   font-size: 12px; font-weight: 600; white-space: nowrap;
 }
 .bubble-text { overflow: hidden; text-overflow: ellipsis; }
+/* Each bubble fits its robot's slot (botX: 64% of the stage for 3 robots, 80% for 4 or 5). */
+.stage { container-type: inline-size; }
+.bubble { max-width: min(176px, calc(21cqi - 8px)); }
+@media (min-width: 641px) {
+  .stage:has(.bot:nth-child(4 of .bot)) .bubble { max-width: min(176px, calc(20cqi - 8px)); }
+  .stage:has(.bot:nth-child(5 of .bot)) .bubble { max-width: min(176px, calc(16cqi - 8px)); }
+}
 .bubble-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--color); animation: blink 1.2s ease-in-out infinite; }
 .bubble.pop { animation: pop .45s var(--ease); }
 
@@ -590,6 +597,7 @@ h1.prompt { font-weight: 400; }
   .score-name { white-space: nowrap; }
   /* Five bubbles do not fit side by side; once the race ends the banner says it all. */
   .stage[data-state="ended"] .bubble { display: none; }
+  .stage:has(.bot:nth-child(4 of .bot)) .bubble:not(.newest) { visibility: hidden; }
   details.card > summary { flex-direction: column; }
   .score-row .fit-spark { display: none; }
   .stage .judge-steps { top: 74px; width: calc(100% - 32px); } /* the ticker is hidden here */
@@ -1518,3 +1526,28 @@ details.card > summary h2 { color: #f6821f; }
 .gantt-cursor { position: absolute; top: 16px; bottom: 0; left: var(--cursor); border-left: 2px solid var(--text); }
 @media (max-width: 640px) { .gantt { --label-w: 96px; } .gantt-tick:nth-child(2), .gantt-tick:nth-child(4) { display: none; } }
 .gantt-panel summary .count-pill { white-space: nowrap; }
+
+/* ---------- X-ray mode: the products behind the race, lit by the same events ---------- */
+.xray-toggle { position: absolute; top: 14px; right: 14px; z-index: 7; cursor: pointer; font-family: inherit; }
+.xray-toggle[aria-pressed="true"] { color: var(--cyan); border-color: color-mix(in srgb, var(--cyan) 50%, transparent); }
+.xray { position: absolute; inset: 56px 16px 16px; width: calc(100% - 32px); height: calc(100% - 72px); z-index: 3; display: none; }
+.stage[data-xray="on"] .xray { display: block; }
+.stage[data-xray="on"] :is(.bots, .beams, .core, .floor) { visibility: hidden; }
+/* They would cover the push column; the Result card and the pipeline panel say the same. */
+.stage[data-xray="on"] :is(.banner, .judge-steps) { display: none; }
+.xbox { fill: #0b0f1dcc; stroke: #3b5aa5; stroke-dasharray: 6 4; }
+.xbox-label { fill: var(--dim); font: 600 13px var(--sans); }
+.xwire { fill: none; stroke: #3b5aa588; stroke-width: 2; }
+.xnode rect { fill: var(--panel-2); stroke: #f6821f88; stroke-width: 1.5; }
+.xsandbox rect { stroke: var(--color); stroke-width: 2; }
+.xlabel { fill: var(--text); font: 600 14px var(--sans); text-anchor: middle; }
+.xsandbox .xlabel { font-size: 12px; transform: translateY(-1px); }
+.xbinding { fill: var(--dim); font: 11px var(--mono); text-anchor: middle; }
+.xpacket { fill: #f6821f; filter: drop-shadow(0 0 6px #f6821f); }
+/* shortcut: on a phone the circuit's labels would be 5 px, so X-ray is desktop only; a phone layout of the circuit would lift this. */
+@media (max-width: 640px) {
+  .xray-toggle { display: none; }
+  .stage[data-xray="on"] .xray { display: none; }
+  .stage[data-xray="on"] :is(.bots, .beams, .core, .floor) { visibility: visible; }
+  .stage[data-xray="on"] :is(.banner, .judge-steps) { display: flex; }
+}

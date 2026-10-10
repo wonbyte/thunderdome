@@ -77,7 +77,9 @@ describe("handleThunderdomeApi", () => {
   });
 });
 
-describe("claim CLI", () => {
+// Each claim is a fresh node process: 0.3 s alone, up to 1.5 s in a loaded full run, so the
+// default 5 s is likely what failed once (Oct 9; not reproduced in 20 solo and 3 full runs).
+describe("claim CLI", { timeout: 20_000 }, () => {
   const board = emptyBoard();
   let server: Server;
   let base: string;

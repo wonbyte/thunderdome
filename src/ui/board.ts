@@ -24,7 +24,7 @@ export interface WireAgent {
     head?: string;
     seen?: string[];
     preview?: WirePreview;
-    log?: { at: string; commit: string; commits: number; message?: string }[]; // tasks from before the log have none
+    log?: { at: string; commit: string; commits: number; message?: string; previewAt?: string }[]; // tasks from before the log have none
   };
   costUsd?: number;
   usage?: WireUsage; // races from before the meter have none
@@ -402,7 +402,13 @@ export function applyEvent(board: Board, event: BoardEvent, now: number): Board 
     case "preview": {
       const preview = { ...event.preview };
       const next = withFighter(board, event.agent, (f) => ({ ...f, preview }));
-      return withSlot(next, event.agent, (slot) => ({ ...slot, push: { commits: 0, ...slot.push, preview } }));
+      return withSlot(next, event.agent, (slot) => {
+        // Stamp the push it was built from, as the server does (applyPreview), so the timeline ends that build.
+        const log = slot.push?.log;
+        const i = log?.findLastIndex((e) => e.commit === preview.commit) ?? -1;
+        const stamped = log === undefined || i < 0 ? {} : { log: log.map((e, j) => (j === i ? { ...e, previewAt: preview.at } : e)) };
+        return { ...slot, push: { commits: 0, ...slot.push, ...stamped, preview } };
+      });
     }
     case "agent-end":
       return applyAgentEnd(board, event.agent, event.outcome.end, event.status, now, event.outcome.costUsd);

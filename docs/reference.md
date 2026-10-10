@@ -144,8 +144,21 @@ Testy (tester, blue), and Snip (lean, green) and Sparkle (tidy, purple) in bigge
 | falls over | fails or runs out of time |
 | jumps with a crown / slumps | wins / loses the verdict |
 
-Below the stage: the claim grid (clashes in red), the base "before" preview next to each agent's
-newest preview, and at the end the scoreboard and the judge's why.
+The **X-ray** button on the stage swaps the robots for the architecture: TaskRoom, a Durable
+Object box with each robot's sandbox in its color, Artifacts, Event Subscriptions, the Push
+Workflow, the build container, Workers Previews, the Judge Workflow, judge containers, Clef,
+Browser Rendering, the fusion round and the ship, each with its binding name. Every pipeline
+event sends a packet along its wires (`src/ui/xray.ts`), live and in replays alike; a scrub sends
+none, and with reduced motion only the node lights. The stage's banner and judge steps step aside
+(the Result card and the pipeline panel carry them). The choice is remembered. Desktop only: on a
+phone the labels would be too small to read.
+
+The page reads top to bottom: the task (its race memory folded), the stage with a verdict banner
+at the end, Cheer and "Who wins?" while live, then Result (score bars, an expandable why, Run it
+again), Previews (the base "before" next to each robot's newest preview; on phones one robot at a
+time, picked from a row of robot buttons; Clef's screenshots live in this card), and Before → after.
+Below, "Under the hood" has folded panels: Cloudflare pipeline, timeline, map, git graph, claims
+(clashes in red), live feed, who passes whose tests, who wrote main, and the fusion round.
 
 For a raw feed, any WebSocket client works:
 
@@ -276,7 +289,7 @@ behind `push.head`. The `thunderdome-push` Workflow instances show build failure
 
 `push.log` lists the recorded pushes for the git graph, oldest first, at most the newest 50: each
 entry has `at` (when it was recorded), `commit`, `commits` (the commits it counted), and `message`
-when the push had one. A push repeated by an event retry is recorded once. Tasks from before the
+when the push had one, and `previewAt` once its preview was saved. A push repeated by an event retry is recorded once. Tasks from before the
 log have no `push.log`; read it as empty.
 
 Each race also gets a base preview of the source repo at the commit the forks were made from,
@@ -475,9 +488,11 @@ a pin per robot at its region, labeled with its colo.
 The race page's "Timeline · what ran when" card is a Gantt built from the race record
 (`src/ui/gantt.ts`), on an axis from the race's start: the base preview build (from the start to
 `basePreview.at`), each robot's sandbox (`startedAt` to `endedAt`), each push's preview build, each
-judge step, and the merge (or the verdict when nothing merged). A build ends at its preview's time
-when the preview shows that push's commit; otherwise the record has no end, and the bar is dashed
-up to the build's 80 s limit or the race's end, the same rule as the bill. A retried judge step is
+judge step, and the merge (or the verdict when nothing merged). A build ends when its preview was
+saved (the push's `previewAt` in the log). A build before a robot's newest preview with no time of
+its own is left out: a newer push superseded it, or the race predates `previewAt`. A build with no
+preview yet is a running bar until the verdict or its 80 s limit; after that its end is really
+unknown, and the bar is dashed up to the limit or the race's end, the same rule as the bill. A retried judge step is
 one bar: the record keeps only its latest attempt. Colors are products: Containers, Workers
 Previews, Workers AI, Artifacts, Workflows. In a replay a cursor follows the scrub.
 
@@ -543,7 +558,8 @@ Agents claim files before they edit them. In the sandbox they run `claim <file>.
 refused, because each agent works in its own fork: a claim on a file another agent holds becomes a
 shared claim, and the response lists the clash. The judge takes 2 of the 10 claim points from a fork
 that changed a file it held only as shared, but only when another fork that passed tests did the task
-without changing that file. A clash every fork needed costs nothing. You can use the board by hand too:
+without changing that file. A clash every fork needed costs nothing. An agent can make at most 200 claims in a race
+(`MAX_CLAIMS_PER_AGENT`); past that a claim gets `429`. You can use the board by hand too:
 
 ```sh
 curl -X POST $THUNDERDOME/tasks/<id>/claims \

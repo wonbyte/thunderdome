@@ -146,6 +146,7 @@ export function applyPlatform(state: PlatformState, event: BoardEvent, at: numbe
       const agent = name.startsWith("fork ") ? name.slice(5) : undefined;
       if (agent !== undefined && stepState === "running") hits.push(hit("containers", `judge sandbox: ${displayName(agent)}'s tests + the shared suite`, { agent }));
       if (agent !== undefined && stepState === "done") hits.push(hit("ai", `Clef scored ${displayName(agent)}'s diff, in both file orders`, { agent }));
+      if (name === "look" && stepState === "running") hits.push(hit("ai", "screenshots from Browser Rendering for Clef's look score"));
       if (name === "split" && stepState === "done") hits.push(hit("ai", "Clef: does the task split the work?"));
       if (name === "compare" && stepState === "done") hits.push(hit("ai", "Clef compared the tied diffs side by side"));
       if (name === "fuse" && stepState === "running") hits.push(hit("fusion", "fusion round: trying the losers' work on the winner"));

@@ -12,6 +12,7 @@ export interface PushDot {
   commit?: string;
   message?: string;
   approx?: boolean; // the time is estimated (the task kept only a count)
+  previewAt?: number; // ms, when this push's preview was saved
 }
 
 /**
@@ -98,7 +99,8 @@ export function pushDots(task: WireTask): PushDot[] {
     const logged = (push.log ?? []).flatMap((entry): PushDot[] => {
       const at = ms(entry.at);
       if (at === undefined) return [];
-      return [{ agent: slot.name, at, commits: entry.commits, commit: entry.commit, ...(entry.message === undefined ? {} : { message: entry.message }) }];
+      const previewAt = ms(entry.previewAt);
+      return [{ agent: slot.name, at, commits: entry.commits, commit: entry.commit, ...(entry.message === undefined ? {} : { message: entry.message }), ...(previewAt === undefined ? {} : { previewAt }) }];
     });
     if (logged.length > 0) return logged;
     const last = ms(push.lastPushAt);

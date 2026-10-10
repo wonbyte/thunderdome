@@ -65,8 +65,8 @@ flowchart LR
    every fork is locked as a record. If the source moved on, three resolvers race to fix the
    conflict, and the first one whose tests all pass is merged.
 
-The race page shows all of it live: the robots act out each real step, with the Cloudflare
-pipeline, the git graph, the claim board, the previews, the judge's steps and the scores below.
+The race page shows all of it live: the robots act out each real step, the result and previews
+follow, and "Under the hood" opens the Cloudflare pipeline, a timeline, the git graph and the claim board.
 
 ## The judge
 

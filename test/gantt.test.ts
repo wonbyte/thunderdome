@@ -57,6 +57,14 @@ describe("ganttOf", () => {
     expect(rows.find((r) => r.key === "build:ponder:2")?.title).toContain("(estimated)");
   });
 
+  it("T2b: a build with its own preview time ends there, even before the newest preview", () => {
+    const task = judgedTask();
+    task.agents[0]!.push!.log![0]!.previewAt = iso(38);
+    const rows = ganttOf(task, at(86))?.rows ?? [];
+    expect(rows.find((r) => r.key === "build:ponder:0")).toMatchObject({ from: at(30), to: at(38), approx: false, running: false });
+    expect(rows.find((r) => r.key === "build:ponder:1")).toMatchObject({ from: at(40), to: at(50), approx: false });
+  });
+
   it("T3: an agent still running and a running judge step end at now", () => {
     const task = judgedTask();
     task.status = "running";

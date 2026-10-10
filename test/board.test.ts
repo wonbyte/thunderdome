@@ -115,12 +115,15 @@ describe("board", () => {
     const again = applyEvent(next, { kind: "steps", taskId: id, agent: "ponder", steps: [step(2, "ponder", "text", "old")] }, 3_000);
     expect(again).toEqual(next);
 
-    next = applyEvent(next, { kind: "push", taskId: id, agent: "zippy", push: { commits: 3 } }, 3_000);
+    const log = [{ at: "2025-01-01T00:00:30.000Z", commit: "abc", commits: 3 }];
+    next = applyEvent(next, { kind: "push", taskId: id, agent: "zippy", push: { commits: 3, log } }, 3_000);
     expect(fighter(next, "zippy")).toMatchObject({ action: "push", actionAt: 3_000, commits: 3 });
 
     const preview = { url: "https://zippy.example.dev", commit: "abc", at: "2025-01-01T00:01:00.000Z" };
     next = applyEvent(next, { kind: "preview", taskId: id, agent: "zippy", preview }, 3_000);
     expect(fighter(next, "zippy").preview).toEqual(preview);
+    // The push it was built from gets its preview time, as on the server.
+    expect(next.task?.agents.find((a) => a.name === "zippy")?.push?.log).toEqual([{ ...log[0], previewAt: preview.at }]);
 
     next = applyEvent(next, { kind: "agent-end", taskId: id, agent: "ponder", outcome: { end: "done" }, status: "running" }, 4_000);
     expect(fighter(next, "ponder")).toMatchObject({ status: "done", action: "finished", actionAt: 4_000 });

@@ -98,6 +98,9 @@ describe("the meter", () => {
     expect(bill.containers).toBe(7);
     // ponder 74.942 + zippy 120 (running) + build 9.178 + build 80 + base 80 + fork 9.31 + ship 4.558.
     expect(bill.containerSeconds).toBeCloseTo(74.942 + 120 + 9.178 + 80 + 80 + 9.31 + 4.558, 6);
+    // A push whose own preview time is recorded ends there: zippy's build is 10 s, not 80 s.
+    task.agents[1]!.push!.log![0]!.previewAt = "2026-10-08T04:28:30.451Z";
+    expect(billOf(task, now).containerSeconds).toBeCloseTo(bill.containerSeconds - 70, 6);
     expect(bill.clefCalls).toBe(6 + 1 + 2 + 1);
     expect(bill.browserSeconds).toBeCloseTo(7.589, 6);
     expect(bill.agentsUsd).toBeCloseTo(0.75, 9);

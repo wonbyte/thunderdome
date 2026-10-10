@@ -81,13 +81,14 @@ export function ganttOf(task: WireTask, now: number): Gantt | undefined {
     add({ key: `agent:${slot.name}`, label: name, product: "containers", from }, ms(slot.endedAt), { failed: slot.status === "failed" });
     const preview = slot.push?.preview;
     const mine = dots.filter((d) => d.agent === slot.name);
-    // The record keeps only the latest preview, so a build before it has no end: leave it out.
     const latest = mine.findIndex((d) => d.commit !== undefined && d.commit === preview?.commit);
     mine.forEach((d, i) => {
-      if (i < latest) return;
-      const shown = i === latest;
+      // A build before the newest preview with no time of its own has no end in the record (a newer
+      // push superseded it, or the race predates previewAt): leave it out.
+      if (i < latest && d.previewAt === undefined) return;
+      const shown = i === latest || d.previewAt !== undefined;
       const label = `${name}'s preview${d.commit === undefined ? "" : ` ${d.commit.slice(0, 7)}`}`;
-      const end = buildEnd(d.at, d.commit, preview);
+      const end = buildEnd(d.at, d.commit, preview, d.previewAt);
       // Before the verdict and its time limit, a build with no preview yet is still running.
       const building = !shown && task.verdict === undefined && now < end;
       add({ key: `build:${slot.name}:${i}`, label, product: "previews", from: d.at }, shown ? end : building ? undefined : Math.min(now, end), { approx: !shown && !building });

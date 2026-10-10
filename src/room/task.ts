@@ -73,6 +73,7 @@ export interface PushLogEntry {
   commit: string; // the push's `after`
   commits: number; // counted commits, 0 for a bad count
   message?: string; // only when the push had one
+  previewAt?: string; // ISO, when this push's preview was saved; the timeline ends its build here
 }
 
 /** What an agent's pushes added up to, for the board and the git graph. */
@@ -389,6 +390,8 @@ export function applyPreview(task: Task, agent: string, preview: PreviewInput, n
   const push = slotOf(task, agent)?.push;
   if (push === undefined || push.head !== preview.commit) return false;
   push.preview = { url: preview.url, commit: preview.commit, at: now };
+  const entry = push.log?.findLast((e) => e.commit === preview.commit);
+  if (entry !== undefined) entry.previewAt = now;
   return true;
 }
 
