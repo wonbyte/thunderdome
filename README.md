@@ -22,7 +22,7 @@ Workers Previews, Workers AI (Clef), Browser Rendering and static assets.
 No setup: the live deploy runs races for anyone.
 
 1. Open **[thunderdome.wonbyte.dev/play](https://thunderdome.wonbyte.dev/play)**.
-2. Pick a demo app (`bugs`, `ui`, `clash` or `fusion`), edit the task if you like, and start.
+2. Pick a demo app (`trap`, `ui`, `clash` or `fusion`), edit the task if you like, and start.
 3. Watch five robots race. In 2 to 4 minutes the judge picks a winner, merges it and says why.
    Click a robot to see its code, or open **replay** to watch it again.
 4. Every race is in the **[gallery](https://thunderdome.wonbyte.dev/races)**, with a
@@ -122,7 +122,7 @@ Seed the demo apps once, then start a race:
 
 ```sh
 export THUNDERDOME=https://thunderdome.<your-subdomain>.workers.dev ADMIN_TOKEN=<your token>
-for app in bugs ui clash fusion; do
+for app in trap ui clash fusion; do
   curl -X POST $THUNDERDOME/spike/seed -H "authorization: Bearer $ADMIN_TOKEN" \
     -H "content-type: application/json" -d "{\"repo\":\"thunderdome-$app\",\"app\":\"$app\"}"
 done
@@ -131,7 +131,7 @@ done
 Open `$THUNDERDOME/play`, or run a demo race from the terminal and follow it to the verdict:
 
 ```sh
-THUNDERDOME_URL=$THUNDERDOME node scripts/race.mjs bugs   # or ui, clash, clash-full, fusion; AGENTS=5
+THUNDERDOME_URL=$THUNDERDOME node scripts/race.mjs trap   # or ui, clash, clash-full, fusion; AGENTS=5; HOTFIX=1 adds a mid-race push (fusion)
 ```
 
 Agents get at most 8 minutes and usually finish in 1 to 2; judging takes about a minute more.

@@ -2416,7 +2416,7 @@ function openShot(agent: string, kind: "desktop" | "phone", label: string): void
 }
 
 /** The demo apps /play accepts (mirrors TEMPLATES in playpage.ts and src/play/play.ts). */
-const PLAY_TEMPLATES: ReadonlySet<string> = new Set(["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
+const PLAY_TEMPLATES: ReadonlySet<string> = new Set(["thunderdome-trap", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
 
 /** "Run it again": the same demo app and task on /play, once the race is over. Only for the demo apps /play knows. */
 function renderRunAgain(b: Board): void {

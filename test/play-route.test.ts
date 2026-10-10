@@ -60,7 +60,7 @@ function play(body: unknown, ip?: string): Request {
   });
 }
 
-const good = { template: "thunderdome-bugs", prompt: "  Fix the failing tests please  " };
+const good = { template: "thunderdome-trap", prompt: "  Fix the failing tests please  " };
 
 describe("isPlayPath", () => {
   it("matches only the play paths", () => {
@@ -87,7 +87,7 @@ describe("play routes", () => {
     expect(PLAY_QUOTA_NAME).toBe("daily");
     expect(ok.quota.take).toHaveBeenCalledWith(utcDay(new Date()), "203.0.113.9", 10);
     expect(ok.roomByName).toHaveBeenCalledWith(body.id);
-    expect(ok.room.create).toHaveBeenCalledWith({ id: body.id, template: "thunderdome-bugs", prompt: "Fix the failing tests please", agents: 5 });
+    expect(ok.room.create).toHaveBeenCalledWith({ id: body.id, template: "thunderdome-trap", prompt: "Fix the failing tests please", agents: 5 });
     expect(ok.room.run).toHaveBeenCalledTimes(1);
     expect(ok.room.create.mock.invocationCallOrder[0]!).toBeLessThan(ok.room.run.mock.invocationCallOrder[0]!);
 

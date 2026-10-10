@@ -37,7 +37,7 @@ describe("sample app", () => {
 // Each demo app is a template for one demo task. Its failing tests are the task.
 describe("demo apps", () => {
   it("are all packed, each with a Worker entry and npm test", () => {
-    expect(Object.keys(DEMO_APPS).toSorted()).toEqual(["bugs", "clash", "fusion", "sample-app", "ui"]);
+    expect(Object.keys(DEMO_APPS).toSorted()).toEqual(["bugs", "clash", "fusion", "sample-app", "trap", "ui"]);
     for (const files of Object.values(DEMO_APPS)) {
       expect(files).toHaveProperty("src/index.ts");
       expect(JSON.parse(files["package.json"] ?? "{}").scripts.test).toBe("node --test test/*.test.ts");
@@ -73,6 +73,7 @@ describe("demo apps", () => {
       ],
     ],
     ["fusion", ["a product on sale shows its percent off", "sort=price lists the cheapest first, sale prices count"]],
+    ["trap", ["a $20 order pays shipping"]],
   ])("%s has exactly its task tests failing", (app, failing) => {
     expect(failingTests(app)).toEqual(failing);
   });

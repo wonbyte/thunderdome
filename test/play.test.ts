@@ -19,7 +19,7 @@ const prompt = "Fix the off-by-one bug in the list";
 
 describe("parsePlay", () => {
   it("X5: parsePlay accepts a demo template and trims the prompt; rejects other templates, short/long prompts and non-objects with 400; and a wrong or missing invite with 403 only when an invite is set", () => {
-    expect(PLAY_TEMPLATES).toEqual(["thunderdome-bugs", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
+    expect(PLAY_TEMPLATES).toEqual(["thunderdome-trap", "thunderdome-ui", "thunderdome-clash", "thunderdome-fusion"]);
     expect([PLAY_PROMPT_MIN, PLAY_PROMPT_MAX, PLAY_AGENTS, PLAY_PER_IP]).toEqual([10, 600, 5, 3]);
 
     for (const template of PLAY_TEMPLATES) {
@@ -29,19 +29,19 @@ describe("parsePlay", () => {
     expect(parsePlay({ template: "thunderdome-ui", prompt: ` ${"p".repeat(PLAY_PROMPT_MIN)} ` }, "")).toEqual({ template: "thunderdome-ui", prompt: "p".repeat(PLAY_PROMPT_MIN) });
     expect(parsePlay({ template: "thunderdome-ui", prompt: "p".repeat(PLAY_PROMPT_MAX) }, "")).toMatchObject({ prompt: "p".repeat(PLAY_PROMPT_MAX) });
     // An invite is ignored when none is set.
-    expect(parsePlay({ template: "thunderdome-bugs", prompt, invite: "anything" }, "")).toEqual({ template: "thunderdome-bugs", prompt });
+    expect(parsePlay({ template: "thunderdome-trap", prompt, invite: "anything" }, "")).toEqual({ template: "thunderdome-trap", prompt });
 
     const objectError = { error: "Body must be a JSON object", status: 400 };
     for (const body of [null, undefined, [], "text", 3]) expect(parsePlay(body, ""), JSON.stringify(body)).toEqual(objectError);
 
-    const templateError = { error: "template must be one of thunderdome-bugs, thunderdome-ui, thunderdome-clash, thunderdome-fusion", status: 400 };
+    const templateError = { error: "template must be one of thunderdome-trap, thunderdome-ui, thunderdome-clash, thunderdome-fusion", status: 400 };
     for (const template of ["thunderdome-sample", "", undefined, 1, "THUNDERDOME-BUGS"]) {
       expect(parsePlay({ template, prompt }, ""), String(template)).toEqual(templateError);
     }
 
     const promptError = { error: "prompt must be 10 to 600 characters", status: 400 };
     for (const bad of [undefined, 42, "short", `   ${"p".repeat(PLAY_PROMPT_MIN - 1)}   `, "p".repeat(PLAY_PROMPT_MAX + 1)]) {
-      expect(parsePlay({ template: "thunderdome-bugs", prompt: bad }, ""), String(bad)).toEqual(promptError);
+      expect(parsePlay({ template: "thunderdome-trap", prompt: bad }, ""), String(bad)).toEqual(promptError);
     }
 
     // With an invite set: the right one passes, a wrong or missing one is 403.

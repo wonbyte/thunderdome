@@ -46,7 +46,7 @@ public demo costs about $0.70 a day in agent spend.
 | Race watchdog | 12 minutes after the start, any agent that never reported back (its sandbox lost track, e.g. a deploy reset it) is ended as failed, so the judge still runs on what the forks hold | `src/room/task.ts`, `src/room/TaskRoom.ts` |
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
 | Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
-| Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
+| Demo apps on `/play` | `thunderdome-trap`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
 | Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork (files left unrun count for no fork); 20 minutes per fork step, 3 tries, then that fork gets no test points and cannot win, and the others are still judged | `src/judge/judge.ts` |
 | Look | waits for the preview of each agent's final commit until 90 s after the race ends (a retry does not wait again), and not for a build that failed a try; when the wait ends, a fork whose final preview never came is shown by its newest pushed head's preview; 30 s per page load, all pages at once; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Preview build | 80 s per try, 3 tries; a failed try is reported at once so the look stops waiting | `src/push/PushWorkflow.ts` |
@@ -92,7 +92,7 @@ per agent (3 to 5, default 3) and returns one write token per fork. Only this re
 curl -X POST $THUNDERDOME/tasks \
   -H "authorization: Bearer $ADMIN_TOKEN" \
   -H "content-type: application/json" \
-  -d '{"template":"thunderdome-bugs","prompt":"Fix every failing test","agents":3}'
+  -d '{"template":"thunderdome-trap","prompt":"Fix every failing test","agents":3}'
 
 curl $THUNDERDOME/tasks/<id>
 ```
@@ -227,7 +227,8 @@ one storage value.
 
 - `GET /tasks` is public. It returns `{ races }`, newest first, at most 50. Each race has its
   `id`, `prompt` (cut to 280 characters), `status`, times, `agents`, `winner` once judged, and
-  `clash` (two agents claimed the same file). Once judged it also has `scores` (`agent` and
+  `clash` (two agents claimed the same file and a shared claim cost some fork points; a clash
+  every fork needed costs nothing, so it is not flagged). Once judged it also has `scores` (`agent` and
   `total` per fork, in ranked order) and `decidedBy` (`"code"`, `"claims"` or `"close"`) for the
   leaderboard. Races judged before these fields have neither, and `decidedBy` is missing when
   there was no winner or no eligible runner-up. `judgedAt` (when the verdict was saved, after the
@@ -466,8 +467,12 @@ After a conflict, `ship.resolve` has `files` (what conflicted), `attempts` (per 
 `"green"`, `"red"`, `"unresolved"` or `"failed"`, `seconds`, `tests`, `commit`, `costUsd`, `note`),
 `chosen`, `kept` (the branches that keep the other attempts) and `error` when the race itself failed.
 
-To stage a conflict on the live deploy, `node --env-file=.env scripts/conflict.mjs` runs two races
-at once on one source repo; the one that ships second conflicts (about $1).
+To stage a conflict on the live deploy, `HOTFIX=1 node --env-file=.env scripts/race.mjs fusion`
+plays a teammate: at the first robot push (a minute at most) it pushes a one-line fix to the race's source repo, on
+the `saleBadge` line every robot replaces, so the winner's merge conflicts and the conflict race
+runs (about +$0.10–0.30 and +1 minute; it needs the `cf` login for a 10-minute write token, which
+goes only in git's env). On Oct 10 (`t-b62c6026`) Ponder and Testy resolved it 19/19 and Ponder's
+merge shipped. `scripts/conflict.mjs` does the same with two races on one source (about $1).
 
 To follow the judge while it runs, or to see each fork's scores:
 
@@ -561,7 +566,7 @@ Anyone can start a 5-robot race on a demo template, without `ADMIN_TOKEN`. A dai
 per UTC day, and at most 3 per IP.
 
 - `$THUNDERDOME/play` is the play form page (`public/play.html`). No auth.
-- `POST /play` with `{ template, prompt, invite? }`. `template` is one of `thunderdome-bugs`, `thunderdome-ui`,
+- `POST /play` with `{ template, prompt, invite? }`. `template` is one of `thunderdome-trap`, `thunderdome-ui`,
   `thunderdome-clash` or `thunderdome-fusion`, and `prompt` is 10 to 600 characters (trimmed). `invite` is needed only when
   `PLAY_INVITE` is set. It creates the task, starts it, and returns `202`
   `{ id, page: "/race/<id>", remaining }`. It never returns fork tokens. Errors: `400` for a bad
@@ -580,7 +585,7 @@ Two vars in `wrangler.jsonc` set it up:
 ```sh
 curl -X POST $THUNDERDOME/play \
   -H "content-type: application/json" \
-  -d '{"template":"thunderdome-bugs","prompt":"Fix the failing tests"}'
+  -d '{"template":"thunderdome-trap","prompt":"Fix the failing tests"}'
 
 curl $THUNDERDOME/play/quota
 ```

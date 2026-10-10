@@ -72,7 +72,11 @@ function card(r: RaceSummary): HTMLElement {
   const top = el("div", "race-top");
   const state = ended ? (r.winner === null ? "no winner" : "finished") : r.status === "running" ? "live" : r.status;
   top.append(el("span", `pill state-${state.replace(" ", "-")}`, state));
-  if (r.clash === true) top.append(el("span", "pill clash", "clash"));
+  if (r.clash === true) {
+    const pill = el("span", "pill clash", "clash");
+    pill.title = "a shared claim cost a robot points";
+    top.append(pill);
+  }
   if (r.decidedBy !== undefined) top.append(el("span", `pill decided-${r.decidedBy}`, decidedLabel(r.decidedBy)));
   if ((r.fused?.length ?? 0) > 0) top.append(el("span", "pill fused", "⚡ fused"));
   const team = teamPill(r.team);

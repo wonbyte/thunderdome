@@ -218,6 +218,14 @@ measured times, a push trace, slow-step notes and the viewer's round trip (X5–
 
 ## Video shot list (Oct 12–13)
 
+Three races, recorded ahead (5 robots each, `AGENTS=5`):
+
+- **Hero: `fusion`.** Shots 1–10 below: split spotted, fusion kept, Clef's side-by-side close call, look judged.
+- **Trap: `trap`.** For the Tests tab: "Who passes whose tests" with red cells where the quick fork
+  fails the careful robots' test files, and a clear winner (scores spread, not a photo finish).
+- **Hotfix: `HOTFIX=1 scripts/race.mjs fusion`.** For the conflict race: the teammate's push at
+  the first robot push, the merge conflict, three resolvers, the feed line "… won the conflict race".
+
 1. `/play`: pick "Four parts, one fusion", start.
 2. The stage with the explainer open; the guess; the rail moving to Race.
 3. The meter climbing on a nameplate; the map with five pins (#3, #4).
@@ -228,3 +236,5 @@ measured times, a push trace, slow-step notes and the viewer's round trip (X5–
 8. The timeline (#5); the Cloudflare bill line.
 9. The gallery card; a shared link's preview; a `?t=` moment link.
 10. The architecture, 30 seconds, over `docs/reference.md`.
+11. Trap race: the Tests tab, the red cells in "Who passes whose tests", the score gap on the leaderboard.
+12. Hotfix race: the teammate's commit on the source, the conflict race, the merged resolution.

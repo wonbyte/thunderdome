@@ -1,5 +1,6 @@
-// The race gallery: one short summary per task, newest first. Pure, with type-only imports,
+// The race gallery: one short summary per task, newest first. Pure (its imports are pure too),
 // so it never pulls in cloudflare:workers and the tests run it in plain Node.
+import { WEIGHTS } from "../judge/score";
 import type { DecidedBy } from "../judge/why";
 import type { Claim } from "./claims";
 import type { Task, TaskStatus } from "./task";
@@ -50,7 +51,7 @@ export interface RaceSummary {
   fused?: string[]; // agents whose files the fusion round added and the winner merged: the race's assists
   losing?: Record<string, number>; // shipped lines by each robot that lost (git blame of the merge); only races with blame
   team?: number; // fused score minus the winner's alone, 1 decimal, when a scored fusion shipped
-  clash: boolean;
+  clash: boolean; // a shared claim cost some fork points, not just two agents on one file
   reposGone?: boolean; // retention deleted the race's repos (commits can no longer be read)
 }
 
@@ -90,8 +91,16 @@ export function summaryOf(task: Task, history: Claim[]): RaceSummary {
     ...fusedOf(task),
     ...losingOf(task),
     ...teamOf(task),
-    clash: hasClash(history),
+    clash: hasClash(history) && clashCost(v),
   };
+}
+
+/**
+ * True when some fork lost the shared-claim points: its claim part is between none (an unclaimed
+ * file) and full. Every race has a clash on the entry file; only one that cost points is news.
+ */
+function clashCost(v: Task["verdict"]): boolean {
+  return v?.scores?.some((s) => s.parts.claim > 0 && s.parts.claim < WEIGHTS.claim) ?? false;
 }
 
 /** `{ losing }`: lines in the merge written by robots that lost, from the ship's blame; else nothing. */

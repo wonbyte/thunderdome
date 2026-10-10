@@ -6,20 +6,30 @@ as often as you like: a task with `template` forks it into a fresh source repo f
 merge never changes the template.
 
 ```sh
-curl -X POST $THUNDERDOME/spike/seed -H "authorization: Bearer $ADMIN_TOKEN" -d '{"repo":"thunderdome-bugs","app":"bugs"}'
-curl -X POST $THUNDERDOME/tasks -H "authorization: Bearer $ADMIN_TOKEN" -d '{"template":"thunderdome-bugs","prompt":"...","agents":3}'
+curl -X POST $THUNDERDOME/spike/seed -H "authorization: Bearer $ADMIN_TOKEN" -d '{"repo":"thunderdome-trap","app":"trap"}'
+curl -X POST $THUNDERDOME/tasks -H "authorization: Bearer $ADMIN_TOKEN" -d '{"template":"thunderdome-trap","prompt":"...","agents":3}'
 ```
 
 | App | Template repo | What it shows |
 | --- | --- | --- |
 | `sample-app` | `thunderdome-sample`, `thunderdome-template` | The first sample: 2 one-line bugs in 1 file. |
-| `bugs` | `thunderdome-bugs` | Bug fix: 6 failing tests, 5 bugs in 4 files. The home page is a 500 until the slug bug is fixed, so the previews change. |
+| `bugs` | `thunderdome-bugs` | Bug fix: 6 failing tests, 5 bugs in 4 files. The home page is a 500 until the slug bug is fixed, so the previews change. Off `/play` since Oct 10: every robot wrote the same fix. |
+| `trap` | `thunderdome-trap` | Trap: one failing test (small orders ship free) whose quick fix (the threshold in dollars, not cents) passes it, while two rules in the comment atop `src/checkout.ts` stay broken: free shipping counts after the discount, and an empty cart costs $0.00. Careful robots test those rules; the quick fork fails their test files, so "Who passes whose tests" has red cells and the scores spread. |
 | `ui` | `thunderdome-ui` | Visible UI change: the tests pin down a sale badge and a price sort, the look is up to each agent, so the previews differ. |
 | `clash` | `thunderdome-clash` | Claim clash: a reviews feature that every agent must route through `src/routes.ts`. |
 | | | `clash-full` is the same app with a bigger prompt: the tests cover only the GET API and the stars on the page, so the POST API, the quoted review and the "Top rated" badge are left to each agent. The fixes differ, and task fit decides more than claim order. |
 | `fusion` | `thunderdome-fusion` | Fusion: four parts in four functions of `src/shop.ts`, far apart, with failing tests for two. The prompt splits the two untested parts by robot (Zippy and Snip build part 4, the rest part 3), so whoever wins, a robot on the other part has a hunk in a function the winner never touched, and the fusion round can add a loser's hunk (say, the cart line) to the winner's fix. |
 
+`HOTFIX=1 node --env-file=.env scripts/race.mjs fusion` adds a teammate's hotfix mid-race: at
+the first robot push, it pushes a commit to the race's source that changes the `saleBadge` line every robot
+replaces, so the winner's merge conflicts and three resolvers race to fix it (`ship.resolve`).
+
 ## Prompts
+
+**trap**
+
+> Small orders ship free, and they should not: a test shows it. Checkout must follow the rules at
+> the top of `src/checkout.ts`. Do not change the existing tests.
 
 **bugs**
 

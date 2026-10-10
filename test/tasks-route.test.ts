@@ -138,7 +138,10 @@ describe("POST /admin/races", () => {
     new Request("https://thunderdome.test/admin/races", { method: "POST", body: typeof body === "string" ? body : JSON.stringify(body) });
 
   function backfillEnv() {
-    const task: Task = { ...readyTask({ id: known, repo: "thunderdome-sample", prompt: "p", agents: 3 }), status: "running", startedAt: "2026-10-05T00:01:00.000Z" };
+    // zippy lost the shared-claim points, so the clash on src/text.ts shows on the summary.
+    const scores = [{ agent: "zippy", total: 88, eligible: true, parts: { tests: 50, taskFit: 20, clarity: 10, claim: 8 } }];
+    const verdict = { winner: "zippy", why: "w", judgedAt: "2026-10-05T00:09:00.000Z", ship: { status: "merged" as const, winner: "zippy", locks: [] }, scores };
+    const task: Task = { ...readyTask({ id: known, repo: "thunderdome-sample", prompt: "p", agents: 3 }), status: "finished", startedAt: "2026-10-05T00:01:00.000Z", verdict };
     const board = emptyBoard();
     claimFiles(board, "ponder", ["src/text.ts"], false, "now");
     claimFiles(board, "zippy", ["src/text.ts"], false, "now");

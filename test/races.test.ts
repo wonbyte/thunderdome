@@ -29,7 +29,7 @@ function race(id: string, createdAt: string, prompt = "p"): RaceSummary {
 }
 
 describe("summaryOf", () => {
-  it("L1: summaryOf copies the task fields, agent names and winner (only when there is a verdict), and sets clash from the claim history", () => {
+  it("L1: summaryOf copies the task fields, agent names and winner (only when there is a verdict), and sets clash", () => {
     const plain = summaryOf(baseTask(), []);
     expect(plain).toEqual({
       id: "t-0123abcd",
@@ -64,7 +64,7 @@ describe("summaryOf", () => {
       agents: ["ponder", "zippy", "snip"],
       winner: "zippy",
       judgedAt: "2025-01-01T00:31:00.000Z",
-      clash: true,
+      clash: false, // two agents on a.ts, but no score lost points for it
     });
     for (const key of ["error", "verdict", "basePreview", "headline", "commit"]) expect(Object.hasOwn(summary, key), key).toBe(false);
 
@@ -74,9 +74,29 @@ describe("summaryOf", () => {
     expect(Object.hasOwn(none, "winner")).toBe(true);
     expect(none.winner).toBeNull();
 
+  });
+
+  it("L12: clash is true only when two agents claimed one file and some fork lost the shared-claim points", () => {
+    const scored = (claimPart: number): Task => ({
+      ...baseTask(),
+      verdict: {
+        winner: "zippy",
+        why: "best",
+        judgedAt: "x",
+        ship: { status: "merged", winner: "zippy", locks: [] },
+        scores: [
+          { agent: "zippy", total: 90, eligible: true, parts: { tests: 50, taskFit: 20, clarity: 10, claim: 10 } },
+          { agent: "snip", total: 80, eligible: true, parts: { tests: 45, taskFit: 15, clarity: 10, claim: claimPart } },
+        ],
+      },
+    });
+    const clashed = [claim("ponder", "a.ts"), claim("zippy", "b.ts"), claim("snip", "b.ts")];
+    expect(summaryOf(scored(8), clashed).clash).toBe(true);
+    // A clash that cost nothing, or a claim penalty for an unclaimed file (0 points), is not news.
+    expect(summaryOf(scored(10), clashed).clash).toBe(false);
+    expect(summaryOf(scored(0), clashed).clash).toBe(false);
     // One agent claiming the same file twice, or agents on different files, is not a clash.
-    expect(summaryOf(baseTask(), [claim("ponder", "a.ts"), claim("ponder", "a.ts"), claim("zippy", "b.ts")]).clash).toBe(false);
-    expect(summaryOf(baseTask(), [claim("ponder", "a.ts"), claim("zippy", "b.ts"), claim("snip", "b.ts")]).clash).toBe(true);
+    expect(summaryOf(scored(8), [claim("ponder", "a.ts"), claim("ponder", "a.ts"), claim("zippy", "b.ts")]).clash).toBe(false);
   });
 
   it("X3: summaryOf copies scores (agent and total, ranked order) and decidedBy only when the verdict has them", () => {
