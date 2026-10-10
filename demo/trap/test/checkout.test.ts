@@ -1,3 +1,4 @@
+// The shop's rules for checkout are in README.md; these tests cover some of them.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 

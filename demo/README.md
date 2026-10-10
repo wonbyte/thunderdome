@@ -14,7 +14,7 @@ curl -X POST $THUNDERDOME/tasks -H "authorization: Bearer $ADMIN_TOKEN" -d '{"te
 | --- | --- | --- |
 | `sample-app` | `thunderdome-sample`, `thunderdome-template` | The first sample: 2 one-line bugs in 1 file. |
 | `bugs` | `thunderdome-bugs` | Bug fix: 6 failing tests, 5 bugs in 4 files. The home page is a 500 until the slug bug is fixed, so the previews change. Off `/play` since Oct 10: every robot wrote the same fix. |
-| `trap` | `thunderdome-trap` | Trap: one failing test (small orders ship free) whose quick fix (the threshold in dollars, not cents) passes it, while two rules in the comment atop `src/checkout.ts` stay broken: free shipping counts after the discount, and an empty cart costs $0.00. Careful robots test those rules; the quick fork fails their test files, so "Who passes whose tests" has red cells and the scores spread. |
+| `trap` | `thunderdome-trap` | Trap: one failing test (small orders ship free) whose quick fix (the threshold in dollars, not cents) passes it, while two shop rules in its README stay broken: free shipping counts after the discount, and an empty cart costs $0.00. On Oct 10 every robot found and fixed both in all 4 races (rules in the code comment or the README, Zippy capped at 6 turns or not), so the scores stayed close; it is a plain bug-fix demo, not a spread. |
 | `ui` | `thunderdome-ui` | Visible UI change: the tests pin down a sale badge and a price sort, the look is up to each agent, so the previews differ. |
 | `clash` | `thunderdome-clash` | Claim clash: a reviews feature that every agent must route through `src/routes.ts`. |
 | | | `clash-full` is the same app with a bigger prompt: the tests cover only the GET API and the stars on the page, so the POST API, the quoted review and the "Top rated" badge are left to each agent. The fixes differ, and task fit decides more than claim order. |
@@ -28,8 +28,8 @@ replaces, so the winner's merge conflicts and three resolvers race to fix it (`s
 
 **trap**
 
-> Small orders ship free, and they should not: a test shows it. Checkout must follow the rules at
-> the top of `src/checkout.ts`. Do not change the existing tests.
+> Small orders ship free, and they should not: a test shows it. Fix the checkout. Do not change
+> the existing tests.
 
 **bugs**
 

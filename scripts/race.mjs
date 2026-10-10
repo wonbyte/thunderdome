@@ -1,5 +1,5 @@
 // Live race check: node --env-file=.env scripts/race.mjs <prompt>   (trap, ui, clash, clash-full, fusion; prompts in demo/README.md)
-// AGENTS=5 races 5 robots instead of 3.
+// AGENTS=5 races 5 robots instead of 3. TEMPLATE=<repo> races another template repo with the same prompt (to try a demo change).
 // HOTFIX=1 plays a teammate: at the first robot push (a minute at most) it pushes a small fix to the race's source repo on a line the robots
 // must edit (see HOTFIXES), so the winner's merge conflicts and the conflict race runs. Needs the `cf` login; +$0.10–0.30.
 // Creates a task from template thunderdome-<app> (the prompt name up to its first "-") with the prompt in demo/README.md, watches
@@ -37,7 +37,7 @@ const short = (e) => JSON.stringify(e, (k, v) => (k === "why" || k === "text" ||
 const created = await (await fetch(`${B}/tasks`, {
   method: "POST",
   headers: { ...auth, "content-type": "application/json" },
-  body: JSON.stringify({ template: `thunderdome-${app.split("-")[0]}`, prompt, agents: Number(process.env.AGENTS ?? 3) }),
+  body: JSON.stringify({ template: process.env.TEMPLATE ?? `thunderdome-${app.split("-")[0]}`, prompt, agents: Number(process.env.AGENTS ?? 3) }),
 })).json();
 const id = created.id;
 console.log(at(), "task", id, created.status, "source", created.repo, created.error ?? "");
