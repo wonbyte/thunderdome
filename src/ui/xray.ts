@@ -130,7 +130,10 @@ export function route(c: XrayCircuit, path: readonly string[]): [number, number]
     const back = forward === undefined ? c.edges.find((e) => e.from === b && e.to === a) : undefined;
     const leg = forward?.points ?? back?.points.toReversed();
     if (leg === undefined) return undefined;
-    points.push(...(points.length === 0 ? leg : leg.slice(1)));
+    // Wires meet a box on different sides: pass through its center, then take the next wire from its start.
+    const via = c.nodes.find((n) => n.id === a);
+    if (points.length > 0 && via !== undefined) points.push([via.x + via.w / 2, via.y + via.h / 2]);
+    points.push(...leg);
   }
   return points.length === 0 ? undefined : points;
 }

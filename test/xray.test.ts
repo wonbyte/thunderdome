@@ -141,6 +141,14 @@ describe("xray", () => {
     expect(traceLine(end, T0)).toBe("Ponder's push p30, recorded 30.0 s into the race: sandbox → Artifacts → Event Subscriptions → Push Workflow → build container → Workers Preview, live 10.0 s after the push was recorded. The hops between are not timed one by one.");
   });
 
+  it("X9: a packet changing wires passes through the box's center and keeps every point of each wire", () => {
+    const c = circuit(agents);
+    const wire = (from: string, to: string) => c.edges.find((e) => e.from === from && e.to === to)!.points;
+    const artifacts = c.nodes.find((n) => n.id === "artifacts")!;
+    // A push enters Artifacts on its left and leaves from its top: no diagonal across the box.
+    expect(route(c, ["sandbox:ponder", "artifacts", "events"])).toEqual([...wire("sandbox:ponder", "artifacts"), [artifacts.x + artifacts.w / 2, artifacts.y + artifacts.h / 2], ...wire("artifacts", "events")]);
+  });
+
   it("X4: a wire walked backwards is the same polyline reversed", () => {
     const c = circuit(agents);
     expect(route(c, ["sandbox:zippy", "room"])).toEqual(route(c, ["room", "sandbox:zippy"])?.toReversed());
