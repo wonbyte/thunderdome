@@ -81,6 +81,21 @@ describe("cross tests", () => {
     expect(results?.every((r) => r.passed === 0 && r.total === 0)).toBe(true);
   });
 
+  it("T10: a file run that throws gets one more try, then counts as 0 of 0, and the other files still run", async () => {
+    let baseTries = 0;
+    const deps = clone({
+      timeout: (argv) => {
+        const file = argv.at(-1) ?? "";
+        if (file.includes("mine")) throw new Error("output too large");
+        if (file.includes("from-base") && ++baseTries === 1) throw new Error("sandbox hiccup");
+        return summary(2, 2);
+      },
+    });
+    const results = await runCrossTests(deps, "ponder", "base1", [{ agent: "zippy", remote: "r", branch: "main" }]);
+    expect(results?.map((r) => [r.author, r.passed, r.total])).toEqual([["base", 2, 2], ["ponder", 0, 0], ["zippy", 2, 2]]);
+    expect(baseTries).toBe(2);
+  });
+
   it("T4: helpers: node test files, the npm test check and the copied path", () => {
     expect(isNodeTestFile("test/a.test.ts")).toBe(true);
     expect(isNodeTestFile("test/helpers.ts")).toBe(false);

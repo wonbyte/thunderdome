@@ -138,8 +138,24 @@ h1.prompt { font-weight: 400; }
 .mem-task { margin: 0; font-size: 12.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
 .mem-lesson { margin: 2px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--text); }
 .mem-lesson::before { content: "✦ "; color: var(--color); }
-.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+/* Each card keeps its own height: a short claim board does not stretch into an empty box beside a long feed. */
+.cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
 .thunderdome > * { min-width: 0; }
+
+/* ---------- tabs: one pane of details at a time under the stage ---------- */
+/* Tabs wrap rather than scroll, so on a phone every tab, the open one too, stays in sight. */
+.tabs {
+  display: flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 20px; background: var(--panel-2); border: 1px solid var(--line);
+  justify-self: start; max-width: 100%;
+}
+.tabs button {
+  flex: none; padding: 7px 14px; border: 0; border-radius: 999px; background: none; color: var(--dim);
+  font: 700 13px var(--sans); white-space: nowrap; cursor: pointer; transition: background .2s, color .2s;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected="true"] { background: var(--accent); color: #0b0d14; }
+.tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.pane { display: grid; gap: 16px; min-width: 0; }
 .empty { margin: 0; color: var(--faint); }
 
 /* ---------- stage ---------- */
@@ -600,7 +616,7 @@ h1.prompt { font-weight: 400; }
   /* Five bubbles do not fit side by side; once the race ends the banner says it all. */
   .stage[data-state="ended"] .bubble { display: none; }
   .stage:has(.bot:nth-child(4 of .bot)) .bubble:not(.newest) { visibility: hidden; }
-  details.card > summary { flex-direction: column; }
+  .panel-head { flex-direction: column; }
   .score-row .fit-spark { display: none; }
   .stage .judge-steps { top: 74px; width: calc(100% - 32px); } /* the ticker is hidden here */
   .score-row .tag { grid-column: 1 / -1; justify-self: start; }
@@ -828,7 +844,6 @@ h1.prompt { font-weight: 400; }
 }
 
 /* ---- git graph ---- */
-.graph-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
 .graph { overflow-x: auto; scrollbar-width: thin; }
 .graph-svg { display: block; width: 100%; min-width: 560px; height: auto; font: 600 13px var(--sans); }
 .main-line { stroke: #3a4157; stroke-width: 3; stroke-linecap: round; }
@@ -1001,8 +1016,6 @@ h1.prompt { font-weight: 400; }
 
 /* ---------- the fusion round panel ---------- */
 .fusion-panel { border-color: color-mix(in srgb, var(--fuse) 35%, var(--line)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--fuse) 10%, transparent), 0 0 40px color-mix(in srgb, var(--fuse) 8%, transparent); }
-.fusion-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.fusion-head h2 { margin-bottom: 8px; }
 .fuse-bolt { display: inline-block; filter: drop-shadow(0 0 6px var(--fuse)); }
 .fusion-result { margin: 4px 0 14px; font-size: 14px; color: var(--dim); }
 .fusion-score { margin: 6px 0 12px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--fuse) 35%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--fuse) 6%, var(--panel-2)); }
@@ -1018,7 +1031,7 @@ h1.prompt { font-weight: 400; }
 .fuse-bar.after .track i { background: var(--fuse); box-shadow: 0 0 10px color-mix(in srgb, var(--fuse) 60%, transparent); }
 .fusion-score.lower .fuse-bar.after .track i { background: var(--faint); box-shadow: none; }
 .fuse-bar .total { color: var(--text); }
-.fuse-bar .tests { color: var(--faint); font-weight: 600; }
+.fuse-bar .tests { color: var(--dim); font-weight: 600; } /* --faint is 4.25:1 on this card */
 @keyframes fuse-grow { from { transform: scaleX(0); } }
 .hunk-tag { font: 800 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--fuse); border: 1px solid color-mix(in srgb, var(--fuse) 45%, transparent); border-radius: 99px; padding: 2px 7px; align-self: center; }
 .fusion-result.kept { color: var(--text); }
@@ -1260,7 +1273,7 @@ h1.prompt { font-weight: 400; }
 .phase:not(:disabled):hover { border-color: var(--cyan); }
 @keyframes phase-glow { 50% { box-shadow: 0 0 0 1px #ffd23f55, 0 0 26px #ffd23f55; } }
 /* Panels a phase scrolls to clear the sticky rail. */
-.stage, .card { scroll-margin-top: 64px; }
+.stage, .card, .tabs { scroll-margin-top: 64px; }
 @media (max-width: 640px) {
   .rail { margin: -4px -6px 12px; padding: 6px; }
   .rail ol { gap: 3px; }
@@ -1403,16 +1416,11 @@ body.explaining .caption { display: block; }
 .map-panel .hint { margin-top: 12px; }
 
 /* ---- timeline: a Gantt of what ran, one color per product ---- */
-/* Under the hood: each card folds to its title line. */
-.hood-title { margin: 12px 0 0; font-size: 13px; color: var(--text); }
-details.card > summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; cursor: pointer; list-style: none; }
-details.card > summary::-webkit-details-marker { display: none; }
-details.card > summary h2 { margin-bottom: 0; }
-details.card[open] > summary { margin-bottom: 12px; }
-details.card > summary h2::before { content: "▸ "; }
-details.card[open] > summary h2::before { content: "▾ "; }
-/* Title colors: orange for the Cloudflare machinery under the hood, grey for the race's story. */
-details.card > summary h2 { color: #f6821f; }
+/* A panel's title line, with its count on the right. */
+.panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.panel-head h2 { margin-bottom: 0; }
+/* Title colors: orange for the Cloudflare machinery, grey for the race's story. */
+.panel-head h2 { color: #f6821f; }
 .gantt { --label-w: 180px; margin-bottom: 14px; }
 [data-product="containers"] { --product: var(--cyan); }
 [data-product="previews"] { --product: var(--green); }
@@ -1439,7 +1447,7 @@ details.card > summary h2 { color: #f6821f; }
 .gantt-marks:empty { display: none; }
 .gantt-cursor { position: absolute; top: 16px; bottom: 0; left: var(--cursor); border-left: 2px solid var(--text); }
 @media (max-width: 640px) { .gantt { --label-w: 96px; } .gantt-tick:nth-child(2), .gantt-tick:nth-child(4) { display: none; } }
-.gantt-panel summary .count-pill { white-space: nowrap; }
+.gantt-panel .panel-head .count-pill { white-space: nowrap; }
 
 /* ---------- X-ray mode: the products behind the race, lit by the same events ---------- */
 .xray-toggle { position: absolute; top: 14px; right: 14px; z-index: 7; cursor: pointer; font-family: inherit; }

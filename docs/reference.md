@@ -46,7 +46,7 @@ public demo costs about $0.70 a day in agent spend.
 | Prompt | 10,000 characters (`/play`: 10 to 600) | `src/room/task.ts`, `src/play/play.ts` |
 | Public races (`/play`) | 10 per UTC day, 3 per IP | `PLAY_DAILY_LIMIT`, `src/play/play.ts` |
 | Demo apps on `/play` | `thunderdome-bugs`, `thunderdome-ui`, `thunderdome-clash`, `thunderdome-fusion` | `src/play/play.ts` |
-| Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork (files left unrun count for no fork); 20 minutes per fork step | `src/judge/judge.ts` |
+| Judge test run | 240 s per try, 3 tries; shared suite 30 s per file, 40 files, 4 minutes per fork (files left unrun count for no fork); 20 minutes per fork step, 3 tries, then that fork gets no test points and cannot win, and the others are still judged | `src/judge/judge.ts` |
 | Look | waits for the preview of each agent's final commit until 90 s after the race ends (a retry does not wait again), and not for a build that failed a try; when the wait ends, a fork whose final preview never came is shown by its newest pushed head's preview; 30 s per page load, all pages at once; 8 minutes in all, then judged without look | `src/judge/look.ts`, `src/judge/JudgeWorkflow.ts` |
 | Preview build | 80 s per try, 3 tries; a failed try is reported at once so the look stops waiting | `src/push/PushWorkflow.ts` |
 | Conflict race | 3 resolvers, 5 minutes each, tests 180 s; 20 minutes for the whole ship step | `src/ship/resolve.ts`, `src/judge/JudgeWorkflow.ts` |
@@ -173,13 +173,22 @@ There is no packet loss or DNS data: everything runs inside Cloudflare through b
 platform does not expose either. Desktop only: on a
 phone the labels would be too small to read.
 
-The page reads top to bottom: the task (its race memory folded), the stage with a verdict banner
-at the end, Cheer and "Who wins?" while live, then Result (score bars, an expandable why, Run it
-again), Previews (the base "before" next to each robot's newest preview; on phones one robot at a
-time, picked from a row of robot buttons; once judged, each tile adds what Clef saw: its answers and its two shots), and Before → after.
+The page shows the task (its race memory folded) and the stage with a verdict banner at the end.
 Right under the stage, a card holds the race's Cloudflare bill and, with X-ray on, its trace,
-notes and connection. Below, "Under the hood" has folded panels: timeline, map, git graph, claims
-(clashes in red), live feed, who passes whose tests, who wrote main, and the fusion round.
+notes and connection; Cheer and "Who wins?" follow while live. Below, tabs show one pane at a
+time, so the page does not scroll through every panel:
+- **Result:** score bars, an expandable why, Run it again.
+- **Previews:** the base "before" next to each robot's newest preview (on phones one robot at a time,
+  picked from a row of robot buttons; once judged, each tile adds what Clef saw: its answers and its
+  two shots), and Before → after.
+- **Timeline:** what ran when, and where the robots ran.
+- **Git:** the git graph.
+- **Claims & feed:** the claim board (clashes in red) and the live feed.
+- **Tests:** who passes whose tests.
+- **Fusion:** who wrote main and the fusion round.
+
+A tab shows once its pane has something. Until the viewer picks a tab, the result opens once there
+is one, else the claims and feed; the phase rail's steps open their tab too.
 
 For a raw feed, any WebSocket client works:
 

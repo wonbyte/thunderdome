@@ -51,9 +51,17 @@ async function out(deps: CrossDeps, argv: string[]): Promise<string> {
   return result.stdout;
 }
 
-/** Runs one test file; no summary (it would not load, or hung) counts as 0 of 0. */
+/**
+ * Runs one test file; no summary (it would not load, or hung) counts as 0 of 0. A run that throws
+ * (a sandbox hiccup, or a robot's file whose output the sandbox cannot return) gets one more try,
+ * then also counts as 0 of 0: one file must not switch the shared suite off for every fork.
+ */
 async function runFile(deps: CrossDeps, path: string): Promise<{ passed: number; total: number }> {
-  const result = await deps.exec(asTester(["node", "--test", path], CROSS_TEST_TIMEOUT_S));
+  const run = (): Promise<{ exitCode: number; stdout: string; stderr: string }> => deps.exec(asTester(["node", "--test", path], CROSS_TEST_TIMEOUT_S));
+  const result = await run()
+    .catch(run)
+    .catch(() => undefined);
+  if (result === undefined) return { passed: 0, total: 0 };
   return parseTestSummary(`${result.stdout}\n${result.stderr}`) ?? { passed: 0, total: 0 };
 }
 

@@ -269,11 +269,7 @@ function main(): void {
       if (xrayOn) renderXrayBusy(board);
     }
   }, 250);
-  // A closed panel has no width, so the graph scrolls to its newest pushes when opened.
-  byId("graph-panel").addEventListener("toggle", () => {
-    const box = byId("graph");
-    box.scrollLeft = box.scrollWidth;
-  });
+  setupTabs();
   window.addEventListener("resize", () => {
     if (board !== undefined) drawBeams(board);
   });
@@ -768,6 +764,8 @@ function stopReveal(): void {
   byId("result-panel").classList.remove("revealing");
   if (revealFrame !== undefined) cancelAnimationFrame(revealFrame);
   revealFrame = undefined;
+  // The tabs watch `hidden`, not classes: the result's tab shows now.
+  refreshTabs();
 }
 
 /** 0..1 per part at `elapsed` ms into the reveal; all 1 when no reveal runs. */
@@ -794,6 +792,7 @@ function revealTick(): void {
     stage.classList.remove("revealing");
     stage.classList.add("revealed");
     byId("result-panel").classList.remove("revealing");
+    refreshTabs();
     // Started before the render, so the assist tags wait for the act.
     playFusionAct(board);
     render(board);
@@ -888,9 +887,84 @@ function phaseTarget(phase: Phase): HTMLElement | undefined {
   return id === undefined ? undefined : byId(id);
 }
 
+/** A panel in a tab opens that tab and brings the tab bar into view; any other panel scrolls into view. */
 function scrollToPanel(target: HTMLElement): void {
-  if (target instanceof HTMLDetailsElement) target.open = true;
-  target.scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+  const pane = target.closest<HTMLElement>(".pane");
+  if (pane !== null) showPane(pane.dataset.pane ?? "");
+  (pane === null ? target : byId("tabs")).scrollIntoView({ behavior: reducedMotion() ? "auto" : "smooth", block: "start" });
+}
+
+// ---- tabs ----
+
+function tabButtons(): HTMLButtonElement[] {
+  return Array.from(byId("tabs").querySelectorAll<HTMLButtonElement>("button[role=tab]"));
+}
+
+/** Shows one pane and selects its tab. */
+function showPane(name: string): void {
+  for (const tab of tabButtons()) {
+    const on = tab.dataset.pane === name;
+    tab.setAttribute("aria-selected", String(on));
+    tab.tabIndex = on ? 0 : -1;
+    byId(`pane-${tab.dataset.pane ?? ""}`).hidden = !on;
+  }
+  // A hidden graph has no width, so it scrolls to its newest pushes once shown.
+  if (name === "git") {
+    const box = byId("graph");
+    box.scrollLeft = box.scrollWidth;
+  }
+}
+
+/** True once the viewer picked a tab (a tab, an arrow key or the rail); until then the page picks. */
+let tabChosen = false;
+
+/**
+ * A tab shows once its pane has a panel to show. Until the viewer picks, the result opens once
+ * there is one; before that an open tab (the feed, or one the follow-along opened) stays. A tab
+ * that empties gives way to the result, else the feed.
+ */
+function refreshTabs(): void {
+  const tabs = tabButtons();
+  for (const tab of tabs) {
+    const panels = Array.from(byId(`pane-${tab.dataset.pane ?? ""}`).children) as HTMLElement[];
+    // A result held back for the reveal on the stage shows nothing yet (.result.revealing).
+    tab.hidden = panels.every((panel) => panel.hidden || panel.classList.contains("revealing"));
+  }
+  const open = tabs.find((tab) => tab.getAttribute("aria-selected") === "true");
+  const best = byId("tab-result").hidden ? "feed" : "result";
+  // Focus inside the open pane (a keyboard reader in the feed) keeps it open too.
+  const focused = open !== undefined && byId(`pane-${open.dataset.pane ?? ""}`).contains(document.activeElement);
+  if (open !== undefined && !open.hidden && (tabChosen || focused || best === "feed" || open.dataset.pane === best)) return;
+  showPane(best);
+}
+
+/** The viewer's pick: it stays until its pane empties. */
+function chooseTab(name: string): void {
+  tabChosen = true;
+  showPane(name);
+}
+
+function setupTabs(): void {
+  for (const tab of tabButtons()) tab.addEventListener("click", () => chooseTab(tab.dataset.pane ?? ""));
+  // Arrow keys, Home and End move between the tabs that show, as a tablist should. Alt or Cmd
+  // with an arrow stays the browser's back and forward.
+  byId("tabs").addEventListener("keydown", (event) => {
+    const shown = tabButtons().filter((tab) => !tab.hidden);
+    const at = shown.findIndex((tab) => tab === document.activeElement);
+    if (at < 0 || event.altKey || event.metaKey) return;
+    const moves: Record<string, number> = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: shown.length - 1 };
+    const to = moves[event.key];
+    if (to === undefined) return;
+    event.preventDefault();
+    const next = shown[(to + shown.length) % shown.length];
+    if (next === undefined) return;
+    next.focus();
+    chooseTab(next.dataset.pane ?? "");
+  });
+  // Panels show and hide as the race goes; the tabs follow them.
+  const watch = new MutationObserver(refreshTabs);
+  for (const tab of tabButtons()) watch.observe(byId(`pane-${tab.dataset.pane ?? ""}`), { subtree: true, attributeFilter: ["hidden"] });
+  refreshTabs();
 }
 
 /** A click on the rail: in a replay, jump to the phase's start; then show its panel. */
@@ -903,6 +977,8 @@ function goToPhase(phase: Phase): void {
   scrollWanted = undefined;
   const target = phaseTarget(phase);
   if (target === undefined) return window.scrollTo({ top: 0, behavior: reducedMotion() ? "auto" : "smooth" });
+  // A rail click is the viewer's pick; the follow-along's own opens are not.
+  if (!target.hidden && target.closest(".pane") !== null) tabChosen = true;
   scrollToPanel(target.hidden ? byId("stage") : target);
 }
 
@@ -946,6 +1022,8 @@ function flushScroll(): void {
   // The result waits for the reveal on the stage to finish.
   if (target === undefined || target.hidden || target.classList.contains("revealing")) return;
   scrollWanted = undefined;
+  // A tab the viewer picked stays: the follow-along does not switch it.
+  if (tabChosen && target.closest(".pane") !== null) return;
   scrollToPanel(target);
 }
 
@@ -2211,7 +2289,8 @@ function renderWipe(b: Board): void {
   const box = byId("wipe-panel");
   const revealing = revealArmed || revealStart !== undefined;
   const ready = b.ended && !revealing && before !== undefined && after !== undefined && winner !== undefined;
-  box.hidden = !ready;
+  // Written only on a change: every write wakes the tabs' watcher, and this runs every frame of a replay.
+  if (box.hidden !== !ready) box.hidden = !ready;
   if (!ready) {
     wipeKey = "";
     return;

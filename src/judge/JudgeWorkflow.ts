@@ -20,6 +20,7 @@ import {
   applyLook,
   BASE_AUTHOR,
   decide,
+  failedFork,
   CROSS_TEST_STEP_MARGIN_S,
   FORK_STEP_TIMEOUT_S,
   forkPoint,
@@ -116,8 +117,14 @@ export class JudgeWorkflow extends WorkflowEntrypoint<Env, JudgeInput> {
     // Every fork is judged in its own sandbox, and the look needs only the previews, so all of
     // these steps run at once: the judge takes as long as its slowest step, not their sum.
     // JSON text: the scorer's raw legend is typed unknown, which step.do's Serializable type rejects.
+    // A fork step that fails for good scores that fork 0, so the race still gets a verdict.
     const judging = input.forks.map((fork) =>
-      step.do(`fork ${fork.agent}`, FORK_STEP, tracked(`fork ${fork.agent}`, async () => JSON.stringify(await judgeInSandbox(this.env, input, fork)))),
+      step
+        .do(`fork ${fork.agent}`, FORK_STEP, tracked(`fork ${fork.agent}`, async () => JSON.stringify(await judgeInSandbox(this.env, input, fork))))
+        .catch((cause: unknown) => {
+          console.error({ event: "judge.fork_failed", taskId: input.taskId, agent: fork.agent, error: String(cause).slice(0, 300) });
+          return JSON.stringify(failedFork(fork));
+        }),
     );
     // JSON text: LookResult has optional keys. A failed look never stops the judge: lookAtPreviews
     // does not throw, and a step that still fails (a timeout) is judged without look.

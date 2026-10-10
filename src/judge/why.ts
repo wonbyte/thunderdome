@@ -175,6 +175,8 @@ function worstPart(loser: ForkScore, winner: ForkScore): PartKey | undefined {
 export function loserLine(loser: ForkScore, winner: ForkScore | undefined): string {
   const head = `${loser.agent} (${loser.total}/100)`;
   if (!loser.eligible) {
+    // The judge's own trouble is said as such, not blamed on the robot.
+    if (loser.input.judgeFailed === true) return `${head}: the judge could not test or score it, cannot win.`;
     return testRun(loser).passed > 0 ? `${head}: changed no files, cannot win.` : `${head}: 0 tests passed, cannot win.`;
   }
   if (!winner) return `${head}.`;

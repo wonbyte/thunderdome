@@ -39,6 +39,7 @@ export interface ForkInput {
   fix?: string; // fingerprint of the diff's changed lines (fixFingerprint); equal means the same fix
   look?: number; // 0..1, how the preview looks for the task; set on a fork only when the race is judged on look
   lookError?: string; // why the fork's preview could not be judged (then look is 0)
+  judgeFailed?: boolean; // the judge could not test or score this fork (failedFork in judge.ts)
 }
 
 /**

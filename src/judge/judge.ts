@@ -264,6 +264,36 @@ export async function judgeFork(deps: JudgeDeps, input: JudgeInput, fork: JudgeF
   return judged;
 }
 
+/** Why a fork whose judging failed for good has no test points. Fixed text: the cause can carry agent-written output. */
+export const FORK_FAILED = "the judge could not test or score this fork";
+
+/**
+ * A fork whose judge step failed for good (Clef down, no container, an output too big to save):
+ * no test, fit or clarity points and not eligible, so the other forks are still judged and the race
+ * gets its verdict. Like any fork that changed no files, it keeps the claim points.
+ */
+export function failedFork(fork: JudgeFork): JudgedFork {
+  return {
+    agent: fork.agent,
+    fork: fork.fork,
+    tests: { passed: 0, total: 0, error: FORK_FAILED },
+    diff: { filesChanged: [], linesAdded: 0, linesRemoved: 0 },
+    input: {
+      agent: fork.agent,
+      testsPassed: 0,
+      testsTotal: 0,
+      taskFit: 0,
+      clarity: 0,
+      linesChanged: 0,
+      filesChanged: [],
+      filesClaimed: [...fork.filesClaimed],
+      filesShared: [...(fork.filesShared ?? [])],
+      ...(fork.endedAt === undefined ? {} : { endedAt: fork.endedAt }),
+      judgeFailed: true,
+    },
+  };
+}
+
 const key = (t: CrossTest): string => `${t.author}\0${t.file}`;
 const passedAll = (t: CrossTest): boolean => t.total > 0 && t.passed === t.total;
 

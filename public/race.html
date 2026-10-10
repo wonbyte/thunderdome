@@ -106,6 +106,18 @@
       <p id="guess-note" class="guess-note" aria-live="polite"></p>
     </section>
 
+    <!-- One pane at a time, so the page does not scroll through every panel. A tab shows once its pane has something. -->
+    <div id="tabs" class="tabs" role="tablist" aria-label="Race details">
+      <button id="tab-result" type="button" role="tab" data-pane="result" aria-controls="pane-result" aria-selected="false" tabindex="-1" hidden>Result</button>
+      <button id="tab-previews" type="button" role="tab" data-pane="previews" aria-controls="pane-previews" aria-selected="false" tabindex="-1" hidden>Previews</button>
+      <button id="tab-timeline" type="button" role="tab" data-pane="timeline" aria-controls="pane-timeline" aria-selected="false" tabindex="-1" hidden>Timeline</button>
+      <button id="tab-git" type="button" role="tab" data-pane="git" aria-controls="pane-git" aria-selected="false" tabindex="-1" hidden>Git</button>
+      <button id="tab-feed" type="button" role="tab" data-pane="feed" aria-controls="pane-feed" aria-selected="false" tabindex="-1" hidden>Claims &amp; feed</button>
+      <button id="tab-tests" type="button" role="tab" data-pane="tests" aria-controls="pane-tests" aria-selected="false" tabindex="-1" hidden>Tests</button>
+      <button id="tab-fusion" type="button" role="tab" data-pane="fusion" aria-controls="pane-fusion" aria-selected="false" tabindex="-1" hidden>Fusion</button>
+    </div>
+
+    <div id="pane-result" class="pane" data-pane="result" role="tabpanel" aria-labelledby="tab-result" hidden>
     <section id="result-panel" class="card result" aria-labelledby="result-title" hidden>
       <p class="caption">The result: every fork ran the shared tests, Clef rated how well the code fits the task and how clear it is, and the highest score shipped.</p>
       <h2 id="result-title">Result</h2>
@@ -124,7 +136,9 @@
       </details>
       <p class="result-actions"><a id="run-again" class="cta-btn run-again" hidden>↻ Run it again</a><span id="run-again-note" class="hint" hidden>Same demo app and task, five fresh robots.</span></p>
     </section>
+    </div>
 
+    <div id="pane-previews" class="pane" data-pane="previews" role="tabpanel" aria-labelledby="tab-previews" hidden>
     <section id="previews-card" class="card" aria-labelledby="previews-title">
       <h2 id="previews-title">Previews</h2>
       <div id="pick" class="pick" role="group" aria-label="Show one robot"></div>
@@ -152,35 +166,38 @@
         </figure>
       </div>
     </section>
+    </div>
 
-    <h2 class="hood-title">Under the hood</h2>
-
-
-    <details id="gantt-panel" class="card gantt-panel" hidden>
-      <summary><h2>Timeline · what ran when</h2><span id="gantt-stat" class="count-pill"></span></summary>
+    <div id="pane-timeline" class="pane" data-pane="timeline" role="tabpanel" aria-labelledby="tab-timeline" hidden>
+    <section id="gantt-panel" class="card gantt-panel" hidden>
+      <div class="panel-head"><h2>Timeline · what ran when</h2><span id="gantt-stat" class="count-pill"></span></div>
       <div id="gantt" class="gantt"></div>
       <p class="hint">Everything that ran, from the race's record. Hover a bar for its time; a dashed end is estimated.</p>
-    </details>
+    </section>
 
-    <details id="map-panel" class="card map-panel" hidden>
-      <summary><h2>Where the robots ran</h2></summary>
+    <section id="map-panel" class="card map-panel" hidden>
+      <div class="panel-head"><h2>Where the robots ran</h2></div>
       <div id="map" class="map"></div>
       <p class="hint">Each robot's sandbox asked for its own region; the code is the data center it got.</p>
-    </details>
+    </section>
+    </div>
 
-    <details id="graph-panel" class="card graph-panel" hidden>
-      <summary class="graph-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></summary>
+    <div id="pane-git" class="pane" data-pane="git" role="tabpanel" aria-labelledby="tab-git" hidden>
+    <section id="graph-panel" class="card graph-panel" hidden>
+      <div class="panel-head"><h2 id="graph-title">Git graph · Artifacts</h2><span id="graph-stat" class="count-pill"></span></div>
       <p class="hint">Every dot is a push to a fork; the winner merges into main. Arrows are losers' pieces, fused in (solid) or left out (✗). Click a lane for its code.</p>
       <div id="graph" class="graph"></div>
       <figure id="gitlog" class="gitlog" hidden>
         <figcaption><span class="gitlog-prompt" aria-hidden="true">$</span> git log --graph main</figcaption>
         <ol id="gitlog-lines" class="gitlog-lines"></ol>
       </figure>
-    </details>
+    </section>
+    </div>
 
+    <div id="pane-feed" class="pane" data-pane="feed" role="tabpanel" aria-labelledby="tab-feed" hidden>
     <div class="cols">
-      <details class="card">
-        <summary><h2>Claims</h2></summary>
+      <section class="card">
+        <div class="panel-head"><h2>Claims</h2></div>
         <p class="hint">Robots claim files before editing. <b>Clash</b>: two claimed one file; the first keeps its points.</p>
         <ul class="key" aria-label="Chip key">
           <li><span class="chip own held">first</span>claimed first</li>
@@ -188,29 +205,33 @@
           <li><span class="chip own">dim</span>released</li>
         </ul>
         <div id="claims" class="claims"></div>
-      </details>
-      <details class="card">
-        <summary><h2>Live feed</h2></summary>
+      </section>
+      <section class="card">
+        <div class="panel-head"><h2>Live feed</h2></div>
         <ol id="log" class="log" tabindex="0" aria-label="Live feed" aria-live="polite" aria-relevant="additions"></ol>
-      </details>
+      </section>
+    </div>
     </div>
 
-    <details id="cross-panel" class="card cross-panel" hidden>
-      <summary class="fusion-head"><h2>Who passes whose tests</h2><span id="cross-stat" class="count-pill"></span></summary>
+    <div id="pane-tests" class="pane" data-pane="tests" role="tabpanel" aria-labelledby="tab-tests" hidden>
+    <section id="cross-panel" class="card cross-panel" hidden>
+      <div class="panel-head"><h2>Who passes whose tests</h2><span id="cross-stat" class="count-pill"></span></div>
       <p class="hint">Every fork ran every test file. A robot's file counts when it passes on two forks or more; greyed columns did not count.</p>
       <p id="cross-split" class="hint" hidden>Clef found that the task gives robots different parts, so each robot's tests check its own part: only the repo's tests counted.</p>
       <div class="cross-scroll" tabindex="0" aria-label="Who passes whose tests"><table id="cross-grid" class="cross-grid"></table></div>
-    </details>
+    </section>
+    </div>
 
-    <details id="blame-panel" class="card blame-panel" hidden>
-      <summary class="fusion-head"><h2>Who wrote main</h2><span id="blame-stat" class="count-pill"></span></summary>
+    <div id="pane-fusion" class="pane" data-pane="fusion" role="tabpanel" aria-labelledby="tab-fusion" hidden>
+    <section id="blame-panel" class="card blame-panel" hidden>
+      <div class="panel-head"><h2>Who wrote main</h2><span id="blame-stat" class="count-pill"></span></div>
       <p class="hint">The shipped lines by the robot that wrote them (<code>git blame -w</code> over the merge); losers' lines came in through the fusion round.</p>
       <div id="blame-bar" class="blame-bar" role="img"></div>
       <ul id="blame-legend" class="blame-legend"></ul>
-    </details>
+    </section>
 
-    <details id="fusion-panel" class="card fusion-panel" hidden>
-      <summary class="fusion-head"><h2><span class="fuse-bolt" aria-hidden="true">⚡</span> Fusion round</h2><span id="fusion-stat" class="count-pill"></span></summary>
+    <section id="fusion-panel" class="card fusion-panel" hidden>
+      <div class="panel-head"><h2><span class="fuse-bolt" aria-hidden="true">⚡</span> Fusion round</h2><span id="fusion-stat" class="count-pill"></span></div>
       <p class="hint">Losers' files and hunks are tried on the winner's fix: each must apply, pass every test and get Clef's yes, and the result ships only if it scores at least the winner alone.</p>
       <div id="fusion-score" class="fusion-score" hidden></div>
       <p id="fusion-result" class="fusion-result"></p>
@@ -220,7 +241,8 @@
         <li><b>write sandbox</b><span>runs only git: checks it, then <code>git push</code></span></li>
       </ol>
       <ol id="fusion-rows" class="fusion-rows"></ol>
-    </details>
+    </section>
+    </div>
   </main>
 </body>
 </html>

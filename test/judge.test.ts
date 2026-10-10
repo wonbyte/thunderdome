@@ -8,6 +8,8 @@ import {
   CONTEXT_CHARS,
   type CrossTest,
   decide,
+  failedFork,
+  FORK_FAILED,
   FORK_STEP_TIMEOUT_S,
   forkPoint,
   judgeFork,
@@ -148,6 +150,23 @@ describe("judgeTask", () => {
     expect(result.winner).toBeNull();
     expect(result.why.split("\n")[0]).toBe("No winner: no fork passed any tests.");
   });
+
+  it("J9: a fork whose judge step failed for good gets no test points and ranks last, not eligible, so the others still get a verdict", async () => {
+    const input = fakeInput();
+    const [ponder, zippy, snip] = input.forks;
+    const judged = await Promise.all([zippy!, snip!].map((f) => judgeFork(fakeDeps(), input, f)));
+    const failed = failedFork(ponder!);
+    expect(failed.tests.error).toBe(FORK_FAILED);
+    const result = decide(input, [failed, ...judged]);
+    expect(result.winner).toBe("zippy");
+    const score = result.scores.ranked.at(-1);
+    expect(score?.agent).toBe("ponder");
+    expect(score?.eligible).toBe(false);
+    expect(score?.parts.tests).toBe(0);
+    // Only the claim points stay, as for any fork that changed nothing; the why blames the judge, not the robot.
+    expect(score?.total).toBe(10);
+    expect(result.why).toContain("ponder (10/100): the judge could not test or score it, cannot win.");
+  });
 });
 
 describe("helpers", () => {
@@ -205,6 +224,18 @@ describe("the shared suite", () => {
     const fork = await judgeFork(fakeDeps({ crossTests: async () => crossTests }), fakeInput(), fakeFork(agent));
     return fork;
   };
+
+  it("S10: a fork whose judge step failed has no cross tests but leaves the suite on for the others", async () => {
+    const forks = [
+      failedFork(fakeFork("ponder")),
+      await judged("zippy", [run(BASE_AUTHOR, "test/cart.test.ts", 3, 4)]),
+      await judged("snip", [run(BASE_AUTHOR, "test/cart.test.ts", 4, 4)]),
+    ];
+    const suite = sharedSuite(forks);
+    expect(suite?.get("zippy")).toEqual({ passed: 3, total: 4 });
+    expect(suite?.get("snip")).toEqual({ passed: 4, total: 4 });
+    expect(suite?.has("ponder")).toBe(false);
+  });
 
   it("S1: base files always count; an added file counts only when it passes in full on at least two forks", async () => {
     const forks = [

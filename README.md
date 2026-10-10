@@ -67,7 +67,7 @@ flowchart LR
 
 The race page shows all of it live: the robots act out each real step, the result and previews
 follow, with the race's Cloudflare bill. The X-ray button swaps the robots for the architecture,
-lit by the same events, and "Under the hood" opens a timeline, the git graph and the claim board.
+lit by the same events, and tabs under the stage open the timeline, the git graph, the claim board and more.
 
 ## The judge
 
@@ -115,7 +115,7 @@ npx wrangler deploy -c scripts/preview-worker.jsonc
 ```
 
 With Podman, see [Using Podman](docs/reference.md#using-podman-instead-of-docker). Optional vars,
-set with `npm run deploy -- --var NAME:value`: `AGENT_MODEL` (default `claude-opus-5-5`),
+set with `npm run deploy -- --var NAME:value`: `AGENT_MODEL` (default `claude-haiku-5-5`),
 `PLAY_INVITE` (an invite code for `/play`) and `PLAY_DAILY_LIMIT` (default 10).
 
 Seed the demo apps once, then start a race:
